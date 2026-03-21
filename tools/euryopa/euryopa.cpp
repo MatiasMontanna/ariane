@@ -777,29 +777,46 @@ GetMinZOffsetForRotation(ObjectInst *inst, const rw::Quat &rotation)
 static rw::Quat
 BuildGroundAlignedRotationFromRotation(const rw::Quat &sourceRotation, rw::V3d groundNormal)
 {
-	rw::V3d fallbackUp = { 0.0f, 0.0f, 1.0f };
+	rw::V3d fallbackAt = { 0.0f, 0.0f, 1.0f };
 	rw::V3d fallbackRight = { 1.0f, 0.0f, 0.0f };
 	rw::V3d fallbackForward = { 0.0f, 1.0f, 0.0f };
 	rw::Matrix sourceMatrix;
 	sourceMatrix.rotate(conj(sourceRotation), rw::COMBINEREPLACE);
 
-	groundNormal = NormalizeOr(groundNormal, fallbackUp);
-	rw::V3d forward = sourceMatrix.at;
-	forward = sub(forward, scale(groundNormal, dot(forward, groundNormal)));
-	if(length(forward) < 0.0001f){
-		rw::V3d right = sourceMatrix.right;
-		right = sub(right, scale(groundNormal, dot(right, groundNormal)));
-		right = NormalizeOr(right, fallbackRight);
-		forward = cross(groundNormal, right);
+	groundNormal = NormalizeOr(groundNormal, fallbackAt);
+	rw::V3d currentVertical = NormalizeOr(sourceMatrix.at, fallbackAt);
+	float d = clamp(dot(currentVertical, groundNormal), -1.0f, 1.0f);
+	const float pi = 3.14159265358979323846f;
+
+	rw::Quat swing = { 0.0f, 0.0f, 0.0f, 1.0f };
+	if(d < 0.9999f){
+		rw::V3d axis;
+		if(d > -0.9999f)
+			axis = NormalizeOr(cross(currentVertical, groundNormal), fallbackRight);
+		else{
+			axis = sub(sourceMatrix.up, scale(currentVertical, dot(sourceMatrix.up, currentVertical)));
+			if(length(axis) < 0.0001f)
+				axis = sub(sourceMatrix.right, scale(currentVertical, dot(sourceMatrix.right, currentVertical)));
+			axis = NormalizeOr(axis, fallbackRight);
+		}
+		float angle = d > -0.9999f ? acosf(d) : pi;
+		swing = rw::Quat::rotation(angle, axis);
 	}
+
+	rw::V3d forward = rotate(sourceMatrix.up, swing);
+	forward = sub(forward, scale(groundNormal, dot(forward, groundNormal)));
+	if(length(forward) < 0.0001f)
+		forward = rotate(sourceMatrix.right, swing);
+	forward = sub(forward, scale(groundNormal, dot(forward, groundNormal)));
 	forward = NormalizeOr(forward, fallbackForward);
+
 	rw::V3d right = NormalizeOr(cross(forward, groundNormal), fallbackRight);
 	forward = NormalizeOr(cross(groundNormal, right), forward);
 
 	rw::Matrix matrix;
 	matrix.right = right;
-	matrix.up = groundNormal;
-	matrix.at = forward;
+	matrix.up = forward;
+	matrix.at = groundNormal;
 	matrix.pos.x = 0.0f;
 	matrix.pos.y = 0.0f;
 	matrix.pos.z = 0.0f;
