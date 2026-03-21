@@ -378,9 +378,45 @@ pick(void)
 	return gta::GetColourCode(CPad::newMouseState.x, CPad::newMouseState.y);
 }
 
+static rw::V3d
+GetPlacementPosition(void)
+{
+	rw::V3d origin = TheCamera.m_position;
+	rw::V3d dir = normalize(TheCamera.m_mouseDir);
+
+	// Intersect ray with horizontal plane at camera target height
+	float planeZ = TheCamera.m_target.z;
+	if(fabs(dir.z) < 0.001f)
+		return add(origin, scale(dir, 50.0f));
+
+	float t = (planeZ - origin.z) / dir.z;
+	if(t < 1.0f) t = 50.0f;
+	if(t > 5000.0f) t = 5000.0f;
+
+	rw::V3d pos;
+	pos.x = origin.x + dir.x * t;
+	pos.y = origin.y + dir.y * t;
+	pos.z = planeZ;
+	return pos;
+}
+
 void
 handleTool(void)
 {
+	// Place mode intercepts all clicks
+	if(gPlaceMode){
+		if(CPad::IsMButtonClicked(1)){
+			rw::V3d pos = GetPlacementPosition();
+			SpawnPlaceObject(pos);
+			return;
+		}
+		if(CPad::IsMButtonClicked(2) || CPad::IsKeyJustDown(KEY_ESC)){
+			SpawnExitPlaceMode();
+			return;
+		}
+		return;  // Absorb clicks while in place mode
+	}
+
 	// select
 	if(CPad::IsMButtonClicked(1)){
 		ObjectInst *inst = GetInstanceByID(pick());
@@ -493,6 +529,10 @@ LoadGame(void)
 	case GAME_VCS: FileLoader::LoadLevel("data/gta_vcs.dat"); break;
 	}
 
+	InitLodLookup();
+	InitObjectCategories();
+	LoadFavourites();
+	// InitPreviewRenderer called lazily on first use
 	InitSectors();
 
 	CPtrNode *p;
@@ -740,6 +780,10 @@ Draw(void)
 		Scene.camera = TheCamera.m_rwcam_viewer;
 	else
 		Scene.camera = TheCamera.m_rwcam;
+	// Render 3D preview to texture (before main camera update)
+	if(GetSpawnObjectId() >= 0)
+		RenderPreviewObject(GetSpawnObjectId());
+
 	Scene.camera->beginUpdate();
 
 	DefinedState();

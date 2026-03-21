@@ -342,9 +342,33 @@ enum ToastCategory {
 	TOAST_COPY_PASTE,
 	TOAST_SAVE,
 	TOAST_SELECTION,
+	TOAST_SPAWN,
 	TOAST_NUM_CATEGORIES
 };
 void Toast(ToastCategory cat, const char *fmt, ...);
+
+// Object Spawner
+extern bool gPlaceMode;
+void InitLodLookup(void);
+void SpawnPlaceObject(rw::V3d position);
+void SpawnExitPlaceMode(void);
+int GetSpawnObjectId(void);
+void SetSpawnObjectId(int id);
+int GetLodForObject(int id);
+
+// Object Browser categories & favourites
+void InitObjectCategories(void);
+int GetObjectCategory(int modelId);
+void LoadFavourites(void);
+void SaveFavourites(void);
+bool IsFavourite(int id);
+void ToggleFavourite(int id);
+
+// 3D Preview
+void InitPreviewRenderer(void);
+void ShutdownPreviewRenderer(void);
+void RenderPreviewObject(int objectId);
+extern rw::Texture *gPreviewTexture;
 
 // Game Data structures
 

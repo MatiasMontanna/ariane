@@ -1,5 +1,6 @@
 #include "euryopa.h"
 #include "imgui/imgui_internal.h"
+#include "object_categories.h"
 
 static bool showDemoWindow;
 static bool showEditorWindow;
@@ -10,6 +11,7 @@ static bool showHelpWindow;
 static bool showTimeWeatherWindow;
 static bool showViewWindow;
 static bool showRenderingWindow;
+static bool showBrowserWindow;
 
 // Toast notification system
 #define TOAST_MAX 5
@@ -27,9 +29,9 @@ struct ToastEntry {
 static ToastEntry toasts[TOAST_MAX];
 static int numToasts;
 static bool toastEnabled = true;
-static bool toastCategoryEnabled[TOAST_NUM_CATEGORIES] = { true, true, true, true, true };
+static bool toastCategoryEnabled[TOAST_NUM_CATEGORIES] = { true, true, true, true, true, true };
 static const char *toastCategoryNames[TOAST_NUM_CATEGORIES] = {
-	"Undo / Redo", "Delete", "Copy / Paste", "Save", "Selection"
+	"Undo / Redo", "Delete", "Copy / Paste", "Save", "Selection", "Spawn"
 };
 
 void
@@ -261,6 +263,7 @@ uiMainmenu(void)
 			if(ImGui::MenuItem("Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
 			if(ImGui::MenuItem("Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
 			if(ImGui::MenuItem("Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
+			if(ImGui::MenuItem("Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
 			if(ImGui::MenuItem("Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
 			if(ImGui::MenuItem("Demo ", nil, showDemoWindow)) { showDemoWindow ^= 1; }
 			if(ImGui::MenuItem("Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
@@ -290,6 +293,12 @@ uiMainmenu(void)
 		}
 
 
+		ImGui::Separator();
+		ImGui::Text("UI");
+		ImGui::SameLine();
+		if(ImGui::SmallButton("-")) ImGui::GetIO().FontGlobalScale *= 0.9f;
+		ImGui::SameLine();
+		if(ImGui::SmallButton("+")) ImGui::GetIO().FontGlobalScale *= 1.1f;
 		ImGui::Separator();
 		ImGui::Text("%.3f ms/frame %.1f FPS", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::EndMainMenuBar();
@@ -327,6 +336,9 @@ uiHelpWindow(void)
 		"Ctrl+V: Paste (offset +10 on X), with LOD linking");
 	ImGui::BulletText("Ctrl+S: Save all modified IPL files\n"
 		"Deleted instances are commented out with #.");
+	ImGui::BulletText("B: Toggle Object Browser\n"
+		"Click in 3D view to place selected object.\n"
+		"RMB or Escape to exit place mode.");
 
 	if(ImGui::CollapsingHeader("Dear ImGUI help")){
 		ImGui::ShowUserGuide();
@@ -1411,6 +1423,300 @@ uiTest(void)
 	ImGui::PopStyleVar();
 }
 
+// Helper: check if category index is or is a child of parent
+static bool
+isCategoryOrChild(int cat, int parent)
+{
+	if(cat == parent) return true;
+	// Check if cat's parent chain leads to parent
+	if(cat >= 0 && cat < NUM_OBJ_CATEGORIES){
+		int p = objCategories[cat].parent;
+		if(p == parent) return true;
+		// Only 2 levels deep max
+		if(p >= 0 && objCategories[p].parent == parent) return true;
+	}
+	return false;
+}
+
+// Helper: build indented category name for dropdown
+static void
+buildCategoryLabel(int idx, char *buf, int bufsize)
+{
+	int depth = 0;
+	if(objCategories[idx].parent >= 0){
+		depth = 1;
+		if(objCategories[objCategories[idx].parent].parent >= 0)
+			depth = 2;
+	}
+	char prefix[16] = "";
+	for(int d = 0; d < depth; d++) strcat(prefix, "  ");
+	snprintf(buf, bufsize, "%s%s", prefix, objCategories[idx].name);
+}
+
+static void
+selectBrowserObject(int i)
+{
+	SetSpawnObjectId(i);
+	gPlaceMode = true;
+	RequestObject(i);
+	int lodId = GetLodForObject(i);
+	if(lodId >= 0) RequestObject(lodId);
+}
+
+// Shared object list renderer with clipper
+static void
+uiObjectList(int *filtered, int numFiltered, int selId)
+{
+	ImGui::BeginChild("##ObjList", ImVec2(0, 0), true);
+	ImGuiListClipper clipper;
+	clipper.Begin(numFiltered);
+	static char buf[256];
+	while(clipper.Step()){
+		for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++){
+			int i = filtered[row];
+			ObjectDef *obj = GetObjectDef(i);
+			bool isSelected = (i == selId);
+			sprintf(buf, "%5d  %s", obj->m_id, obj->m_name);
+
+			ImGui::PushID(i);
+			if(ImGui::Selectable(buf, isSelected))
+				selectBrowserObject(i);
+			// Right-click for favourites
+			if(ImGui::BeginPopupContextItem()){
+				if(IsFavourite(i)){
+					if(ImGui::MenuItem("Remove from Favourites"))
+						ToggleFavourite(i);
+				}else{
+					if(ImGui::MenuItem("Add to Favourites"))
+						ToggleFavourite(i);
+				}
+				ImGui::EndPopup();
+			}
+			ImGui::PopID();
+		}
+	}
+	ImGui::EndChild();
+}
+
+static void
+uiBrowserWindow(void)
+{
+	ImGui::SetNextWindowSize(ImVec2(420, 700), ImGuiCond_FirstUseEver);
+	ImGui::Begin("Object Browser", &showBrowserWindow);
+
+	int selId = GetSpawnObjectId();
+	static int filtered[NUMOBJECTDEFS];
+	int numFiltered = 0;
+
+	// 3D Preview + selected info panel
+	if(selId >= 0){
+		ObjectDef *sel = GetObjectDef(selId);
+		if(sel){
+			float previewW = ImGui::GetContentRegionAvail().x;
+			float previewH = previewW * 0.75f;
+			if(previewH > 200.0f) previewH = 200.0f;
+			float headerH = previewH +
+				ImGui::GetTextLineHeightWithSpacing()*2.0f +
+				ImGui::GetFrameHeightWithSpacing() +
+				ImGui::GetStyle().ItemSpacing.y*3.0f;
+
+			ImGui::BeginChild("##BrowserHeader", ImVec2(0, headerH), false,
+				ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+			// Preview (rendered in Draw() before main camera)
+			if(gPreviewTexture && gPreviewTexture->raster){
+				ImGui::Image((void*)(intptr_t)gPreviewTexture,
+					ImVec2(previewW, previewH),
+					ImVec2(0, 1), ImVec2(1, 0));
+			}
+
+			// Info line
+			ImGui::TextColored(ImVec4(0,1,0,1), "%s (ID: %d)", sel->m_name, sel->m_id);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%.0f", sel->GetLargestDrawDist());
+			int lodId = GetLodForObject(selId);
+			if(lodId >= 0){
+				ObjectDef *lod = GetObjectDef(lodId);
+				if(lod){
+					ImGui::SameLine();
+					ImGui::TextDisabled("LOD: %s", lod->m_name);
+				}
+			}
+
+			// Action buttons
+			if(gPlaceMode){
+				if(ImGui::Button("Exit Place Mode"))
+					SpawnExitPlaceMode();
+			}else{
+				if(ImGui::Button("Place"))
+					gPlaceMode = true;
+			}
+			ImGui::SameLine();
+			if(IsFavourite(selId)){
+				if(ImGui::Button("Unfavourite"))
+					ToggleFavourite(selId);
+			}else{
+				if(ImGui::Button("Favourite"))
+					ToggleFavourite(selId);
+			}
+			ImGui::Separator();
+			ImGui::EndChild();
+		}
+	}
+
+	ImGui::BeginChild("##BrowserBody", ImVec2(0, 0), false,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+	// Tab bar
+	if(ImGui::BeginTabBar("##BrowserTabs")){
+
+		// === Categories tab ===
+		if(ImGui::BeginTabItem("Categories")){
+			static int selectedCat = -1;
+			static ImGuiTextFilter catFilter;
+
+			// Category dropdown
+			static char catLabel[128] = "All Categories";
+			if(ImGui::BeginCombo("##CatCombo", catLabel)){
+				if(ImGui::Selectable("All Categories", selectedCat == -1)){
+					selectedCat = -1;
+					strcpy(catLabel, "All Categories");
+				}
+				static char lb[128];
+				for(int c = 0; c < NUM_OBJ_CATEGORIES; c++){
+					buildCategoryLabel(c, lb, sizeof(lb));
+					bool isSel = (c == selectedCat);
+					if(ImGui::Selectable(lb, isSel)){
+						selectedCat = c;
+						snprintf(catLabel, sizeof(catLabel), "%s", objCategories[c].name);
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			catFilter.Draw("Filter##Cat");
+
+			// Build filtered list
+			numFiltered = 0;
+			for(int i = 0; i < NUMOBJECTDEFS; i++){
+				ObjectDef *obj = GetObjectDef(i);
+				if(obj == nil) continue;
+				if(selectedCat >= 0){
+					int cat = GetObjectCategory(i);
+					if(cat < 0 || !isCategoryOrChild(cat, selectedCat))
+						continue;
+				}
+				if(!catFilter.PassFilter(obj->m_name)) continue;
+				filtered[numFiltered++] = i;
+			}
+			ImGui::Text("%d objects", numFiltered);
+			uiObjectList(filtered, numFiltered, selId);
+
+			ImGui::EndTabItem();
+		}
+
+		// === IDE tab ===
+		if(ImGui::BeginTabItem("IDE")){
+			static const char *selectedIde = nil;
+			static ImGuiTextFilter ideFilter;
+
+			// Collect unique IDE file names
+			static const char *ideFiles[512];
+			static int numIdeFiles = 0;
+			static bool ideCollected = false;
+			if(!ideCollected){
+				for(int i = 0; i < NUMOBJECTDEFS; i++){
+					ObjectDef *obj = GetObjectDef(i);
+					if(obj == nil || obj->m_file == nil) continue;
+					bool found = false;
+					for(int j = 0; j < numIdeFiles; j++)
+						if(strcmp(ideFiles[j], obj->m_file->name) == 0){
+							found = true; break;
+						}
+					if(!found && numIdeFiles < 512)
+						ideFiles[numIdeFiles++] = obj->m_file->name;
+				}
+				ideCollected = true;
+			}
+
+			// IDE dropdown
+			const char *ideLabel = selectedIde ? selectedIde : "All IDE files";
+			if(ImGui::BeginCombo("##IdeCombo", ideLabel)){
+				if(ImGui::Selectable("All IDE files", selectedIde == nil))
+					selectedIde = nil;
+				for(int j = 0; j < numIdeFiles; j++){
+					bool isSel = (selectedIde == ideFiles[j]);
+					if(ImGui::Selectable(ideFiles[j], isSel))
+						selectedIde = ideFiles[j];
+				}
+				ImGui::EndCombo();
+			}
+
+			ideFilter.Draw("Filter##Ide");
+
+			numFiltered = 0;
+			for(int i = 0; i < NUMOBJECTDEFS; i++){
+				ObjectDef *obj = GetObjectDef(i);
+				if(obj == nil) continue;
+				if(selectedIde && (obj->m_file == nil ||
+					strcmp(obj->m_file->name, selectedIde) != 0))
+					continue;
+				if(!ideFilter.PassFilter(obj->m_name)) continue;
+				filtered[numFiltered++] = i;
+			}
+			ImGui::Text("%d objects", numFiltered);
+			uiObjectList(filtered, numFiltered, selId);
+
+			ImGui::EndTabItem();
+		}
+
+		// === Search tab ===
+		if(ImGui::BeginTabItem("Search")){
+			static ImGuiTextFilter searchFilter;
+			searchFilter.Draw("Search##All");
+			ImGui::SameLine();
+			if(ImGui::Button("Clear##SearchClear"))
+				searchFilter.Clear();
+
+			numFiltered = 0;
+			if(searchFilter.IsActive()){
+				for(int i = 0; i < NUMOBJECTDEFS; i++){
+					ObjectDef *obj = GetObjectDef(i);
+					if(obj == nil) continue;
+					if(!searchFilter.PassFilter(obj->m_name)) continue;
+					filtered[numFiltered++] = i;
+				}
+			}
+			ImGui::Text("%d results", numFiltered);
+			uiObjectList(filtered, numFiltered, selId);
+
+			ImGui::EndTabItem();
+		}
+
+		// === Favourites tab ===
+		if(ImGui::BeginTabItem("Favourites")){
+			static ImGuiTextFilter favFilter;
+			favFilter.Draw("Filter##Fav");
+
+			numFiltered = 0;
+			for(int i = 0; i < NUMOBJECTDEFS; i++){
+				if(!IsFavourite(i)) continue;
+				ObjectDef *obj = GetObjectDef(i);
+				if(obj == nil) continue;
+				if(!favFilter.PassFilter(obj->m_name)) continue;
+				filtered[numFiltered++] = i;
+			}
+			ImGui::Text("%d favourites", numFiltered);
+			uiObjectList(filtered, numFiltered, selId);
+
+			ImGui::EndTabItem();
+		}
+
+		ImGui::EndTabBar();
+	}
+	ImGui::EndChild();
+
+	ImGui::End();
+}
+
 static ExampleAppLog logwindow;
 // TODO: this crashes for me on linux. should figure out how to fix
 //void addToLogWindow(const char *fmt, va_list args) { logwindow.AddLog(fmt, args); }
@@ -1509,6 +1815,13 @@ gui(void)
 	if(CPad::IsKeyJustDown('E')) showEditorWindow ^= 1;
 	if(showEditorWindow) uiEditorWindow();
 
+	if(CPad::IsKeyJustDown('B')) showBrowserWindow ^= 1;
+	if(showBrowserWindow) uiBrowserWindow();
+
+	// Escape exits place mode
+	if(CPad::IsKeyJustDown(KEY_ESC) && gPlaceMode)
+		SpawnExitPlaceMode();
+
 	if(showHelpWindow) uiHelpWindow();
 	if(showDemoWindow){
 		ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiCond_FirstUseEver);
@@ -1516,6 +1829,22 @@ gui(void)
 	}
 
 	if(showLogWindow) logwindow.Draw("Log", &showLogWindow);
+
+	// Place mode overlay
+	if(gPlaceMode && GetSpawnObjectId() >= 0){
+		ObjectDef *obj = GetObjectDef(GetSpawnObjectId());
+		if(obj){
+			ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 40));
+			ImGui::SetNextWindowBgAlpha(0.6f);
+			ImGui::Begin("##PlaceMode", nil,
+				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+				ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+				ImGuiWindowFlags_NoFocusOnAppearing);
+			ImGui::TextColored(ImVec4(1,1,0,1),
+				"PLACE: %s  [Click=Place | RMB/Esc=Cancel]", obj->m_name);
+			ImGui::End();
+		}
+	}
 
 	uiToasts();
 

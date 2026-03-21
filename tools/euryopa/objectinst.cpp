@@ -1,4 +1,6 @@
 #include "euryopa.h"
+#include "lod_associations.h"
+#include "object_categories.h"
 
 CPtrList instances;
 CPtrList selection;
@@ -243,6 +245,466 @@ DeleteSelected(void)
 	// Simpler: just record what we explicitly asked to delete,
 	// the cascade is handled by Undelete() automatically
 	UndoRecordDelete(toDelete, numToDelete);
+}
+
+// Object Spawner state
+bool gPlaceMode;
+static int spawnObjectId = -1;
+static GameFile *customIplFile = nil;
+static const char *CUSTOM_IPL_PATH = "data\\maps\\custom.ipl";
+
+#define LOD_LOOKUP_SIZE 20000
+static int lodLookup[LOD_LOOKUP_SIZE];
+
+void
+InitLodLookup(void)
+{
+	memset(lodLookup, -1, sizeof(lodLookup));
+	if(!isSA()) return;
+	for(int i = 0; saLodAssociations[i][0] >= 0; i++){
+		int hd = saLodAssociations[i][0];
+		int lod = saLodAssociations[i][1];
+		if(hd < LOD_LOOKUP_SIZE)
+			lodLookup[hd] = lod;
+	}
+}
+
+int
+GetSpawnObjectId(void)
+{
+	return spawnObjectId;
+}
+
+void
+SetSpawnObjectId(int id)
+{
+	spawnObjectId = id;
+}
+
+int
+GetLodForObject(int id)
+{
+	if(isSA()){
+		if(id >= 0 && id < LOD_LOOKUP_SIZE)
+			return lodLookup[id];
+		return -1;
+	}else{
+		ObjectDef *obj = GetObjectDef(id);
+		if(obj && obj->m_relatedModel && !obj->m_isBigBuilding)
+			return obj->m_relatedModel->m_id;
+		return -1;
+	}
+}
+
+static const char*
+GetDatFilename(void)
+{
+	switch(gameversion){
+	case GAME_III: return "data/gta3.dat";
+	case GAME_VC:  return "data/gta_vc.dat";
+	case GAME_SA:  return "data/gta.dat";
+	case GAME_LCS: return "data/gta_lcs.dat";
+	case GAME_VCS: return "data/gta_vcs.dat";
+	default:       return nil;
+	}
+}
+
+static bool
+IplEntryExistsInDat(const char *datfile, const char *iplpath)
+{
+	FILE *f = fopen_ci(datfile, "r");
+	if(f == nil) return false;
+	char line[512];
+	while(fgets(line, sizeof(line), f)){
+		// strip newline
+		char *p = line;
+		while(*p && *p != '\r' && *p != '\n') p++;
+		*p = '\0';
+		if(strncmp(line, "IPL ", 4) == 0){
+			if(strcmp(line+4, iplpath) == 0){
+				fclose(f);
+				return true;
+			}
+		}
+	}
+	fclose(f);
+	return false;
+}
+
+static void
+AppendIplToDat(const char *iplpath)
+{
+	const char *datfile = GetDatFilename();
+	if(datfile == nil) return;
+	if(IplEntryExistsInDat(datfile, iplpath)) return;
+
+	char *ospath = getPath(datfile);
+	FILE *f = fopen(ospath, "a");
+	if(f == nil){
+		log("WARNING: could not append to %s\n", datfile);
+		return;
+	}
+	fprintf(f, "\nIPL %s\n", iplpath);
+	fclose(f);
+	log("Added IPL %s to %s\n", iplpath, datfile);
+}
+
+static GameFile*
+GetOrCreateCustomIplFile(void)
+{
+	if(customIplFile)
+		return customIplFile;
+	char path[256];
+	strncpy(path, CUSTOM_IPL_PATH, sizeof(path));
+	customIplFile = NewGameFile(path);
+	AppendIplToDat(CUSTOM_IPL_PATH);
+	return customIplFile;
+}
+
+static int
+GetMaxIplIndexForFile(GameFile *file)
+{
+	int maxIplIndex = -1;
+	CPtrNode *p;
+	for(p = instances.first; p; p = p->next){
+		ObjectInst *other = (ObjectInst*)p->item;
+		if(other->m_file == file && other->m_imageIndex < 0){
+			if(other->m_iplIndex > maxIplIndex)
+				maxIplIndex = other->m_iplIndex;
+		}
+	}
+	return maxIplIndex;
+}
+
+static ObjectInst*
+createSpawnedInstance(int objectId, rw::V3d position, GameFile *file, int iplIndex)
+{
+	ObjectInst *inst = AddInstance();
+	inst->m_objectId = objectId;
+	inst->m_area = currentArea;
+	inst->m_rotation.x = 0;
+	inst->m_rotation.y = 0;
+	inst->m_rotation.z = 0;
+	inst->m_rotation.w = 1;
+	inst->m_translation = position;
+	inst->m_lodId = -1;
+	inst->m_lod = nil;
+	inst->m_numChildren = 0;
+	inst->m_file = file;
+	inst->m_imageIndex = -1;
+	inst->m_binInstIndex = -1;
+	inst->m_iplIndex = iplIndex;
+	inst->m_isDirty = true;
+
+	ObjectDef *obj = GetObjectDef(objectId);
+
+	if(obj && obj->m_isBigBuilding)
+		inst->SetupBigBuilding();
+
+	inst->UpdateMatrix();
+
+	if(obj && !obj->IsLoaded()){
+		RequestObject(objectId);
+		LoadAllRequestedObjects();
+	}
+
+	inst->CreateRwObject();
+
+	if(obj && obj->m_colModel)
+		InsertInstIntoSectors(inst);
+	else{
+		CPtrList *list = inst->m_isBigBuilding
+			? &outOfBoundsSector.bigbuildings : &outOfBoundsSector.buildings;
+		list->InsertItem(inst);
+	}
+
+	return inst;
+}
+
+static void
+finalizeLinkedLod(ObjectInst *hdInst, ObjectInst *lodInst)
+{
+	ObjectDef *hdObj, *lodObj;
+
+	hdInst->m_lodId = lodInst->m_iplIndex;
+	hdInst->m_lod = lodInst;
+	lodInst->m_numChildren = 1;
+
+	if(!lodInst->m_isBigBuilding)
+		lodInst->SetupBigBuilding();
+
+	hdObj = GetObjectDef(hdInst->m_objectId);
+	lodObj = GetObjectDef(lodInst->m_objectId);
+	if(hdObj && lodObj && lodInst->m_numChildren == 1 && hdObj->m_colModel){
+		lodObj->m_colModel = hdObj->m_colModel;
+		lodObj->m_gotChildCol = true;
+	}
+
+	RemoveInstFromSectors(lodInst);
+	InsertInstIntoSectors(lodInst);
+}
+
+void
+SpawnPlaceObject(rw::V3d position)
+{
+	if(spawnObjectId < 0) return;
+	ObjectDef *obj = GetObjectDef(spawnObjectId);
+	if(obj == nil) return;
+
+	GameFile *file = GetOrCreateCustomIplFile();
+	int maxIdx = GetMaxIplIndexForFile(file);
+
+	ObjectInst *pasted[4];
+	int numPasted = 0;
+
+	// Resolve LOD object
+	int lodObjId = -1;
+	if(isSA()){
+		if(spawnObjectId < LOD_LOOKUP_SIZE)
+			lodObjId = lodLookup[spawnObjectId];
+	}else{
+		if(obj->m_relatedModel && !obj->m_isBigBuilding)
+			lodObjId = obj->m_relatedModel->m_id;
+	}
+
+	// Create LOD first (if exists)
+	ObjectInst *lodInst = nil;
+	if(lodObjId >= 0 && GetObjectDef(lodObjId)){
+		lodInst = createSpawnedInstance(lodObjId, position, file, ++maxIdx);
+		pasted[numPasted++] = lodInst;
+	}
+
+	// Create HD instance
+	ObjectInst *hdInst = createSpawnedInstance(spawnObjectId, position, file, ++maxIdx);
+	if(lodInst)
+		finalizeLinkedLod(hdInst, lodInst);
+
+	ClearSelection();
+	hdInst->Select();
+	pasted[numPasted++] = hdInst;
+
+	UndoRecordPaste(pasted, numPasted);
+	Toast(TOAST_SPAWN, "Placed %s", obj->m_name);
+}
+
+void
+SpawnExitPlaceMode(void)
+{
+	gPlaceMode = false;
+	spawnObjectId = -1;
+}
+
+// Object Browser categories
+static int categoryLookup[NUMOBJECTDEFS];
+
+void
+InitObjectCategories(void)
+{
+	memset(categoryLookup, -1, sizeof(categoryLookup));
+	for(int i = 0; objCategoryMap[i][0] >= 0; i++){
+		int id = objCategoryMap[i][0];
+		int cat = objCategoryMap[i][1];
+		if(id < NUMOBJECTDEFS && categoryLookup[id] < 0)
+			categoryLookup[id] = cat;
+	}
+}
+
+int
+GetObjectCategory(int modelId)
+{
+	if(modelId < 0 || modelId >= NUMOBJECTDEFS) return -1;
+	return categoryLookup[modelId];
+}
+
+// Favourites
+static bool favourites[NUMOBJECTDEFS];
+
+void
+LoadFavourites(void)
+{
+	memset(favourites, 0, sizeof(favourites));
+	FILE *f = fopen("favourites.txt", "r");
+	if(f == nil) return;
+	char line[64];
+	while(fgets(line, sizeof(line), f)){
+		int id = atoi(line);
+		if(id >= 0 && id < NUMOBJECTDEFS)
+			favourites[id] = true;
+	}
+	fclose(f);
+}
+
+void
+SaveFavourites(void)
+{
+	FILE *f = fopen("favourites.txt", "w");
+	if(f == nil) return;
+	for(int i = 0; i < NUMOBJECTDEFS; i++)
+		if(favourites[i])
+			fprintf(f, "%d\n", i);
+	fclose(f);
+}
+
+bool
+IsFavourite(int id)
+{
+	if(id < 0 || id >= NUMOBJECTDEFS) return false;
+	return favourites[id];
+}
+
+void
+ToggleFavourite(int id)
+{
+	if(id < 0 || id >= NUMOBJECTDEFS) return;
+	favourites[id] = !favourites[id];
+	SaveFavourites();
+}
+
+// 3D Preview — uses Scene camera with swapped framebuffers (librw pattern)
+rw::Texture *gPreviewTexture;
+static rw::Raster *previewColorRaster;
+static rw::Raster *previewDepthRaster;
+static bool previewInited;
+static bool previewInitFailed;
+
+#define PREVIEW_SIZE 256
+
+void
+InitPreviewRenderer(void)
+{
+	if(previewInited || previewInitFailed) return;
+
+	previewColorRaster = rw::Raster::create(PREVIEW_SIZE, PREVIEW_SIZE, 0, rw::Raster::CAMERATEXTURE);
+	if(previewColorRaster == nil){ previewInitFailed = true; return; }
+	previewDepthRaster = rw::Raster::create(PREVIEW_SIZE, PREVIEW_SIZE, 0, rw::Raster::ZBUFFER);
+	if(previewDepthRaster == nil){ previewInitFailed = true; return; }
+	gPreviewTexture = rw::Texture::create(previewColorRaster);
+	gPreviewTexture->setFilter(rw::Texture::LINEAR);
+	previewInited = true;
+}
+
+void
+ShutdownPreviewRenderer(void)
+{
+	if(gPreviewTexture){
+		gPreviewTexture->raster = nil;
+		gPreviewTexture->destroy();
+		gPreviewTexture = nil;
+	}
+	if(previewColorRaster){ previewColorRaster->destroy(); previewColorRaster = nil; }
+	if(previewDepthRaster){ previewDepthRaster->destroy(); previewDepthRaster = nil; }
+	previewInited = false;
+}
+
+void
+RenderPreviewObject(int objectId)
+{
+	if(previewInitFailed) return;
+	if(objectId < 0) return;
+	if(!previewInited) InitPreviewRenderer();
+	if(!previewInited) return;
+
+	ObjectDef *obj = GetObjectDef(objectId);
+	if(obj == nil) return;
+	if(!obj->IsLoaded()){
+		RequestObject(objectId);
+		return;
+	}
+
+	// Clone model for preview (persistent, rebuilt when selection changes)
+	static rw::Atomic *previewAtm = nil;
+	static rw::Clump *previewClump = nil;
+	static int previewCloneId = -1;
+
+	if(previewCloneId != objectId){
+		if(previewAtm){ previewAtm->getFrame()->destroy(); previewAtm->destroy(); previewAtm = nil; }
+		if(previewClump){ previewClump->getFrame()->destroy(); previewClump->destroy(); previewClump = nil; }
+		previewCloneId = objectId;
+
+		if(obj->m_type == ObjectDef::ATOMIC && obj->m_atomics[0]){
+			previewAtm = obj->m_atomics[0]->clone();
+			rw::Frame *f = rw::Frame::create();
+			previewAtm->setFrame(f);
+		}else if(obj->m_type == ObjectDef::CLUMP && obj->m_clump){
+			previewClump = obj->m_clump->clone();
+		}
+	}
+	if(previewAtm == nil && previewClump == nil) return;
+
+	// Camera setup
+	float radius = 5.0f;
+	if(obj->m_colModel)
+		radius = obj->m_colModel->boundingSphere.radius;
+	if(radius < 1.0f) radius = 1.0f;
+	float dist = radius * 2.5f;
+
+	static float angle = 0.0f;
+	angle += 0.01f;
+	if(angle > 2.0f * 3.14159f) angle -= 2.0f * 3.14159f;
+
+	rw::V3d target = { 0.0f, 0.0f, 0.0f };
+	if(obj->m_colModel)
+		target = obj->m_colModel->boundingSphere.center;
+	rw::V3d eye = { target.x + dist*cosf(angle), target.y + dist*sinf(angle), target.z + dist*0.4f };
+	rw::V3d up = { 0.0f, 0.0f, -1.0f };  // negative Z because FBO is Y-flipped
+	rw::V3d dir = normalize(sub(target, eye));
+
+	// Use scene camera with swapped framebuffers (librw pattern)
+	rw::Camera *cam = Scene.camera;
+
+	// Save ALL camera state
+	rw::Raster *savedFB = cam->frameBuffer;
+	rw::Raster *savedZB = cam->zBuffer;
+	float savedNear = cam->nearPlane;
+	float savedFar = cam->farPlane;
+	float savedFog = cam->fogPlane;
+	rw::Frame *camFrame = cam->getFrame();
+	rw::Matrix savedMatrix = camFrame->matrix;
+
+	// Set preview camera state
+	cam->frameBuffer = previewColorRaster;
+	cam->zBuffer = previewDepthRaster;
+	cam->setNearPlane(0.1f);
+	cam->setFarPlane(1000.0f);
+	cam->fogPlane = 900.0f;
+	cam->setFOV(60.0f, 1.0f);
+	camFrame->matrix.pos = eye;
+	camFrame->matrix.lookAt(dir, up);
+	camFrame->updateObjects();
+
+	static rw::RGBA clearCol = { 40, 40, 40, 255 };
+	cam->clear(&clearCol, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
+	cam->beginUpdate();
+
+	rw::SetRenderState(rw::FOGENABLE, 0);
+	rw::SetRenderState(rw::ZTESTENABLE, 1);
+	rw::SetRenderState(rw::ZWRITEENABLE, 1);
+	pAmbient->setColor(0.7f, 0.7f, 0.7f);
+	pDirect->setColor(0.5f, 0.5f, 0.5f);
+
+	rw::Matrix ident;
+	ident.setIdentity();
+	if(previewAtm){
+		previewAtm->getFrame()->transform(&ident, rw::COMBINEREPLACE);
+		previewAtm->render();
+	}else if(previewClump){
+		previewClump->getFrame()->transform(&ident, rw::COMBINEREPLACE);
+		previewClump->render();
+	}
+
+	cam->endUpdate();
+
+	// Restore ALL camera state
+	cam->frameBuffer = savedFB;
+	cam->zBuffer = savedZB;
+	cam->setNearPlane(savedNear);
+	cam->setFarPlane(savedFar);
+	cam->fogPlane = savedFog;
+	cam->setFOV(TheCamera.m_fov, TheCamera.m_aspectRatio);
+	camFrame->matrix = savedMatrix;
+	camFrame->updateObjects();
+
+	Timecycle::SetLights();
 }
 
 // Clipboard
@@ -548,11 +1010,8 @@ PasteClipboard(void)
 		ObjectInst *newHd = cloneInstance(src, dstFile, ++maxIplIndex, offset);
 
 		// Link LOD
-		if(newLod){
-			newHd->m_lodId = newLod->m_iplIndex;
-			newHd->m_lod = newLod;
-			newLod->m_numChildren = 1;
-		}
+		if(newLod)
+			finalizeLinkedLod(newHd, newLod);
 
 		newHd->Select();
 		pasted[numPasted++] = newHd;
@@ -718,4 +1177,3 @@ InsertInstIntoSectors(ObjectInst *inst)
 			list->InsertItem(inst);
 		}
 }
-
