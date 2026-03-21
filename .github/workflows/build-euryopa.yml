@@ -46,7 +46,7 @@ jobs:
       - name: Build librw
         shell: cmd
         working-directory: librw/build
-        run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /m
+        run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librw /m
 
       - name: Generate ariane project files
         shell: cmd
@@ -61,5 +61,5 @@ jobs:
       - name: Upload euryopa.exe
         uses: actions/upload-artifact@v4
         with:
-          name: euryopa-windows-d3d9
-          path: ariane/bin/win-amd64-d3d9/Release/euryopa.exe
+          name: ariane-windows-d3d9
+          path: ariane/bin/win-amd64-d3d9/Release/ariane.exe

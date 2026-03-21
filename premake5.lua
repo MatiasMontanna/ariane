@@ -270,6 +270,7 @@ project "vcsview"
 
 project "euryopa"
 	kind "WindowedApp"
+	targetname "ariane"
 	characterset ("MBCS")
 	filter { "system:windows" }
 		entrypoint("WinMainCRTStartup")
