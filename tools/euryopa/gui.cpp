@@ -1475,7 +1475,6 @@ static void
 selectBrowserObject(int i)
 {
 	SetSpawnObjectId(i);
-	gPlaceMode = true;
 	RequestObject(i);
 	int lodId = GetLodForObject(i);
 	if(lodId >= 0) RequestObject(lodId);
@@ -1825,8 +1824,17 @@ gui(void)
 	if(CPad::IsKeyJustDown('E')) showEditorWindow ^= 1;
 	if(showEditorWindow) uiEditorWindow();
 
-	if(CPad::IsKeyJustDown('B')) showBrowserWindow ^= 1;
-	if(showBrowserWindow) uiBrowserWindow();
+	if(CPad::IsKeyJustDown('B')){
+		showBrowserWindow ^= 1;
+		if(!showBrowserWindow && gPlaceMode)
+			SpawnExitPlaceMode();
+	}
+	if(showBrowserWindow){
+		uiBrowserWindow();
+		// ImGui X button can set showBrowserWindow to false
+		if(!showBrowserWindow && gPlaceMode)
+			SpawnExitPlaceMode();
+	}
 
 	// Escape exits place mode
 	if(CPad::IsKeyJustDown(KEY_ESC) && gPlaceMode)

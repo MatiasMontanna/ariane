@@ -485,6 +485,9 @@ SpawnPlaceObject(rw::V3d position)
 
 	UndoRecordPaste(pasted, numPasted);
 	Toast(TOAST_SPAWN, "Placed %s", obj->m_name);
+
+	// Single-place: exit place mode after placing one object
+	SpawnExitPlaceMode();
 }
 
 void
