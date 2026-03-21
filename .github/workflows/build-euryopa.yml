@@ -48,6 +48,12 @@ jobs:
         working-directory: librw/build
         run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librw /m
 
+      - name: Patch librw imgui missing include
+        shell: pwsh
+        run: |
+          $file = "librw/skeleton/imgui/imgui_impl_rw.cpp"
+          (Get-Content $file) -replace '#include <rw.h>', "#include <rw.h>`n#ifdef RW_D3D9`n#include <d3d9.h>`n#endif" | Set-Content $file
+
       - name: Generate ariane project files
         shell: cmd
         working-directory: ariane
