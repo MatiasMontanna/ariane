@@ -3,6 +3,10 @@
 #include <CWorld.h>
 #include <cstdio>
 
+#if defined(GTASA)
+#include <CGame.h>
+#endif
+
 using namespace plugin;
 
 class ArianeTeleport {
@@ -19,18 +23,20 @@ public:
 			if(!f){ done = true; return; }
 
 			float x, y, z, heading;
-			if(fscanf(f, "%f %f %f %f", &x, &y, &z, &heading) == 4){
-				fclose(f);
-				remove("ariane_teleport.txt");
+			int area = 0;
+			int n = fscanf(f, "%f %f %f %f %d", &x, &y, &z, &heading, &area);
+			fclose(f);
+			remove("ariane_teleport.txt");
+
+			if(n >= 4){
 #if defined(GTASA)
+				CGame::currArea = area;
+				player->m_nAreaCode = area;
 				player->Teleport(CVector(x, y, z), false);
 #else
 				player->Teleport(CVector(x, y, z));
 #endif
 				player->SetHeading(heading);
-			} else {
-				fclose(f);
-				remove("ariane_teleport.txt");
 			}
 			done = true;
 		};

@@ -270,7 +270,7 @@ testInGame(void)
 	// Write teleport file in game root (CWD)
 	FILE *f = fopen("ariane_teleport.txt", "w");
 	if(f){
-		fprintf(f, "%f %f %f %f\n", pos.x, pos.y, pos.z, heading);
+		fprintf(f, "%f %f %f %f %d\n", pos.x, pos.y, pos.z, heading, currentArea);
 		fclose(f);
 	} else {
 		Toast(TOAST_SAVE, "Failed to write teleport file");
