@@ -8,6 +8,7 @@
 #if defined(GTASA)
 #include <CGame.h>
 #include <CTimeCycle.h>
+#include <CColStore.h>
 #include <CStreaming.h>
 #include <CIplStore.h>
 #include <CEntity.h>
@@ -168,11 +169,13 @@ public:
 					remove("ariane_reload.txt");
 
 					if(numSlots > 0){
+						CVector reloadPos = player->GetPosition();
 						for(int i = 0; i < numSlots; i++)
-							CIplStore::RemoveIpl(slots[i]);
+							CIplStore::RemoveIplAndIgnore(slots[i]);
 						for(int i = 0; i < numSlots; i++)
 							CIplStore::RequestIplAndIgnore(slots[i]);
 						CStreaming::LoadAllRequestedModels(false);
+						CColStore::EnsureCollisionIsInMemory(reloadPos);
 					}
 				}
 			}

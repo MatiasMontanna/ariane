@@ -978,7 +978,8 @@ SaveScene(const char *filename)
 
 // Save modified instances in binary streaming IPLs by patching
 // directly in the IMG archive (in-place, same file size).
-// Handles deletions (zero objectId) and moved/rotated instances.
+// Only transform/area edits are safe here; deleting binary entries would
+// require re-packing the IPL and fixing instance/Lod indices.
 void
 SaveBinaryIpls(void)
 {
@@ -1039,9 +1040,7 @@ SaveBinaryIpls(void)
 			ObjectInst *inst = patches[k].inst;
 
 			if(inst->m_isDeleted){
-				instData[idx].objectId = 0;
 				numDeleted++;
-				modified = true;
 			}else{
 				// Write back current position and rotation
 				instData[idx].position = inst->m_translation;
@@ -1069,8 +1068,10 @@ SaveBinaryIpls(void)
 		log("Patched binary IPL (image %d)\n", imgIdx & 0xFFFFFF);
 	}
 
-	if(numDeleted || numMoved)
-		log("Binary IPLs: %d deleted, %d updated\n", numDeleted, numMoved);
+	if(numDeleted)
+		log("Binary IPLs: %d delete(s) skipped (hot reload handles runtime removal only)\n", numDeleted);
+	if(numMoved)
+		log("Binary IPLs: %d updated\n", numMoved);
 }
 
 }

@@ -355,13 +355,11 @@ hotReloadIpls(void)
 		}
 	}
 
-	// --- Text IPL entities (manipulated directly in game memory) ---
+	// --- Entity deletes/moves (manipulated directly in game memory) ---
 	FILE *fe = fopen("ariane_reload_entities.txt", "w");
 	if(fe){
 		for(p = instances.first; p; p = p->next){
 			ObjectInst *inst = (ObjectInst*)p->item;
-			// Only text IPL instances
-			if(inst->m_imageIndex >= 0) continue;
 			if(!inst->m_isDirty && !inst->m_isDeleted) continue;
 
 			if(inst->m_isDeleted){
@@ -373,6 +371,9 @@ hotReloadIpls(void)
 					inst->m_origTranslation.z);
 				numEntityCmds++;
 			}else if(inst->m_isDirty){
+				// Streaming IPL moves are applied by whole-IPL reload above.
+				if(inst->m_imageIndex >= 0)
+					continue;
 				// M modelId oldX oldY oldZ newX newY newZ qx qy qz qw
 				fprintf(fe, "M %d %f %f %f %f %f %f %f %f %f %f\n",
 					inst->m_objectId,
