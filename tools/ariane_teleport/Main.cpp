@@ -161,6 +161,7 @@ ProcessEntityReload(void)
 
 					e->SetMatrix(mat);
 					CWorld::Add(e);
+					PromoteToBigBuildingIfNeeded(e);
 					e->UpdateRwFrame();
 				}
 			}
