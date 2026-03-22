@@ -50,6 +50,8 @@ ObjectInst::Init(FileObjectInstance *fi)
 	m_area = fi->area & 0xFF;
 	m_rotation = fi->rotation;
 	m_translation = fi->position;
+	m_origTranslation = fi->position;
+	m_origRotation = fi->rotation;
 	m_lodId = fi->lod;
 	UpdateMatrix();
 }

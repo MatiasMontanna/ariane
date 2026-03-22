@@ -302,6 +302,116 @@ testInGame(void)
 }
 
 static void
+hotReloadIpls(void)
+{
+	if(!isSA()){
+		Toast(TOAST_SAVE, "Hot Reload: only supported for SA");
+		return;
+	}
+
+	CPtrNode *p;
+	int numStreamingIpls = 0;
+	int numEntityCmds = 0;
+
+	// --- Streaming IPLs (binary, reloaded via CIplStore) ---
+	const char *iplNames[256];
+	int numNames = 0;
+
+	for(p = instances.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		if(inst->m_imageIndex < 0) continue;
+		if(!inst->m_isDirty && !inst->m_isDeleted) continue;
+		if(inst->m_file == nil) continue;
+
+		bool found = false;
+		for(int i = 0; i < numNames; i++){
+			if(strcmp(iplNames[i], inst->m_file->name) == 0){
+				found = true;
+				break;
+			}
+		}
+		if(!found && numNames < 256)
+			iplNames[numNames++] = inst->m_file->name;
+	}
+
+	if(numNames > 0){
+		FileLoader::SaveBinaryIpls();
+
+		FILE *f = fopen("ariane_reload.txt", "w");
+		if(f){
+			for(int i = 0; i < numNames; i++)
+				fprintf(f, "%s\n", iplNames[i]);
+			fclose(f);
+			numStreamingIpls = numNames;
+		}
+
+		// Update orig pos for streaming instances (game will have new pos after reload)
+		for(p = instances.first; p; p = p->next){
+			ObjectInst *inst = (ObjectInst*)p->item;
+			if(inst->m_imageIndex < 0) continue;
+			if(!inst->m_isDirty) continue;
+			inst->m_origTranslation = inst->m_translation;
+			inst->m_origRotation = inst->m_rotation;
+		}
+	}
+
+	// --- Text IPL entities (manipulated directly in game memory) ---
+	FILE *fe = fopen("ariane_reload_entities.txt", "w");
+	if(fe){
+		for(p = instances.first; p; p = p->next){
+			ObjectInst *inst = (ObjectInst*)p->item;
+			// Only text IPL instances
+			if(inst->m_imageIndex >= 0) continue;
+			if(!inst->m_isDirty && !inst->m_isDeleted) continue;
+
+			if(inst->m_isDeleted){
+				// D modelId oldX oldY oldZ
+				fprintf(fe, "D %d %f %f %f\n",
+					inst->m_objectId,
+					inst->m_origTranslation.x,
+					inst->m_origTranslation.y,
+					inst->m_origTranslation.z);
+				numEntityCmds++;
+			}else if(inst->m_isDirty){
+				// M modelId oldX oldY oldZ newX newY newZ qx qy qz qw
+				fprintf(fe, "M %d %f %f %f %f %f %f %f %f %f %f\n",
+					inst->m_objectId,
+					inst->m_origTranslation.x,
+					inst->m_origTranslation.y,
+					inst->m_origTranslation.z,
+					inst->m_translation.x,
+					inst->m_translation.y,
+					inst->m_translation.z,
+					inst->m_rotation.x,
+					inst->m_rotation.y,
+					inst->m_rotation.z,
+					inst->m_rotation.w);
+				numEntityCmds++;
+				// Update orig so next reload knows where the game entity now is
+				inst->m_origTranslation = inst->m_translation;
+				inst->m_origRotation = inst->m_rotation;
+			}
+		}
+		fclose(fe);
+
+		if(numEntityCmds == 0)
+			remove("ariane_reload_entities.txt");
+	}
+
+	if(numStreamingIpls == 0 && numEntityCmds == 0){
+		Toast(TOAST_SAVE, "Hot Reload: nothing to reload");
+		return;
+	}
+
+	if(numStreamingIpls > 0 && numEntityCmds > 0)
+		Toast(TOAST_SAVE, "Hot Reload: %d IPL(s) + %d entity(s)", numStreamingIpls, numEntityCmds);
+	else if(numStreamingIpls > 0)
+		Toast(TOAST_SAVE, "Hot Reload: %d streaming IPL(s)", numStreamingIpls);
+	else
+		Toast(TOAST_SAVE, "Hot Reload: %d entity(s)", numEntityCmds);
+}
+
+static void
 uiMainmenu(void)
 {
 	if(ImGui::BeginMainMenuBar()){
@@ -312,6 +422,9 @@ uiMainmenu(void)
 			}
 			if(ImGui::MenuItem("Test in Game", "Ctrl+G")){
 				testInGame();
+			}
+			if(ImGui::MenuItem("Hot Reload", "Ctrl+R")){
+				hotReloadIpls();
 			}
 			ImGui::Separator();
 			if(ImGui::MenuItem("Exit", "Alt+F4")) sk::globals.quit = 1;
@@ -1859,6 +1972,11 @@ gui(void)
 		testInGame();
 	}
 
+	// Ctrl+R to hot reload streaming IPLs in running game
+	if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('R')){
+		hotReloadIpls();
+	}
+
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('G'))
 		SnapSelectedToGround(CPad::IsShiftDown());
 
@@ -1876,7 +1994,7 @@ gui(void)
 		ImGui::End();
 	}
 
-	if(CPad::IsKeyJustDown('R')) showRenderingWindow ^= 1;
+	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('R')) showRenderingWindow ^= 1;
 	if(showRenderingWindow){
 		ImGui::Begin("Rendering", &showRenderingWindow);
 		uiRendering();

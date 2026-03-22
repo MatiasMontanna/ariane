@@ -572,6 +572,8 @@ struct ObjectInst
 	int m_highlight;	// various ways to highlight this object
 	bool m_isDeleted;	// marked for deletion (commented out in IPL)
 	bool m_isDirty;		// position/rotation was modified
+	rw::V3d m_origTranslation;	// position the game currently has (for hot reload)
+	rw::Quat m_origRotation;	// rotation the game currently has (for hot reload)
 	int m_iplIndex;		// index of this instance within its IPL file (for save)
 	int32 m_imageIndex;	// IMG directory index (for binary IPL save), -1 if text IPL
 	int m_binInstIndex;	// index within binary IPL instance array
