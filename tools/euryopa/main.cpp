@@ -435,8 +435,6 @@ InitRW(void)
 
 	RenderInit();
 
-	UpdaterCheckForUpdate();
-
 	return true;
 }
 
