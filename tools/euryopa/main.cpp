@@ -1,7 +1,6 @@
 #include "euryopa.h"
 #include "version.h"
 #include "updater.h"
-#include "telemetry.h"
 #include "modloader.h"
 
 //#define XINPUT
