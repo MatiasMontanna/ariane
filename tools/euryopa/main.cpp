@@ -1,7 +1,5 @@
 #include "euryopa.h"
 #include "version.h"
-#include "updater.h"
-#include "telemetry.h"
 #include "modloader.h"
 
 //#define XINPUT
@@ -435,10 +433,7 @@ InitRW(void)
 	ImGui::StyleColorsClassic();
 
 	RenderInit();
-
-	UpdaterCheckForUpdate();
-	TelemetrySendPing();
-
+	
 	return true;
 }
 
