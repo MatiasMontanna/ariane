@@ -28,8 +28,6 @@ jobs:
         with:
           repository: Southland-FR/librw
           path: librw
-          # If this repo is private, add a PAT secret:
-          # token: ${{ secrets.LIBRW_TOKEN }}
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -98,7 +96,6 @@ jobs:
           path: ariane/bin/win-amd64-d3d9/Release/ariane.exe
 
       - name: Create GitHub Release
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
