@@ -7,6 +7,8 @@
 #ifdef _WIN32
 #include <Psapi.h>
 #pragma comment(lib, "Psapi.lib")
+#else
+#include <dirent.h>
 #endif
 
 static bool showDemoWindow;
@@ -20,6 +22,7 @@ static bool showViewWindow;
 static bool showRenderingWindow;
 static bool showBrowserWindow;
 static bool showDiffWindow;
+static bool showToolsWindow = true;
 
 static void loadSaveSettings(void);
 static void saveSaveSettings(void);
@@ -1224,7 +1227,9 @@ hotReloadIpls(void)
 }
 
 static bool gOpenExportPrefab = false;
+static bool gOpenImportPrefab = false;
 static void uiExportPrefabPopup(void);
+static void uiImportPrefabPopup(void);
 
 static void
 uiMainmenu(void)
@@ -1251,6 +1256,9 @@ uiMainmenu(void)
 			if(ImGui::MenuItem("Export Prefab...", "Ctrl+Shift+E", false, selection.first != nil)){
 				gOpenExportPrefab = true;
 			}
+			if(ImGui::MenuItem("Import Prefab...", "Ctrl+Shift+I")){
+				gOpenImportPrefab = true;
+			}
 			ImGui::Separator();
 			if(ImGui::MenuItem("Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
@@ -1259,6 +1267,7 @@ uiMainmenu(void)
 			if(ImGui::MenuItem("Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
 			if(ImGui::MenuItem("View", "V", showViewWindow)) { showViewWindow ^= 1; }
 			if(ImGui::MenuItem("Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
+			if(ImGui::MenuItem("Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
 			if(ImGui::MenuItem("Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
 			if(ImGui::MenuItem("Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
 			if(ImGui::MenuItem("Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
@@ -1303,6 +1312,7 @@ uiMainmenu(void)
 		ImGui::EndMainMenuBar();
 	}
 	uiExportPrefabPopup();
+	uiImportPrefabPopup();
 }
 
 static void
@@ -1329,6 +1339,101 @@ uiExportPrefabPopup(void)
 				Toast(TOAST_SAVE, "Exported %d instance(s) to %s", exported, path);
 			else
 				Toast(TOAST_SAVE, "Failed to export prefab");
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if(ImGui::Button("Cancel", ImVec2(120, 0)))
+			ImGui::CloseCurrentPopup();
+
+		ImGui::EndPopup();
+	}
+}
+
+static void
+scanPrefabDir(const char *dir, char files[][256], int *numFiles, int maxFiles)
+{
+	*numFiles = 0;
+#ifdef _WIN32
+	char pattern[512];
+	snprintf(pattern, sizeof(pattern), "%s\\*.ariane", dir);
+	WIN32_FIND_DATAA fd;
+	HANDLE h = FindFirstFileA(pattern, &fd);
+	if(h == INVALID_HANDLE_VALUE) return;
+	do {
+		if(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && *numFiles < maxFiles){
+			strncpy(files[*numFiles], fd.cFileName, 255);
+			files[*numFiles][255] = '\0';
+			(*numFiles)++;
+		}
+	} while(FindNextFileA(h, &fd));
+	FindClose(h);
+#else
+	DIR *d = opendir(dir);
+	if(!d) return;
+	struct dirent *ent;
+	while((ent = readdir(d)) != nil){
+		if(ent->d_name[0] == '.') continue;
+		size_t len = strlen(ent->d_name);
+		if(len > 7 && strcmp(ent->d_name + len - 7, ".ariane") == 0){
+			if(*numFiles < maxFiles){
+				strncpy(files[*numFiles], ent->d_name, 255);
+				files[*numFiles][255] = '\0';
+				(*numFiles)++;
+			}
+		}
+	}
+	closedir(d);
+#endif
+}
+
+static void
+uiImportPrefabPopup(void)
+{
+	static char prefabFiles[128][256];
+	static int numPrefabFiles = 0;
+	static char manualPath[512] = "";
+	static int selectedFile = -1;
+
+	if(gOpenImportPrefab){
+		ImGui::OpenPopup("Import Prefab");
+		gOpenImportPrefab = false;
+		manualPath[0] = '\0';
+		selectedFile = -1;
+		scanPrefabDir("prefabs", prefabFiles, &numPrefabFiles, 128);
+	}
+
+	if(ImGui::BeginPopupModal("Import Prefab", nil, ImGuiWindowFlags_AlwaysAutoResize)){
+		ImGui::Text("Load prefab in front of camera");
+
+		if(numPrefabFiles > 0){
+			ImGui::Text("Available prefabs:");
+			ImGui::BeginChild("PrefabList", ImVec2(350, 150), true);
+			for(int i = 0; i < numPrefabFiles; i++){
+				if(ImGui::Selectable(prefabFiles[i], selectedFile == i))
+					selectedFile = i;
+			}
+			ImGui::EndChild();
+		}else{
+			ImGui::TextDisabled("No .ariane files found in prefabs/");
+		}
+
+		ImGui::Separator();
+		ImGui::InputText("Or path", manualPath, sizeof(manualPath));
+
+		bool canImport = selectedFile >= 0 || manualPath[0] != '\0';
+		if(ImGui::Button("Import", ImVec2(120, 0)) && canImport){
+			char path[512];
+			if(manualPath[0] != '\0')
+				strncpy(path, manualPath, sizeof(path));
+			else
+				snprintf(path, sizeof(path), "prefabs/%s", prefabFiles[selectedFile]);
+			path[sizeof(path)-1] = '\0';
+
+			int imported = ImportPrefab(path);
+			if(imported > 0)
+				Toast(TOAST_SPAWN, "Imported %d instance(s) from prefab", imported);
+			else
+				Toast(TOAST_SPAWN, "Failed to import prefab");
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::SameLine();
@@ -2320,14 +2425,6 @@ uiEditorWindow(void)
 		ImGui::TreePop();
 	}
 
-	if(ImGui::TreeNode("Placement")){
-		ImGui::Checkbox("Snap to clicked object", &gPlaceSnapToObjects);
-		ImGui::Checkbox("Snap to ground below", &gPlaceSnapToGround);
-		ImGui::TextDisabled("Object snap uses the clicked collision surface.");
-		ImGui::TextDisabled("Ground snap drops the placement point vertically as fallback.");
-		ImGui::TreePop();
-	}
-
 	if(ImGui::TreeNode("Selection")){
 		for(p = selection.first; p; p = p->next){
 			inst = (ObjectInst*)p->item;
@@ -2443,11 +2540,11 @@ uiEditorWindow(void)
 }
 
 static void
-uiInstWindow(void)
+uiToolsWindow(void)
 {
-	ImGui::Begin("Object Info", &showInstanceWindow);
+	ImGui::Begin("Tools", &showToolsWindow);
 
-	// Gizmo toolbar
+	// Gizmo
 	ImGui::Checkbox("Gizmo", &gGizmoEnabled);
 	if(gGizmoEnabled){
 		ImGui::SameLine();
@@ -2456,7 +2553,8 @@ uiInstWindow(void)
 		ImGui::SameLine();
 		if(ImGui::RadioButton("Rotate (Q)", gGizmoMode == GIZMO_ROTATE))
 			gGizmoMode = GIZMO_ROTATE;
-		ImGui::Checkbox("Snap", &gGizmoSnap);
+
+		ImGui::Checkbox("Grid Snap", &gGizmoSnap);
 		if(gGizmoSnap){
 			char buf[32];
 			ImGui::SameLine();
@@ -2492,16 +2590,34 @@ uiInstWindow(void)
 				}
 			}
 		}
-		if(gGizmoMode == GIZMO_TRANSLATE){
-			ImGui::Checkbox("Ground Follow While Dragging", &gDragFollowGround);
-			ImGui::BeginDisabled(!gDragFollowGround);
-			ImGui::Indent();
-			ImGui::Checkbox("Align To Surface While Dragging", &gDragAlignToSurface);
-			ImGui::Unindent();
-			ImGui::EndDisabled();
-		}
 	}
+
 	ImGui::Separator();
+
+	// Placement
+	ImGui::Text("Placement");
+	ImGui::Checkbox("Snap to object", &gPlaceSnapToObjects);
+	ImGui::Checkbox("Snap to ground", &gPlaceSnapToGround);
+
+	ImGui::Separator();
+
+	// Dragging
+	ImGui::Text("Dragging");
+	ImGui::Checkbox("Follow ground", &gDragFollowGround);
+	ImGui::BeginDisabled(!gDragFollowGround);
+	ImGui::Indent();
+	ImGui::Checkbox("Align to surface", &gDragAlignToSurface);
+	ImGui::Unindent();
+	ImGui::EndDisabled();
+
+	ImGui::End();
+}
+
+static void
+uiInstWindow(void)
+{
+	ImGui::Begin("Object Info", &showInstanceWindow);
+
 
 	if(selection.first){
 		ObjectInst *inst = (ObjectInst*)selection.first->item;
@@ -3010,10 +3126,13 @@ gui(void)
 
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')) gUseViewerCam = !gUseViewerCam;
 
-	// Export Prefab
+	// Prefabs
 	if(CPad::IsCtrlDown() && CPad::IsShiftDown() && CPad::IsKeyJustDown('E')){
 		if(selection.first)
 			gOpenExportPrefab = true;
+	}
+	if(CPad::IsCtrlDown() && CPad::IsShiftDown() && CPad::IsKeyJustDown('I')){
+		gOpenImportPrefab = true;
 	}
 
 	// Gizmo mode shortcuts
@@ -3080,7 +3199,10 @@ gui(void)
 		ImGui::End();
 	}
 
-	if(CPad::IsKeyJustDown('I')) showInstanceWindow ^= 1;
+	if(CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
+	if(showToolsWindow) uiToolsWindow();
+
+	if(!CPad::IsCtrlDown() && !CPad::IsShiftDown() && CPad::IsKeyJustDown('I')) showInstanceWindow ^= 1;
 	if(showInstanceWindow) uiInstWindow();
 
 	if(!CPad::IsCtrlDown() && !CPad::IsShiftDown() && CPad::IsKeyJustDown('E')) showEditorWindow ^= 1;
