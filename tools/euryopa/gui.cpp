@@ -1632,7 +1632,7 @@ uiView(void)
 		ImGui::Checkbox("Attrib Zones", &gRenderAttribZones);
 		ImGui::Unindent();
 	}
-	if(!isSA()) ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
+	ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
 	ImGui::Checkbox("Draw Car Paths", &gRenderCarPaths);
 	ImGui::Checkbox("Draw Ped Paths", &gRenderPedPaths);
 
