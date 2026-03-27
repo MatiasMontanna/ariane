@@ -303,8 +303,6 @@ Load2dEffect(char *line)
 	int n;
 
 	// no SA support for now
-	if(isSA())
-		return;
 
 	sscanf(line, "%d %f %f %f %d %d %d %d %d%n",
 		&e.id, &e.pos.x, &e.pos.y, &e.pos.z,
