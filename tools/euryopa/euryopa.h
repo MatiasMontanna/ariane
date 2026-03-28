@@ -41,6 +41,13 @@ struct ObjectInst;
 void panic(const char *fmt, ...);
 void debug(const char *fmt, ...);
 void log(const char *fmt, ...);
+bool GetEditorRootDirectory(char *dir, size_t size);
+bool BuildPath(char *dst, size_t size, const char *dir, const char *name);
+bool EnsureParentDirectoriesForPath(const char *path);
+bool GetArianeDataDirectory(char *dir, size_t size);
+bool GetArianeDataPath(char *dst, size_t size, const char *name);
+FILE *fopenArianeDataRead(const char *name, const char *legacyName = nil);
+FILE *fopenArianeDataWrite(const char *name);
 void setHotReloadTracePath(const char *path);
 void hotReloadTrace(const char *fmt, ...);
 void addToLogWindow(const char *fmt, va_list args);
@@ -399,6 +406,7 @@ enum DiffFlags {
 };
 int GetInstanceDiffFlags(ObjectInst *inst);
 void StampChangeSeq(ObjectInst *inst);
+uint32 GetLatestChangeSeq(void);
 
 // Object Spawner
 extern bool gPlaceMode;
@@ -433,6 +441,7 @@ void RefreshCdImageMappings(void);
 uint8 *ReadFileFromImage(int i, int *size);
 GameFile *GetGameFileFromImage(int i);
 const char *GetCdImageLogicalName(int i);
+const char *GetCdImageSourcePath(int i);
 bool WriteFileToImage(int i, uint8 *data, int size);
 bool BuildModloaderImageEntryExportPath(int i, char *dst, size_t size);
 void RequestObject(int id);
@@ -838,6 +847,16 @@ struct BinaryIplSaveResult
 	int numFailedFiles;
 };
 
+struct AutomaticBackupResult
+{
+	bool createdSnapshot;
+	bool hadWarnings;
+	int numTextFiles;
+	int numBinaryFiles;
+	int numErrors;
+	char snapshotPath[1024];
+};
+
 extern GameFile *currentFile;
 
 struct DatDesc
@@ -856,6 +875,7 @@ void LoadCollisionFile(const char *path);
 rw::TexDictionary *LoadTexDictionary(const char *path);
 BinaryIplSaveResult SaveScene(const char *filename);
 BinaryIplSaveResult SaveBinaryIpls(void);
+AutomaticBackupResult CreateAutomaticBackup(const char *rootDir, int keepCount);
 }
 
 // Rendering
