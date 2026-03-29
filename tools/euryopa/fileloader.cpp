@@ -442,6 +442,7 @@ LoadObjectInstance(char *line)
 		tmpInsts.push_back(inst);
 
 	inst->m_file = currentFile;
+	SetInstIplFilterKey(inst, currentFile ? currentFile->name : nil);
 }
 
 void
@@ -623,14 +624,14 @@ SetupRelatedIPLs(const char *path, int instArraySlot)
 	len = strlen(scenename);
 
 	for(i = 0; i < NUMIPLS; i++){
-		ipl = GetIplDef(i);
-		if(ipl == nil)
-			continue;
-		if(rw::strncmp_ci(scenename, ipl->name, len) == 0){
-			ipl->instArraySlot = instArraySlot;
-			LoadIpl(i);
+			ipl = GetIplDef(i);
+			if(ipl == nil)
+				continue;
+			if(rw::strncmp_ci(scenename, ipl->name, len) == 0){
+				ipl->instArraySlot = instArraySlot;
+				LoadIpl(i, path);
+			}
 		}
-	}
 }
 
 // SA only

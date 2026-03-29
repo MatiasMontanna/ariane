@@ -30,6 +30,7 @@ static bool showBrowserWindow;
 static bool showDiffWindow;
 static bool showToolsWindow = true;
 static bool gBrowserIdeListDirty = true;
+static char gIplFilterSearch[128];
 
 static bool gAutomaticBackupsEnabled = true;
 static int gAutomaticBackupIntervalSeconds = 300;
@@ -1456,6 +1457,43 @@ pathFilename(const char *path)
 }
 
 static bool
+pathsEqualCiNormalized(const char *a, const char *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	while(*a || *b){
+		char ca = *a++;
+		char cb = *b++;
+		if(ca == '\\') ca = '/';
+		if(cb == '\\') cb = '/';
+		if(ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
+		if(cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
+		if(ca != cb)
+			return false;
+	}
+	return true;
+}
+
+static bool
+pathContainsModloaderDir(const char *path)
+{
+	if(path == nil || path[0] == '\0')
+		return false;
+	char normalized[1024];
+	size_t i = 0;
+	for(; path[i] && i < sizeof(normalized)-1; i++){
+		char c = path[i];
+		if(c == '\\') c = '/';
+		if(c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+		normalized[i] = c;
+	}
+	normalized[i] = '\0';
+	return strstr(normalized, "/modloader/") != nil ||
+	       strcmp(normalized, "modloader") == 0 ||
+	       strncmp(normalized, "modloader/", 10) == 0;
+}
+
+static bool
 pickFileDialog(char *dst, size_t size, const char *expectedExt)
 {
 	if(dst == nil || size == 0)
@@ -2216,6 +2254,7 @@ spawnCustomImportedObject(int objectId)
 	inst->m_imageIndex = -1;
 	inst->m_binInstIndex = -1;
 	inst->m_iplIndex = maxIplIndex + 1;
+	SetInstIplFilterKey(inst, file ? file->name : nil);
 	inst->m_isAdded = true;
 	inst->m_isDirty = true;
 	inst->m_savedStateValid = false;
@@ -2607,12 +2646,23 @@ finalizeCustomImport(void)
 	ModloaderInit();
 	const char *winningDff = ModloaderFindOverride(gCustomImport.modelName, "dff");
 	const char *winningTxd = ModloaderFindOverride(gCustomImport.txdName, "txd");
-	if(winningDff == nil || strcmp(winningDff, dffTarget) != 0 ||
-	   winningTxd == nil || strcmp(winningTxd, txdTarget) != 0){
+	if(winningDff == nil || !pathsEqualCiNormalized(winningDff, dffTarget) ||
+	   winningTxd == nil || !pathsEqualCiNormalized(winningTxd, txdTarget)){
 		rollbackTouchedFiles(rollbackEntries);
 		ModloaderInit();
-		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
-		         "Another mod shadows the imported DFF/TXD names. Rename the model/TXD and retry.");
+		const char *shownDff = winningDff ? winningDff : "<none>";
+		const char *shownTxd = winningTxd ? winningTxd : "<none>";
+		bool sourceInModloader = pathContainsModloaderDir(gCustomImport.dffSource) ||
+		                        pathContainsModloaderDir(gCustomImport.txdSource);
+		if(sourceInModloader)
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+			         "Import is shadowed before Ariane wins override resolution. DFF winner: %s | TXD winner: %s. "
+			         "Tip: importing files from another modloader folder can cause this.",
+			         shownDff, shownTxd);
+		else
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+			         "Import is shadowed before Ariane wins override resolution. DFF winner: %s | TXD winner: %s.",
+			         shownDff, shownTxd);
 		return false;
 	}
 
@@ -3173,6 +3223,50 @@ uiView(void)
 	ImGui::Checkbox("Render all Timed Objects", &gNoTimeCull);
 	if(params.numAreas)
 		ImGui::Checkbox("Render all Areas", &gNoAreaCull);
+
+	ImGui::Separator();
+	ImGui::Text("IPL Visibility");
+	RefreshIplVisibilityEntries();
+
+	int numIpls = GetIplVisibilityEntryCount();
+	if(numIpls == 0){
+		ImGui::TextDisabled("No loaded IPLs");
+		return;
+	}
+
+	int numVisible = 0;
+	for(int i = 0; i < numIpls; i++)
+		if(GetIplVisibilityEntryVisible(i))
+			numVisible++;
+	ImGui::Text("%d visible / %d total", numVisible, numIpls);
+	ImGui::InputTextWithHint("##ipl_filter_search", "Search IPLs", gIplFilterSearch, sizeof(gIplFilterSearch));
+	if(ImGui::Button("Show All"))
+		SetAllIplVisibilityEntries(true);
+	ImGui::SameLine();
+	if(ImGui::Button("Hide All"))
+		SetAllIplVisibilityEntries(false);
+
+	float listHeight = ImGui::GetContentRegionAvail().y;
+	if(listHeight < 220.0f)
+		listHeight = 220.0f;
+	ImGui::BeginChild("##ipl_visibility_list", ImVec2(0, listHeight), true);
+	for(int i = 0; i < numIpls; i++){
+		const char *name = GetIplVisibilityEntryName(i);
+		if(gIplFilterSearch[0] != '\0' && ImStristr(name, nil, gIplFilterSearch, nil) == nil)
+			continue;
+
+		bool visible = GetIplVisibilityEntryVisible(i);
+		ImGui::PushID(i);
+		if(ImGui::SmallButton("Only"))
+			ShowOnlyIplVisibilityEntry(i);
+		ImGui::SameLine();
+		if(ImGui::Checkbox("##visible", &visible))
+			SetIplVisibilityEntryVisible(i, visible);
+		ImGui::SameLine();
+		ImGui::TextUnformatted(name);
+		ImGui::PopID();
+	}
+	ImGui::EndChild();
 }
 
 static void
@@ -4991,6 +5085,7 @@ gui(void)
 
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('V')) showViewWindow ^= 1;
 	if(showViewWindow){
+		ImGui::SetNextWindowSize(ImVec2(460.0f, 640.0f), ImGuiCond_FirstUseEver);
 		ImGui::Begin("View", &showViewWindow);
 		uiView();
 		ImGui::End();
