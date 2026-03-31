@@ -22,6 +22,7 @@ rw::EngineOpenParams engineOpenParams;
 rw::Light *pAmbient, *pDirect;
 rw::Texture *whiteTex;
 static char gHotReloadTracePath[1024];
+static char gImGuiIniPath[1024];
 
 static bool
 EnsureDirectoryTree(const char *path)
@@ -132,6 +133,18 @@ BuildPath(char *dst, size_t size, const char *dir, const char *name)
 	const char *sep = (dir[len-1] == '/') ? "" : "/";
 #endif
 	return snprintf(dst, size, "%s%s%s", dir, sep, name) < (int)size;
+}
+
+static bool
+SetEditorWorkingDirectory(void)
+{
+#ifdef _WIN32
+	char rootDir[1024];
+	return GetEditorRootDirectory(rootDir, sizeof(rootDir)) &&
+	       SetCurrentDirectoryA(rootDir) != 0;
+#else
+	return true;
+#endif
 }
 
 bool
@@ -347,16 +360,19 @@ SyncEditorInputState(void)
 	CPad::tempKeystates[KEY_LALT] = isVirtualKeyDown(VK_LMENU);
 	CPad::tempKeystates[KEY_RALT] = isVirtualKeyDown(VK_RMENU);
 
-	CPad::tempMouseState.btns =
+	uint32 physicalMouseBtns =
 		(isVirtualKeyDown(VK_LBUTTON) ? 1 : 0) |
 		(isVirtualKeyDown(VK_MBUTTON) ? 2 : 0) |
 		(isVirtualKeyDown(VK_RBUTTON) ? 4 : 0);
+	CPad::tempMouseState.btns = physicalMouseBtns;
 
 	if(ImGui::GetCurrentContext()){
 		ImGuiIO &io = ImGui::GetIO();
-		io.MouseDown[0] = !!(CPad::tempMouseState.btns & 1);
-		io.MouseDown[1] = !!(CPad::tempMouseState.btns & 4);
-		io.MouseDown[2] = !!(CPad::tempMouseState.btns & 2);
+		io.MouseDown[0] = !!(physicalMouseBtns & 1);
+		io.MouseDown[1] = !!(physicalMouseBtns & 4);
+		io.MouseDown[2] = !!(physicalMouseBtns & 2);
+		if(io.WantCaptureMouse || ImGuizmo::IsOver() || gGizmoHovered || gGizmoUsing)
+			CPad::tempMouseState.btns = 0;
 		if(ImGui::IsKeyDown(ImGuiKey_LeftShift) != (CPad::tempKeystates[KEY_LSHIFT] != 0))
 			io.AddKeyEvent(ImGuiKey_LeftShift, CPad::tempKeystates[KEY_LSHIFT] != 0);
 		if(ImGui::IsKeyDown(ImGuiKey_RightShift) != (CPad::tempKeystates[KEY_RSHIFT] != 0))
@@ -470,6 +486,9 @@ Init(void)
 	sk::globals.width = 1280;
 	sk::globals.height = 800;
 	sk::globals.quit = 0;
+
+	if(!SetEditorWorkingDirectory())
+		debug("warning: couldn't set working directory to editor root\n");
 }
 
 bool
@@ -583,6 +602,12 @@ InitRW(void)
 	Scene.world->addCamera(TheCamera.m_rwcam_viewer);
 
 	ImGui_ImplRW_Init();
+	char rootDir[1024];
+	if(GetEditorRootDirectory(rootDir, sizeof(rootDir)) &&
+	   BuildPath(gImGuiIniPath, sizeof(gImGuiIniPath), rootDir, "imgui.ini")){
+		ImGuiIO &io = ImGui::GetIO();
+		io.IniFilename = gImGuiIniPath;
+	}
 	ImGui::StyleColorsClassic();
 
 	RenderInit();
