@@ -5,6 +5,7 @@
 #include "object_categories.h"
 #include "telemetry.h"
 #include "updater.h"
+#include "icons.h"
 #include <string>
 #include <vector>
 
@@ -29,6 +30,7 @@ static bool showRenderingWindow;
 static bool showBrowserWindow;
 static bool showDiffWindow;
 static bool showToolsWindow = true;
+static bool gSaNodeJustSelected;
 static bool gBrowserIdeListDirty = true;
 static char gIplFilterSearch[128];
 
@@ -2301,51 +2303,58 @@ static void
 uiMainmenu(void)
 {
 	if(ImGui::BeginMainMenuBar()){
-		if(ImGui::BeginMenu("File")){
-			if(ImGui::MenuItem("Save All IPLs", "Ctrl+S")){
+		if(ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " File")){
+			if(ImGui::MenuItem(ICON_FA_FLOPPY_DISK " Save All IPLs", "Ctrl+S")){
 				if(saveAllIpls())
 					Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
 			}
-			if(ImGui::MenuItem("Test in Game", "Ctrl+G")){
+			ImGui::SetItemTooltip("Saves all modified objects in their respective placement files (.ipl).");
+			if(ImGui::MenuItem(ICON_FA_GAMEPAD " Test in Game", "Ctrl+G")){
 				testInGame();
 			}
+			ImGui::SetItemTooltip("Launches your game and spawns you to the current camera position.\nRequires ariane.asi installed in your game folder.");
 			if(ImGui::MenuItem("Save to Modloader", nil,
 			                   gSaveDestination == SAVE_DESTINATION_MODLOADER)){
 				gSaveDestination = gSaveDestination == SAVE_DESTINATION_MODLOADER ?
 					SAVE_DESTINATION_ORIGINAL_FILES : SAVE_DESTINATION_MODLOADER;
 				saveSaveSettings();
 			}
-			if(ImGui::MenuItem("Hot Reload", "Ctrl+R")){
+			ImGui::SetItemTooltip("When enabled, saves go to modloader/Ariane/ instead of\noverwriting original game files.");
+			if(ImGui::MenuItem(ICON_FA_BOLT " Hot Reload", "Ctrl+R")){
 				hotReloadIpls();
 			}
+			ImGui::SetItemTooltip("Instantly apply your changes in a running SA game without restarting.\nRequires ariane.asi.");
 			ImGui::Separator();
-			if(ImGui::MenuItem("Export Prefab...", "Ctrl+Shift+E", false, selection.first != nil)){
+			if(ImGui::MenuItem(ICON_FA_FILE_EXPORT " Export Prefab...", "Ctrl+Shift+E", false, selection.first != nil)){
 				gOpenExportPrefab = true;
 			}
-			if(ImGui::MenuItem("Import Prefab...", "Ctrl+Shift+I")){
+			ImGui::SetItemTooltip("Saves the selected objects as a reusable prefab file (.ariane)\nthat you can import later or share.");
+			if(ImGui::MenuItem(ICON_FA_FILE_IMPORT " Import Prefab...", "Ctrl+Shift+I")){
 				gOpenImportPrefab = true;
 			}
-			if(ImGui::MenuItem("Import Custom Object...")){
+			ImGui::SetItemTooltip("Loads a previously exported prefab file and places those\nobjects into the current map.");
+			if(ImGui::MenuItem(ICON_FA_CUBE " Import Custom Object...")){
 				beginEmptyCustomImport();
 			}
+			ImGui::SetItemTooltip("Import a custom DFF/TXD into the editor as a new placeable object.\nAutomatically registers it in your game files, ready to use in game.");
 			ImGui::Separator();
-			if(ImGui::MenuItem("Exit", "Alt+F4")) sk::globals.quit = 1;
+			if(ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
 		}
-		if(ImGui::BeginMenu("Window")){
-			if(ImGui::MenuItem("Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
-			if(ImGui::MenuItem("View", "V", showViewWindow)) { showViewWindow ^= 1; }
-			if(ImGui::MenuItem("Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
-			if(ImGui::MenuItem("Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
-			if(ImGui::MenuItem("Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
-			if(ImGui::MenuItem("Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
-			if(ImGui::MenuItem("Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
-			if(ImGui::MenuItem("Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
-			if(ImGui::MenuItem("Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
+		if(ImGui::BeginMenu(ICON_FA_WINDOW_MAXIMIZE " Window")){
+			if(ImGui::MenuItem(ICON_FA_CLOUD_SUN " Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_EYE " View", "V", showViewWindow)) { showViewWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_PAINTBRUSH " Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_WRENCH " Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_CIRCLE_INFO " Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_PEN " Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_MAGNIFYING_GLASS " Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_CODE_COMPARE " Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_LIST " Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
 			if(ImGui::MenuItem("Demo ", nil, showDemoWindow)) { showDemoWindow ^= 1; }
-			if(ImGui::MenuItem("Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_CIRCLE_QUESTION " Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
 			ImGui::Separator();
-			if(ImGui::BeginMenu("Notifications")){
+			if(ImGui::BeginMenu(ICON_FA_BELL " Notifications")){
 				uiNotificationSettings();
 				ImGui::EndMenu();
 			}
@@ -2995,7 +3004,7 @@ uiCustomImportPopup(void)
 static void
 uiHelpWindow(void)
 {
-	ImGui::Begin("Help", &showHelpWindow);
+	ImGui::Begin(ICON_FA_CIRCLE_QUESTION " Help", &showHelpWindow);
 
 	ImGui::BulletText("Camera controls:\n"
 		"LMB: first person look around\n"
@@ -3016,7 +3025,8 @@ uiHelpWindow(void)
 	ImGui::BulletText("Use the filter in the instance list to find instances by name.");
 	ImGui::Separator();
 	ImGui::BulletText("Gizmo: W = Translate, Q = Rotate\n"
-		"Select an object to manipulate it with the gizmo.");
+		"Select an object or SA path node to manipulate it.\n"
+		"SA path nodes use translate only.");
 	ImGui::BulletText("Delete/Backspace: delete selected building(s)\n"
 		"Deleting also removes linked LOD instances.");
 	ImGui::BulletText("Ctrl+C: Copy selected building(s)\n"
@@ -3029,18 +3039,6 @@ uiHelpWindow(void)
 		"Click in 3D view to place selected object.\n"
 		"RMB or Escape to exit place mode.");
 	ImGui::Separator();
-	if(ImGui::CollapsingHeader("Privacy & Telemetry")){
-		bool telemetryEnabled = TelemetryIsEnabled();
-		if(ImGui::Checkbox("Anonymous telemetry", &telemetryEnabled)){
-			TelemetrySetEnabled(telemetryEnabled);
-			if(telemetryEnabled){
-				TelemetrySendPing();
-				Toast(TOAST_SAVE, "Anonymous telemetry enabled");
-			}else
-				Toast(TOAST_SAVE, "Anonymous telemetry disabled");
-		}
-		ImGui::TextDisabled("Enabled by default. Disable if you do not want usage pings.");
-	}
 
 	if(ImGui::CollapsingHeader("Dear ImGUI help")){
 		ImGui::ShowUserGuide();
@@ -3193,9 +3191,23 @@ uiView(void)
 		ImGui::Checkbox("Attrib Zones", &gRenderAttribZones);
 		ImGui::Unindent();
 	}
+<<<<<<< HEAD
 	ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
 	ImGui::Checkbox("Draw Car Paths", &gRenderCarPaths);
 	ImGui::Checkbox("Draw Ped Paths", &gRenderPedPaths);
+=======
+	if(!isSA()) ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
+	ImGui::SeparatorText("Legacy Paths");
+	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
+	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);
+	if(isSA()){
+		ImGui::SeparatorText("San Andreas Streamed Paths");
+		ImGui::Checkbox("Draw SA Car Paths", &gRenderSaCarPaths);
+		ImGui::Checkbox("Draw SA Ped Paths", &gRenderSaPedPaths);
+		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
+		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
+	}
+>>>>>>> remotes/upstream/master
 
 
 	ImGui::Checkbox("Draw Water", &gRenderWater);
@@ -3483,9 +3495,11 @@ uiPathInfo(ObjectInst *inst)
 		ObjectDef *obj;
 		obj = GetObjectDef(inst->m_objectId);
 
+		ImGui::TextDisabled("Legacy object-attached path patches");
+
 		if(obj->m_carPathIndex >= 0){
 			PathNode *nd = Path::GetCarNode(obj->m_carPathIndex,0);
-			ImGui::Text(nd->water ? "WaterPath" : "CarPath");
+			ImGui::Text(nd->water ? "Legacy Water Path" : "Legacy Car Path");
 			if(ImGui::BeginTable("Nodes", uiNumCarPathColumns(), ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 				uiCarPathHeader();
 				for(int i = 0; nd = Path::GetCarNode(obj->m_carPathIndex,i); i++){
@@ -3496,7 +3510,7 @@ uiPathInfo(ObjectInst *inst)
 			}
 		}
 		if(obj->m_pedPathIndex >= 0){
-			ImGui::Text("Ped Path");
+			ImGui::Text("Legacy Ped Path");
 			PathNode *nd;
 			if(ImGui::BeginTable("Nodes", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 				uiPedPathHeader();
@@ -3510,10 +3524,11 @@ uiPathInfo(ObjectInst *inst)
 	}else if(Path::selectedNode && !Path::selectedNode->isDetached()){
 		ObjectDef *obj = GetObjectDef(Path::selectedNode->objId);
 		ImGui::Text("Object %s", obj->m_name);
+		ImGui::TextDisabled("Legacy object-attached path patch");
 		uiFilteredInstanceList(obj);
 	}else if(Path::selectedNode && Path::selectedNode->tabId == 1){
 		int i = Path::selectedNode->idx;
-		ImGui::Text(Path::selectedNode->water ? "WaterPath %d" : "CarPath %d", i);
+		ImGui::Text(Path::selectedNode->water ? "Legacy Water Path %d" : "Legacy Car Path %d", i);
 		ImGui::PushID(i);
 		if(ImGui::BeginTable("Nodes", uiNumCarPathColumns(), ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 			uiCarPathHeader();
@@ -3528,7 +3543,7 @@ uiPathInfo(ObjectInst *inst)
 		ImGui::PopID();
 	}else if(Path::selectedNode && Path::selectedNode->tabId == 3){
 		int i = Path::selectedNode->idx;
-		ImGui::Text("PedPath %d", i);
+		ImGui::Text("Legacy Ped Path %d", i);
 		ImGui::PushID(i);
 		if(ImGui::BeginTable("Nodes", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 			uiPedPathHeader();
@@ -3930,7 +3945,7 @@ uiEditorWindow(void)
 	ObjectDef *obj;
 	TxdDef *txd;
 
-	ImGui::Begin("Editor Window", &showEditorWindow);
+	ImGui::Begin(ICON_FA_PEN " Editor", &showEditorWindow);
 
 	if(ImGui::TreeNode("Camera")){
 		ImGui::InputFloat3("Cam position", (float*)&TheCamera.m_position);
@@ -4064,10 +4079,10 @@ uiEditorWindow(void)
 
 	PathNode *nd;
 	if(nd = Path::GetDetachedCarNode(0,0))
-	if(ImGui::TreeNode("Detached Car Paths")){
+	if(ImGui::TreeNode("Detached Legacy Car Paths")){
 		for(int i = 0; nd = Path::GetDetachedCarNode(i,0); i++){
-			static char str[20];
-			sprintf(str, nd->water ? "WaterPath %d" : "CarPath %d", i);
+			static char str[32];
+			sprintf(str, nd->water ? "Legacy Water Path %d" : "Legacy Car Path %d", i);
 			ImGui::PushID(i);
 			ImGui::Selectable(str);
 			ImGui::PopID();
@@ -4083,10 +4098,10 @@ uiEditorWindow(void)
 	}
 
 	if(nd = Path::GetDetachedPedNode(0,0))
-	if(ImGui::TreeNode("Detached Ped Paths")){
+	if(ImGui::TreeNode("Detached Legacy Ped Paths")){
 		for(int i = 0; nd = Path::GetDetachedPedNode(i,0); i++){
-			static char str[20];
-			sprintf(str,"PedPath %d", i);
+			static char str[32];
+			sprintf(str,"Legacy Ped Path %d", i);
 			ImGui::PushID(i);
 			ImGui::Selectable(str);
 			ImGui::PopID();
@@ -4107,7 +4122,7 @@ uiEditorWindow(void)
 static void
 uiToolsWindow(void)
 {
-	ImGui::Begin("Tools", &showToolsWindow);
+	ImGui::Begin(ICON_FA_WRENCH " Tools", &showToolsWindow);
 
 	// Gizmo
 	ImGui::Checkbox("Gizmo", &gGizmoEnabled);
@@ -4120,6 +4135,7 @@ uiToolsWindow(void)
 			gGizmoMode = GIZMO_ROTATE;
 
 		ImGui::Checkbox("Grid Snap", &gGizmoSnap);
+		ImGui::SetItemTooltip("Snap gizmo movements to fixed increments.");
 		if(gGizmoSnap){
 			char buf[32];
 			ImGui::SameLine();
@@ -4162,16 +4178,20 @@ uiToolsWindow(void)
 	// Placement
 	ImGui::Text("Placement");
 	ImGui::Checkbox("Snap to object", &gPlaceSnapToObjects);
+	ImGui::SetItemTooltip("When placing objects, snap to the surface of existing objects under the cursor.");
 	ImGui::Checkbox("Snap to ground", &gPlaceSnapToGround);
+	ImGui::SetItemTooltip("When placing objects, snap to the ground below the cursor.");
 
 	ImGui::Separator();
 
 	// Dragging
 	ImGui::Text("Dragging");
 	ImGui::Checkbox("Follow ground", &gDragFollowGround);
+	ImGui::SetItemTooltip("While dragging objects, keep them glued to the ground surface.");
 	ImGui::BeginDisabled(!gDragFollowGround);
 	ImGui::Indent();
 	ImGui::Checkbox("Align to surface", &gDragAlignToSurface);
+	ImGui::SetItemTooltip("While dragging, rotate the object to match the ground slope.");
 	ImGui::Unindent();
 	ImGui::EndDisabled();
 
@@ -4182,10 +4202,13 @@ uiToolsWindow(void)
 	bool backupSettingsChanged = false;
 	if(ImGui::Checkbox("Enabled", &gAutomaticBackupsEnabled))
 		backupSettingsChanged = true;
+	ImGui::SetItemTooltip("Periodically save a backup of all modified IPLs.");
 	if(ImGui::InputInt("Interval (sec)", &gAutomaticBackupIntervalSeconds))
 		backupSettingsChanged = true;
+	ImGui::SetItemTooltip("Seconds between automatic backup snapshots.");
 	if(ImGui::InputInt("Keep snapshots", &gAutomaticBackupKeepCount))
 		backupSettingsChanged = true;
+	ImGui::SetItemTooltip("Number of backup snapshots to keep. Oldest are deleted first.");
 	sanitizeAutomaticBackupSettings();
 	if(backupSettingsChanged)
 		saveSaveSettings();
@@ -4471,7 +4494,7 @@ uiWaterWindow(void)
 static void
 uiInstWindow(void)
 {
-	ImGui::Begin("Object Info", &showInstanceWindow);
+	ImGui::Begin(ICON_FA_CIRCLE_INFO " Object Info", &showInstanceWindow);
 
 	if(selection.first){
 		int numSelected = 0;
@@ -4521,12 +4544,18 @@ uiInstWindow(void)
 			if(ImGui::CollapsingHeader("Effects"))
 				uiFxInfo(inst);
 		if(obj->m_carPathIndex >=0 || obj->m_pedPathIndex >= 0)
-			if(ImGui::CollapsingHeader("Path"))
+			if(ImGui::CollapsingHeader("Legacy Paths"))
 				uiPathInfo(inst);
 	}else{
 		if(Path::selectedNode)// && Path::selectedNode->isDetached())
-		if(ImGui::CollapsingHeader("Path"))
+		if(ImGui::CollapsingHeader("Legacy Paths"))
 			uiPathInfo(nil);
+		if(SAPaths::HasInfoToShow()){
+			if(gSaNodeJustSelected)
+				ImGui::SetNextItemOpen(true);
+			if(ImGui::CollapsingHeader("San Andreas Streamed Paths"))
+				SAPaths::DrawInfoPanel();
+		}
 
 /*
 		if(Effects::selectedEffect)
@@ -4635,7 +4664,7 @@ static void
 uiBrowserWindow(void)
 {
 	ImGui::SetNextWindowSize(ImVec2(420, 700), ImGuiCond_FirstUseEver);
-	ImGui::Begin("Object Browser", &showBrowserWindow);
+	ImGui::Begin(ICON_FA_MAGNIFYING_GLASS " Object Browser", &showBrowserWindow);
 
 	int selId = GetSpawnObjectId();
 	static int filtered[NUMOBJECTDEFS];
@@ -4842,7 +4871,7 @@ uiBrowserWindow(void)
 static void
 uiDiffWindow(void)
 {
-	ImGui::Begin("Changes Since Last Save", &showDiffWindow);
+	ImGui::Begin(ICON_FA_CODE_COMPARE " Changes Since Last Save", &showDiffWindow);
 
 	// Count changes by category
 	int numAdded = 0, numDeleted = 0, numMoved = 0, numRotated = 0, numRestored = 0;
@@ -5114,7 +5143,7 @@ gui(void)
 
 	if(CPad::IsKeyJustDown('T')) showTimeWeatherWindow ^= 1;
 	if(showTimeWeatherWindow){
-		ImGui::Begin("Time & Weather", &showTimeWeatherWindow);
+		ImGui::Begin(ICON_FA_CLOUD_SUN " Time & Weather", &showTimeWeatherWindow);
 		uiTimeWeather();
 		ImGui::End();
 	}
@@ -5122,14 +5151,14 @@ gui(void)
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('V')) showViewWindow ^= 1;
 	if(showViewWindow){
 		ImGui::SetNextWindowSize(ImVec2(460.0f, 640.0f), ImGuiCond_FirstUseEver);
-		ImGui::Begin("View", &showViewWindow);
+		ImGui::Begin(ICON_FA_EYE " View", &showViewWindow);
 		uiView();
 		ImGui::End();
 	}
 
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('R')) showRenderingWindow ^= 1;
 	if(showRenderingWindow){
-		ImGui::Begin("Rendering", &showRenderingWindow);
+		ImGui::Begin(ICON_FA_PAINTBRUSH " Rendering", &showRenderingWindow);
 		uiRendering();
 		ImGui::End();
 	}
@@ -5137,6 +5166,13 @@ gui(void)
 	if(CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
 	if(showToolsWindow) uiToolsWindow();
 
+	{
+		static SAPaths::Node *prevSaNode = nil;
+		gSaNodeJustSelected = SAPaths::selectedNode != nil && SAPaths::selectedNode != prevSaNode;
+		prevSaNode = SAPaths::selectedNode;
+		if(gSaNodeJustSelected)
+			showInstanceWindow = true;
+	}
 	if(!CPad::IsCtrlDown() && !CPad::IsShiftDown() && CPad::IsKeyJustDown('I')) showInstanceWindow ^= 1;
 	if(showInstanceWindow) uiInstWindow();
 

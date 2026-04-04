@@ -28,6 +28,8 @@ typedef unsigned int uint;
 
 struct ObjectInst;
 
+#include "sapaths.h"
+
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
 #else
@@ -41,7 +43,10 @@ struct ObjectInst;
 void panic(const char *fmt, ...);
 void debug(const char *fmt, ...);
 void log(const char *fmt, ...);
+void SetupStyle(void);
+void SetupFonts(void);
 bool GetEditorRootDirectory(char *dir, size_t size);
+bool GetGameRootDirectory(char *dir, size_t size);
 bool BuildPath(char *dst, size_t size, const char *dir, const char *name);
 bool EnsureParentDirectoriesForPath(const char *path);
 bool GetArianeDataDirectory(char *dir, size_t size);
@@ -132,8 +137,11 @@ extern bool gRenderNavigZones;
 extern bool gRenderInfoZones;
 extern bool gRenderCullZones;
 extern bool gRenderAttribZones;
-extern bool gRenderPedPaths;
-extern bool gRenderCarPaths;
+extern bool gRenderLegacyPedPaths;
+extern bool gRenderLegacyCarPaths;
+extern bool gRenderSaPedPaths;
+extern bool gRenderSaCarPaths;
+extern bool gRenderSaAreaGrid;
 extern bool gRenderEffects;
 extern bool gRenderTimecycleBoxes;
 
@@ -420,6 +428,7 @@ enum DiffFlags {
 };
 int GetInstanceDiffFlags(ObjectInst *inst);
 void StampChangeSeq(ObjectInst *inst);
+uint32 BumpChangeSeq(void);
 uint32 GetLatestChangeSeq(void);
 
 // Object Spawner

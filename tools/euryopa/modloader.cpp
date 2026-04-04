@@ -46,10 +46,10 @@ static bool active = false;
 static void NormalizePath(const char *in, char *out, int maxLen);
 
 static bool
-BuildEditorRootedPath(char *dst, size_t size, const char *name)
+BuildGameRootedPath(char *dst, size_t size, const char *name)
 {
 	char rootDir[1024];
-	return GetEditorRootDirectory(rootDir, sizeof(rootDir)) &&
+	return GetGameRootDirectory(rootDir, sizeof(rootDir)) &&
 	       BuildPath(dst, size, rootDir, name);
 }
 
@@ -615,7 +615,7 @@ ModloaderInit(void)
 
 	char modloaderDir[1024];
 	char modloaderIniPath[1024];
-	if(!BuildEditorRootedPath(modloaderDir, sizeof(modloaderDir), "modloader") ||
+	if(!BuildGameRootedPath(modloaderDir, sizeof(modloaderDir), "modloader") ||
 	   !BuildPath(modloaderIniPath, sizeof(modloaderIniPath), modloaderDir, "modloader.ini"))
 		return;
 
@@ -703,8 +703,6 @@ ModloaderInit(void)
 		std::vector<ImageEntryOverride> candidates;
 		for(size_t i = 0; i < allModFiles.size(); i++){
 			ModFile &mf = allModFiles[i];
-			if(strcmp(mf.ext, "ipl") != 0)
-				continue;
 
 			ImageEntryOverride ov = {};
 			if(!ExtractImageEntryOverrideKey(mf.logicalPath,
@@ -965,7 +963,7 @@ BuildModloaderLogicalExportPath(const char *logicalPath, char *dst, size_t size)
 
 	char modloaderDir[1024];
 	char arianeModDir[1024];
-	if(!BuildEditorRootedPath(modloaderDir, sizeof(modloaderDir), "modloader") ||
+	if(!BuildGameRootedPath(modloaderDir, sizeof(modloaderDir), "modloader") ||
 	   !BuildPath(arianeModDir, sizeof(arianeModDir), modloaderDir, "Ariane"))
 		return false;
 

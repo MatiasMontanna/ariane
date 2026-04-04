@@ -7,6 +7,10 @@
 #include <direct.h>
 #else
 #include <sys/stat.h>
+#include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 //#define XINPUT
@@ -111,9 +115,40 @@ GetEditorRootDirectory(char *dir, size_t size)
 
 	len = GetCurrentDirectoryA((DWORD)size, dir);
 	return len > 0 && len < size;
-#else
+#elif defined(__APPLE__)
+	uint32_t bufsize = (uint32_t)size;
+	if(_NSGetExecutablePath(dir, &bufsize) == 0){
+		char *slash = strrchr(dir, '/');
+		if(slash){ *slash = '\0'; return true; }
+	}
 	strncpy(dir, ".", size);
 	dir[size - 1] = '\0';
+	return true;
+#else
+	ssize_t len = readlink("/proc/self/exe", dir, size - 1);
+	if(len > 0){
+		dir[len] = '\0';
+		char *slash = strrchr(dir, '/');
+		if(slash){ *slash = '\0'; return true; }
+	}
+	strncpy(dir, ".", size);
+	dir[size - 1] = '\0';
+	return true;
+#endif
+}
+
+bool
+GetGameRootDirectory(char *dir, size_t size)
+{
+	if(size == 0)
+		return false;
+
+#ifdef _WIN32
+	DWORD len = GetCurrentDirectoryA((DWORD)size, dir);
+	return len > 0 && len < size;
+#else
+	if(getcwd(dir, size) == nil)
+		return false;
 	return true;
 #endif
 }
@@ -523,6 +558,17 @@ DefinedState(void)
 // Simple function to convert a raster to the current platform.
 // TODO: convert custom formats (DXT) properly.
 static rw::Raster*
+CreateFallbackRaster(void)
+{
+	rw::Image *img = rw::Image::create(1, 1, 32);
+	uint32 white = 0xFFFFFFFF;
+	img->pixels = (uint8*)&white;
+	rw::Raster *ras = rw::Raster::createFromImage(img);
+	img->destroy();
+	return ras;
+}
+
+static rw::Raster*
 ConvertTexRaster(rw::Raster *ras)
 {
 	using namespace rw;
@@ -535,10 +581,21 @@ ConvertTexRaster(rw::Raster *ras)
 		return ras;
 
 	Image *img = ras->toImage();
+	if(img == nil){
+		log("warning: failed to convert raster from platform %d to %d, using fallback texture\n",
+			ras->platform, rw::platform);
+		ras->destroy();
+		return CreateFallbackRaster();
+	}
 	ras->destroy();
 	img->unpalettize();
 	ras = Raster::createFromImage(img);
 	img->destroy();
+	if(ras == nil){
+		log("warning: failed to create converted raster for platform %d, using fallback texture\n",
+			rw::platform);
+		return CreateFallbackRaster();
+	}
 	return ras;
 }
 
@@ -608,7 +665,8 @@ InitRW(void)
 		ImGuiIO &io = ImGui::GetIO();
 		io.IniFilename = gImGuiIniPath;
 	}
-	ImGui::StyleColorsClassic();
+	SetupFonts();
+	SetupStyle();
 
 	RenderInit();
 
