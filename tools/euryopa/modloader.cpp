@@ -46,6 +46,14 @@ static bool active = false;
 static void NormalizePath(const char *in, char *out, int maxLen);
 
 static bool
+BuildGameRootedPath(char *dst, size_t size, const char *name)
+{
+	char rootDir[1024];
+	return GetGameRootDirectory(rootDir, sizeof(rootDir)) &&
+	       BuildPath(dst, size, rootDir, name);
+}
+
+static bool
 HasRedirectForLogicalPath(const char *logicalPath)
 {
 	for(size_t i = 0; i < pathRedirects.size(); i++)
@@ -605,13 +613,19 @@ ModloaderInit(void)
 		free(additionStrings[i]);
 	additionStrings.clear();
 
-	if(!DirExists("modloader")){
+	char modloaderDir[1024];
+	char modloaderIniPath[1024];
+	if(!BuildGameRootedPath(modloaderDir, sizeof(modloaderDir), "modloader") ||
+	   !BuildPath(modloaderIniPath, sizeof(modloaderIniPath), modloaderDir, "modloader.ini"))
+		return;
+
+	if(!DirExists(modloaderDir)){
 		return;
 	}
 
 	// Parse modloader.ini for priorities
 	std::vector<std::pair<std::string, int>> priorities;
-	ParseModloaderIni("modloader/modloader.ini", priorities);
+	ParseModloaderIni(modloaderIniPath, priorities);
 
 	// Pre-scan gta.dat files for base paths
 	std::vector<std::string> basePaths;
@@ -632,7 +646,7 @@ ModloaderInit(void)
 
 	// Enumerate mod subdirectories
 	std::vector<std::string> modDirs;
-	ListModDirs("modloader", modDirs);
+	ListModDirs(modloaderDir, modDirs);
 	std::sort(modDirs.begin(), modDirs.end(), [](const std::string &a, const std::string &b) {
 		char normalizedA[128];
 		char normalizedB[128];
@@ -647,7 +661,8 @@ ModloaderInit(void)
 
 	for(size_t mi = 0; mi < modDirs.size(); mi++){
 		char modPath[512];
-		snprintf(modPath, sizeof(modPath), "modloader/%s", modDirs[mi].c_str());
+		if(!BuildPath(modPath, sizeof(modPath), modloaderDir, modDirs[mi].c_str()))
+			continue;
 
 		// Get priority for this mod
 		int priority = 50; // default
@@ -688,8 +703,6 @@ ModloaderInit(void)
 		std::vector<ImageEntryOverride> candidates;
 		for(size_t i = 0; i < allModFiles.size(); i++){
 			ModFile &mf = allModFiles[i];
-			if(strcmp(mf.ext, "ipl") != 0)
-				continue;
 
 			ImageEntryOverride ov = {};
 			if(!ExtractImageEntryOverrideKey(mf.logicalPath,
@@ -948,7 +961,13 @@ BuildModloaderLogicalExportPath(const char *logicalPath, char *dst, size_t size)
 	if(normalized[0] == '\0')
 		return false;
 
-	int written = snprintf(dst, size, "modloader/Ariane/%s", normalized);
+	char modloaderDir[1024];
+	char arianeModDir[1024];
+	if(!BuildGameRootedPath(modloaderDir, sizeof(modloaderDir), "modloader") ||
+	   !BuildPath(arianeModDir, sizeof(arianeModDir), modloaderDir, "Ariane"))
+		return false;
+
+	int written = snprintf(dst, size, "%s/%s", arianeModDir, normalized);
 	if(written < 0 || (size_t)written >= size)
 		return false;
 	rw::makePath(dst);

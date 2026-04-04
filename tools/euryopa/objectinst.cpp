@@ -1,15 +1,104 @@
 #include "euryopa.h"
 #include "lod_associations.h"
+#include "modloader.h"
 #include "object_categories.h"
-
-#ifdef _WIN32
-#include <direct.h>
-#else
-#include <sys/stat.h>
-#endif
 
 CPtrList instances;
 CPtrList selection;
+
+static bool
+BuildAssetExportPath(const char *dir, const char *name, const char *ext, char *dst, size_t size)
+{
+	char filename[128];
+
+	if(dir == nil || name == nil || ext == nil)
+		return false;
+	if(snprintf(filename, sizeof(filename), "%s.%s", name, ext) >= (int)sizeof(filename))
+		return false;
+	return BuildPath(dst, size, dir, filename);
+}
+
+static bool
+WriteBufferToPath(const char *path, const uint8 *data, int size)
+{
+	FILE *f;
+
+	if(path == nil || data == nil || size <= 0)
+		return false;
+	if(!EnsureParentDirectoriesForPath(path))
+		return false;
+
+	f = fopen(path, "wb");
+	if(f == nil)
+		return false;
+
+	size_t written = fwrite(data, 1, size, f);
+	fclose(f);
+	return written == (size_t)size;
+}
+
+static bool
+ExportEffectiveAsset(const char *name, const char *ext, int32 imageIndex, const char *dstPath)
+{
+	uint8 *buffer;
+	int size = 0;
+	bool freeBuffer = false;
+
+	const char *loosePath = ModloaderFindOverride(name, ext);
+	if(loosePath){
+		buffer = ReadLooseFile(loosePath, &size);
+		freeBuffer = true;
+	}else{
+		if(imageIndex < 0)
+			return false;
+		buffer = ReadFileFromImage(imageIndex, &size);
+	}
+
+	if(buffer == nil || size <= 0){
+		if(freeBuffer)
+			free(buffer);
+		return false;
+	}
+
+	bool ok = WriteBufferToPath(dstPath, buffer, size);
+	if(freeBuffer)
+		free(buffer);
+	return ok;
+}
+
+static bool
+HasEarlierSelectedModel(CPtrNode *upto, const char *name)
+{
+	for(CPtrNode *p = selection.first; p && p != upto; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		ObjectDef *obj;
+		if(inst == nil || inst->m_isDeleted)
+			continue;
+		obj = GetObjectDef(inst->m_objectId);
+		if(obj && rw::strncmp_ci(obj->m_name, name, MODELNAMELEN) == 0)
+			return true;
+	}
+	return false;
+}
+
+static bool
+HasEarlierSelectedTxd(CPtrNode *upto, const char *name)
+{
+	for(CPtrNode *p = selection.first; p && p != upto; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		ObjectDef *obj;
+		TxdDef *txd;
+		if(inst == nil || inst->m_isDeleted)
+			continue;
+		obj = GetObjectDef(inst->m_objectId);
+		if(obj == nil)
+			continue;
+		txd = GetTxdDef(obj->m_txdSlot);
+		if(txd && rw::strncmp_ci(txd->name, name, MODELNAMELEN) == 0)
+			return true;
+	}
+	return false;
+}
 
 static int
 countLiveLodChildren(ObjectInst *lodInst, ObjectInst *ignoreInst)
@@ -292,7 +381,12 @@ DeleteSelected(void)
 bool gPlaceMode;
 static int spawnObjectId = -1;
 static GameFile *customIplFile = nil;
-static const char *CUSTOM_IPL_PATH = "data\\maps\\custom.ipl";
+static const char *DEFAULT_CUSTOM_IPL_PATH = "data\\maps\\custom.ipl";
+static const char *CUSTOM_IMPORT_IDE_PATH = "data/maps/ariane/custom.ide";
+static const char *CUSTOM_IMPORT_IPL_PATH = "data/maps/ariane/custom.ipl";
+static char currentCustomIplPath[256] = "data\\maps\\custom.ipl";
+static char currentCustomIplSourcePath[1024];
+static bool currentCustomIplAppendToDat = true;
 
 #define LOD_LOOKUP_SIZE 20000
 static int lodLookup[LOD_LOOKUP_SIZE];
@@ -316,10 +410,68 @@ GetSpawnObjectId(void)
 	return spawnObjectId;
 }
 
+static bool
+pathsEqualCiNormalized(const char *a, const char *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	while(*a || *b){
+		char ca = *a++;
+		char cb = *b++;
+		if(ca == '\\') ca = '/';
+		if(cb == '\\') cb = '/';
+		if(ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
+		if(cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
+		if(ca != cb)
+			return false;
+	}
+	return true;
+}
+
+void
+SetCustomPlacementIpl(const char *logicalPath, const char *sourcePath, bool addToDat)
+{
+	char normalizedLogical[256];
+	char resolvedSource[1024];
+
+	if(logicalPath == nil || logicalPath[0] == '\0')
+		logicalPath = DEFAULT_CUSTOM_IPL_PATH;
+
+	strncpy(normalizedLogical, logicalPath, sizeof(normalizedLogical)-1);
+	normalizedLogical[sizeof(normalizedLogical)-1] = '\0';
+	for(char *p = normalizedLogical; *p; p++)
+		if(*p == '/')
+			*p = '\\';
+
+	resolvedSource[0] = '\0';
+	if(sourcePath && sourcePath[0]){
+		strncpy(resolvedSource, sourcePath, sizeof(resolvedSource)-1);
+		resolvedSource[sizeof(resolvedSource)-1] = '\0';
+	}else if(!addToDat){
+		BuildModloaderLogicalExportPath(logicalPath, resolvedSource, sizeof(resolvedSource));
+	}
+
+	bool sameLogical = strcmp(currentCustomIplPath, normalizedLogical) == 0;
+	bool sameSource = strcmp(currentCustomIplSourcePath, resolvedSource) == 0;
+	if(!sameLogical || !sameSource || currentCustomIplAppendToDat != addToDat)
+		customIplFile = nil;
+
+	strncpy(currentCustomIplPath, normalizedLogical, sizeof(currentCustomIplPath)-1);
+	currentCustomIplPath[sizeof(currentCustomIplPath)-1] = '\0';
+	strncpy(currentCustomIplSourcePath, resolvedSource, sizeof(currentCustomIplSourcePath)-1);
+	currentCustomIplSourcePath[sizeof(currentCustomIplSourcePath)-1] = '\0';
+	currentCustomIplAppendToDat = addToDat;
+}
+
 void
 SetSpawnObjectId(int id)
 {
 	spawnObjectId = id;
+	ObjectDef *obj = GetObjectDef(id);
+	if(obj && obj->m_file && pathsEqualCiNormalized(obj->m_file->name, CUSTOM_IMPORT_IDE_PATH))
+		SetCustomPlacementIpl(CUSTOM_IMPORT_IPL_PATH, nil, false);
+	else
+		SetCustomPlacementIpl(DEFAULT_CUSTOM_IPL_PATH, nil, true);
 }
 
 int
@@ -396,9 +548,15 @@ GetOrCreateCustomIplFile(void)
 	if(customIplFile)
 		return customIplFile;
 	char path[256];
-	strncpy(path, CUSTOM_IPL_PATH, sizeof(path));
+	strncpy(path, currentCustomIplPath, sizeof(path));
+	path[sizeof(path)-1] = '\0';
 	customIplFile = NewGameFile(path);
-	AppendIplToDat(CUSTOM_IPL_PATH);
+	if(currentCustomIplSourcePath[0]){
+		free(customIplFile->sourcePath);
+		customIplFile->sourcePath = strdup(currentCustomIplSourcePath);
+	}
+	if(currentCustomIplAppendToDat)
+		AppendIplToDat(currentCustomIplPath);
 	return customIplFile;
 }
 
@@ -435,6 +593,7 @@ createSpawnedInstance(int objectId, rw::V3d position, GameFile *file, int iplInd
 	inst->m_imageIndex = -1;
 	inst->m_binInstIndex = -1;
 	inst->m_iplIndex = iplIndex;
+	SetInstIplFilterKey(inst, file ? file->name : nil);
 	inst->m_isAdded = true;
 	inst->m_isDirty = true;
 	inst->m_savedStateValid = false;
@@ -569,7 +728,7 @@ void
 LoadFavourites(void)
 {
 	memset(favourites, 0, sizeof(favourites));
-	FILE *f = fopen("favourites.txt", "r");
+	FILE *f = fopenArianeDataRead("favourites.txt", "favourites.txt");
 	if(f == nil) return;
 	char line[64];
 	while(fgets(line, sizeof(line), f)){
@@ -583,7 +742,7 @@ LoadFavourites(void)
 void
 SaveFavourites(void)
 {
-	FILE *f = fopen("favourites.txt", "w");
+	FILE *f = fopenArianeDataWrite("favourites.txt");
 	if(f == nil) return;
 	for(int i = 0; i < NUMOBJECTDEFS; i++)
 		if(favourites[i])
@@ -609,10 +768,22 @@ ToggleFavourite(int id)
 // Diff viewer — monotonic change counter for chronological ordering
 static uint32 gChangeSeqCounter = 0;
 
+uint32
+BumpChangeSeq(void)
+{
+	return ++gChangeSeqCounter;
+}
+
 void
 StampChangeSeq(ObjectInst *inst)
 {
-	inst->m_changeSeq = ++gChangeSeqCounter;
+	inst->m_changeSeq = BumpChangeSeq();
+}
+
+uint32
+GetLatestChangeSeq(void)
+{
+	return gChangeSeqCounter;
 }
 
 // Diff viewer — compute bitmask of changes since last save
@@ -833,6 +1004,7 @@ applyUndoTransform(const UndoTransform &t, bool useNewState)
 	if(t.flags & UNDO_TRANSFORM_ROT)
 		inst->m_rotation = useNewState ? t.newRot : t.oldRot;
 
+	StampChangeSeq(inst);
 	inst->m_isDirty = true;
 	inst->UpdateMatrix();
 	updateRwFrameForInst(inst);
@@ -1064,6 +1236,7 @@ cloneInstance(ObjectInst *src, GameFile *dstFile, int iplIndex, rw::V3d offset)
 	inst->m_imageIndex = -1;
 	inst->m_binInstIndex = -1;
 	inst->m_iplIndex = iplIndex;
+	SetInstIplFilterKey(inst, dstFile ? dstFile->name : nil);
 	inst->m_isAdded = true;
 	inst->m_isDirty = true;
 	inst->m_savedStateValid = false;
@@ -1213,24 +1386,9 @@ ExportPrefab(const char *path)
 
 	// Build local index map for LOD references within the prefab
 	// insts[i] -> local index i, so we can resolve m_lod pointers
-	// Ensure parent directory exists
-	{
-		char dir[512];
-		strncpy(dir, path, sizeof(dir)-1);
-		dir[sizeof(dir)-1] = '\0';
-		char *slash = strrchr(dir, '/');
-#ifdef _WIN32
-		char *bslash = strrchr(dir, '\\');
-		if(bslash && (slash == nil || bslash > slash)) slash = bslash;
-#endif
-		if(slash){
-			*slash = '\0';
-#ifdef _WIN32
-			_mkdir(dir);
-#else
-			mkdir(dir, 0777);
-#endif
-		}
+	if(!EnsureParentDirectoriesForPath(path)){
+		log("ExportPrefab: failed to create parent directories for %s\n", path);
+		return 0;
 	}
 
 	FILE *f = fopen(path, "w");
@@ -1280,6 +1438,80 @@ ExportPrefab(const char *path)
 	fclose(f);
 	log("ExportPrefab: wrote %d instance(s) to %s\n", numInsts, path);
 	return numInsts;
+}
+
+int
+ExportSelectedDffs(const char *dir, int *numFailed)
+{
+	int exported = 0;
+	int failed = 0;
+	char path[1024];
+
+	for(CPtrNode *p = selection.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		ObjectDef *obj;
+
+		if(inst == nil || inst->m_isDeleted)
+			continue;
+		obj = GetObjectDef(inst->m_objectId);
+		if(obj == nil || obj->m_name[0] == '\0'){
+			failed++;
+			continue;
+		}
+		if(HasEarlierSelectedModel(p, obj->m_name))
+			continue;
+		if(!BuildAssetExportPath(dir, obj->m_name, "dff", path, sizeof(path)) ||
+		   !ExportEffectiveAsset(obj->m_name, "dff", obj->m_imageIndex, path)){
+			log("ExportSelectedDffs: failed to export %s\n", obj->m_name);
+			failed++;
+			continue;
+		}
+		exported++;
+	}
+
+	if(numFailed)
+		*numFailed = failed;
+	return exported;
+}
+
+int
+ExportSelectedTxds(const char *dir, int *numFailed)
+{
+	int exported = 0;
+	int failed = 0;
+	char path[1024];
+
+	for(CPtrNode *p = selection.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		ObjectDef *obj;
+		TxdDef *txd;
+
+		if(inst == nil || inst->m_isDeleted)
+			continue;
+		obj = GetObjectDef(inst->m_objectId);
+		if(obj == nil){
+			failed++;
+			continue;
+		}
+		txd = GetTxdDef(obj->m_txdSlot);
+		if(txd == nil || txd->name[0] == '\0'){
+			failed++;
+			continue;
+		}
+		if(HasEarlierSelectedTxd(p, txd->name))
+			continue;
+		if(!BuildAssetExportPath(dir, txd->name, "txd", path, sizeof(path)) ||
+		   !ExportEffectiveAsset(txd->name, "txd", txd->imageIndex, path)){
+			log("ExportSelectedTxds: failed to export %s\n", txd->name);
+			failed++;
+			continue;
+		}
+		exported++;
+	}
+
+	if(numFailed)
+		*numFailed = failed;
+	return exported;
 }
 
 struct PrefabEntry {
@@ -1402,6 +1634,7 @@ ImportPrefab(const char *path)
 		inst->m_imageIndex = -1;
 		inst->m_binInstIndex = -1;
 		inst->m_iplIndex = ++maxIdx;
+		SetInstIplFilterKey(inst, file ? file->name : nil);
 		inst->m_isAdded = true;
 		inst->m_isDirty = true;
 		inst->m_savedStateValid = false;

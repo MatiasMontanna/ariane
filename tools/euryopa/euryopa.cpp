@@ -1,5 +1,9 @@
 #include "euryopa.h"
 #include "modloader.h"
+#include <limits.h>
+#include <algorithm>
+#include <string.h>
+#include <vector>
 
 int gameversion;
 int gameplatform;
@@ -44,6 +48,15 @@ bool gPlayAnimations = true;
 bool gUseViewerCam;
 bool gDrawTarget = true;
 
+struct IplVisibilityEntry
+{
+	char key[256];
+	char label[260];
+	bool visible;
+};
+static std::vector<IplVisibilityEntry> gIplVisibilityEntries;
+static bool gIplVisibilityEntriesDirty = true;
+
 // non-rendering things
 bool gRenderCollision;
 bool gRenderZones;
@@ -52,8 +65,11 @@ bool gRenderNavigZones;
 bool gRenderInfoZones;
 bool gRenderCullZones;
 bool gRenderAttribZones;
-bool gRenderPedPaths;
-bool gRenderCarPaths;
+bool gRenderLegacyPedPaths;
+bool gRenderLegacyCarPaths;
+bool gRenderSaPedPaths;
+bool gRenderSaCarPaths;
+bool gRenderSaAreaGrid;
 bool gRenderEffects;
 bool gRenderTimecycleBoxes;
 
@@ -68,6 +84,198 @@ float gWetRoadEffect;
 
 // Neo stuff
 float gNeoLightMapStrength = 0.5f;
+
+static bool
+buildIplVisibilityKey(const char *name, char *dst, size_t size)
+{
+	const char *base, *end, *dot;
+	size_t len;
+
+	if(dst == nil || size == 0 || name == nil || name[0] == '\0')
+		return false;
+
+	base = name;
+	end = name + strlen(name);
+	dot = end;
+	for(const char *s = end; s > base; ){
+		s--;
+		if(*s == '.'){
+			dot = s;
+			break;
+		}
+	}
+	len = dot - base;
+	if(len == 0)
+		len = end - base;
+	if(len == 0)
+		return false;
+
+	if(len >= size)
+		len = size - 1;
+	memcpy(dst, base, len);
+	dst[len] = '\0';
+	return len > 0;
+}
+
+static bool
+buildInstIplVisibilityKey(const ObjectInst *inst, char *dst, size_t size)
+{
+	if(inst == nil || dst == nil || size == 0)
+		return false;
+	if(inst->m_iplFilterKey[0] != '\0'){
+		strncpy(dst, inst->m_iplFilterKey, size-1);
+		dst[size-1] = '\0';
+		return true;
+	}
+	if(inst->m_file == nil || inst->m_file->name == nil)
+		return false;
+	return buildIplVisibilityKey(inst->m_file->name, dst, size);
+}
+
+static int
+findIplVisibilityEntryIndex(const char *key)
+{
+	int low = 0;
+	int high = (int)gIplVisibilityEntries.size();
+	while(low < high){
+		int mid = low + (high - low)/2;
+		int cmp = rw::strcmp_ci(gIplVisibilityEntries[mid].key, key);
+		if(cmp < 0)
+			low = mid + 1;
+		else
+			high = mid;
+	}
+	if(low < (int)gIplVisibilityEntries.size() &&
+	   rw::strcmp_ci(gIplVisibilityEntries[low].key, key) == 0)
+		return low;
+	return -1;
+}
+
+void
+RefreshIplVisibilityEntries(void)
+{
+	if(!gIplVisibilityEntriesDirty)
+		return;
+
+	std::vector<IplVisibilityEntry> entries;
+	CPtrNode *p;
+
+	for(p = instances.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		char key[256];
+
+		if(!buildInstIplVisibilityKey(inst, key, sizeof(key)))
+			continue;
+
+		int low = 0;
+		int high = (int)entries.size();
+		while(low < high){
+			int mid = low + (high - low)/2;
+			int cmp = rw::strcmp_ci(entries[mid].key, key);
+			if(cmp < 0)
+				low = mid + 1;
+			else
+				high = mid;
+		}
+		if(low < (int)entries.size() &&
+		   rw::strcmp_ci(entries[low].key, key) == 0)
+			continue;
+
+		IplVisibilityEntry entry;
+		memset(&entry, 0, sizeof(entry));
+		strncpy(entry.key, key, sizeof(entry.key)-1);
+		snprintf(entry.label, sizeof(entry.label), "%s.ipl", key);
+
+		int oldIndex = findIplVisibilityEntryIndex(key);
+		entry.visible = oldIndex < 0 ? true : gIplVisibilityEntries[oldIndex].visible;
+		entries.insert(entries.begin() + low, entry);
+	}
+
+	gIplVisibilityEntries.swap(entries);
+	gIplVisibilityEntriesDirty = false;
+}
+
+int
+GetIplVisibilityEntryCount(void)
+{
+	return (int)gIplVisibilityEntries.size();
+}
+
+const char*
+GetIplVisibilityEntryName(int i)
+{
+	if(i < 0 || i >= (int)gIplVisibilityEntries.size())
+		return "";
+	return gIplVisibilityEntries[i].label;
+}
+
+bool
+GetIplVisibilityEntryVisible(int i)
+{
+	if(i < 0 || i >= (int)gIplVisibilityEntries.size())
+		return true;
+	return gIplVisibilityEntries[i].visible;
+}
+
+void
+SetIplVisibilityEntryVisible(int i, bool visible)
+{
+	if(i < 0 || i >= (int)gIplVisibilityEntries.size())
+		return;
+	gIplVisibilityEntries[i].visible = visible;
+}
+
+void
+SetAllIplVisibilityEntries(bool visible)
+{
+	for(size_t i = 0; i < gIplVisibilityEntries.size(); i++)
+		gIplVisibilityEntries[i].visible = visible;
+}
+
+void
+ShowOnlyIplVisibilityEntry(int i)
+{
+	if(i < 0 || i >= (int)gIplVisibilityEntries.size())
+		return;
+
+	for(size_t j = 0; j < gIplVisibilityEntries.size(); j++)
+		gIplVisibilityEntries[j].visible = (int)j == i;
+}
+
+bool
+IsInstVisibleByIplFilter(const ObjectInst *inst)
+{
+	char key[256];
+	int i;
+
+	if(!buildInstIplVisibilityKey(inst, key, sizeof(key)))
+		return true;
+
+	i = findIplVisibilityEntryIndex(key);
+	if(i < 0){
+		RefreshIplVisibilityEntries();
+		i = findIplVisibilityEntryIndex(key);
+	}
+	if(i < 0)
+		return true;
+	return gIplVisibilityEntries[i].visible;
+}
+
+void
+SetInstIplFilterKey(ObjectInst *inst, const char *sceneName)
+{
+	char key[256];
+
+	if(inst == nil)
+		return;
+	if(!buildIplVisibilityKey(sceneName, key, sizeof(key)))
+		key[0] = '\0';
+	if(strcmp(inst->m_iplFilterKey, key) == 0)
+		return;
+	strncpy(inst->m_iplFilterKey, key, sizeof(inst->m_iplFilterKey)-1);
+	inst->m_iplFilterKey[sizeof(inst->m_iplFilterKey)-1] = '\0';
+	gIplVisibilityEntriesDirty = true;
+}
 
 bool
 IsHourInRange(int h1, int h2)
@@ -397,7 +605,7 @@ GetColVertex(CColModel *col, int idx)
 	return col->vertices[idx];
 }
 
-static bool
+bool
 IntersectRaySphere(const Ray &ray, const CSphere &sphere, float *t)
 {
 	rw::V3d diff = sub(ray.start, sphere.center);
@@ -489,7 +697,7 @@ GetBoxHitNormal(const Ray &ray, const CBox &box, float t)
 	return normal;
 }
 
-static bool
+bool
 IntersectRayTriangle(const Ray &ray, rw::V3d a, rw::V3d b, rw::V3d c, float *t)
 {
 	const float eps = 0.0001f;
@@ -590,7 +798,7 @@ IntersectRayColModelDetailed(const Ray &worldRay, ObjectInst *inst, rw::V3d *hit
 	return true;
 }
 
-static bool
+bool
 IntersectRayColModel(const Ray &worldRay, ObjectInst *inst, rw::V3d *hitPos)
 {
 	return IntersectRayColModelDetailed(worldRay, inst, hitPos, nil);
@@ -737,7 +945,25 @@ QuatFromMatrix(const rw::Matrix &matrix)
 	q.x = -q.x;
 	q.y = -q.y;
 	q.z = -q.z;
+	float lenSq = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
+	if(lenSq < 0.00000001f)
+		return { 0.0f, 0.0f, 0.0f, 1.0f };
+	float invLen = 1.0f / sqrtf(lenSq);
+	q.x *= invLen;
+	q.y *= invLen;
+	q.z *= invLen;
+	q.w *= invLen;
 	return q;
+}
+
+static rw::Quat
+NormalizeQuatOrIdentity(const rw::Quat &q)
+{
+	float lenSq = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
+	if(lenSq < 0.00000001f)
+		return { 0.0f, 0.0f, 0.0f, 1.0f };
+	float invLen = 1.0f / sqrtf(lenSq);
+	return { q.x * invLen, q.y * invLen, q.z * invLen, q.w * invLen };
 }
 
 static rw::V3d
@@ -1004,7 +1230,7 @@ SnapSelectedToGround(bool alignRotation)
 	return snapped;
 }
 
-static rw::V3d
+rw::V3d
 GetPlacementPosition(void)
 {
 	rw::V3d origin = TheCamera.m_position;
@@ -1053,8 +1279,14 @@ handleTool(void)
 {
 	// Don't process viewport clicks when ImGui wants the mouse
 	ImGuiIO &io = ImGui::GetIO();
-	if(io.WantCaptureMouse)
+	if(io.WantCaptureMouse || gGizmoHovered || gGizmoUsing || ImGuizmo::IsOver())
 		return;
+
+	// Water edit mode intercepts all clicks
+	if(WaterLevel::gWaterEditMode){
+		WaterLevel::HandleWaterTool();
+		return;
+	}
 
 	// Place mode intercepts all clicks
 	if(gPlaceMode){
@@ -1075,37 +1307,54 @@ handleTool(void)
 
 	// select
 	if(CPad::IsMButtonClicked(1)){
-		ObjectInst *inst = GetInstanceByID(pick());
-		if(inst && !inst->m_isDeleted){
-			if(CPad::IsShiftDown())
-				inst->Select();
-			else if(CPad::IsAltDown())
-				inst->Deselect();
-			else if(CPad::IsCtrlDown()){
-				if(inst->m_selected) inst->Deselect();
-				else inst->Select();
-			}else{
-				ClearSelection();
-				inst->Select();
-			}
-		}else
+		if(Path::hoveredNode || SAPaths::hoveredNode || Effects::hoveredEffect){
 			ClearSelection();
+			Path::selectedNode = Path::hoveredNode;
+			SAPaths::selectedNode = SAPaths::hoveredNode;
+			Effects::selectedEffect = Effects::hoveredEffect;
+		}else{
+			ObjectInst *inst = GetInstanceByID(pick());
+			if(inst && !inst->m_isDeleted){
+				if(CPad::IsShiftDown())
+					inst->Select();
+				else if(CPad::IsAltDown())
+					inst->Deselect();
+				else if(CPad::IsCtrlDown()){
+					if(inst->m_selected) inst->Deselect();
+					else inst->Select();
+				}else{
+					ClearSelection();
+					inst->Select();
+				}
+			}else
+				ClearSelection();
 
-		Path::selectedNode = Path::hoveredNode;
-		Effects::selectedEffect = Effects::hoveredEffect;
+			Path::selectedNode = nil;
+			SAPaths::selectedNode = nil;
+			Effects::selectedEffect = nil;
+		}
 	}else if(CPad::IsMButtonClicked(2)){
 		if(CPad::IsCtrlDown()){
 			Path::selectedNode = Path::hoveredNode;
+			SAPaths::selectedNode = SAPaths::hoveredNode;
 			Effects::selectedEffect = Effects::hoveredEffect;
 		}else{
-			ClearSelection();
-			ObjectInst *inst = GetInstanceByID(pick());
-			if(inst && !inst->m_isDeleted)
-				inst->Select();
+			if(Path::hoveredNode || SAPaths::hoveredNode || Effects::hoveredEffect){
+				ClearSelection();
+				Path::selectedNode = Path::hoveredNode;
+				SAPaths::selectedNode = SAPaths::hoveredNode;
+				Effects::selectedEffect = Effects::hoveredEffect;
+			}else{
+				ClearSelection();
+				ObjectInst *inst = GetInstanceByID(pick());
+				if(inst && !inst->m_isDeleted)
+					inst->Select();
+			}
 		}
 	}else if(CPad::IsMButtonClicked(3)){
 		ClearSelection();
 		Path::selectedNode = nil;
+		SAPaths::selectedNode = nil;
 		Effects::selectedEffect = nil;
 	}
 }
@@ -1128,6 +1377,7 @@ LoadGame(void)
 //	SetCurrentDirectory("C:/Users/aap/games/gtavc");
 //	SetCurrentDirectory("C:/Users/aap/games/gtasa");
 
+	SAPaths::Reset();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -1264,8 +1514,69 @@ dogizmo(void)
 
 	if(!gGizmoEnabled)
 		return;
-	if(!selection.first)
+
+	if(WaterLevel::gWaterEditMode){
+		WaterLevel::DoWaterGizmo();
 		return;
+	}
+
+	if(!selection.first){
+		static bool wasDraggingSaNode = false;
+		static rw::V3d dragStartSaNodePos;
+
+		if(!SAPaths::HasSelectedNode()){
+			wasDraggingSaNode = false;
+			return;
+		}
+
+		rw::V3d nodePos;
+		if(!SAPaths::GetSelectedNodePosition(&nodePos))
+			return;
+
+		rw::Camera *cam = (rw::Camera*)rw::engine->currentCamera;
+		float *fview = (float*)&cam->devView;
+		float *fproj = (float*)&cam->devProj;
+		rw::RawMatrix gizobj;
+		rw::RawMatrix::setIdentity(&gizobj);
+		gizobj.pos.x = nodePos.x;
+		gizobj.pos.y = nodePos.y;
+		gizobj.pos.z = nodePos.z;
+		float *fobj = (float*)&gizobj;
+
+		ImGuiIO &io = ImGui::GetIO();
+		ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+		float snapValues[3];
+		float *snapPtr = nil;
+		if(gGizmoSnap){
+			snapValues[0] = gGizmoSnapTranslate;
+			snapValues[1] = gGizmoSnapTranslate;
+			snapValues[2] = gGizmoSnapTranslate;
+			snapPtr = snapValues;
+		}
+
+		ImGuizmo::Manipulate(fview, fproj, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, fobj, nil, snapPtr);
+
+		gGizmoHovered = ImGuizmo::IsOver();
+		bool isUsing = ImGuizmo::IsUsing();
+		gGizmoUsing = isUsing;
+
+		if(isUsing && !wasDraggingSaNode)
+			dragStartSaNodePos = nodePos;
+
+		if(isUsing){
+			rw::V3d newPos = { gizobj.pos.x, gizobj.pos.y, gizobj.pos.z };
+			SAPaths::SetSelectedNodePosition(newPos, false);
+		}else if(wasDraggingSaNode){
+			rw::V3d finalPos;
+			if(SAPaths::GetSelectedNodePosition(&finalPos) &&
+			   length(sub(finalPos, dragStartSaNodePos)) >= 0.0001f)
+				SAPaths::CommitSelectedNodeEdit();
+		}
+
+		wasDraggingSaNode = isUsing;
+		return;
+	}
 
 	ObjectInst *inst = (ObjectInst*)selection.first->item;
 	if(inst->m_isDeleted)
@@ -1321,10 +1632,10 @@ dogizmo(void)
 	// Capture start state when drag begins
 	if(isUsing && !wasDragging){
 		dragStartLeaderPos = inst->m_translation;
-		dragStartLeaderRot = inst->m_rotation;
+		dragStartLeaderRot = NormalizeQuatOrIdentity(inst->m_rotation);
 		dragStartFollowGround = gGizmoMode == GIZMO_TRANSLATE && gDragFollowGround;
 		dragStartAlignToSurface = dragStartFollowGround && gDragAlignToSurface;
-		dragGroundBaseRot = inst->m_rotation;
+		dragGroundBaseRot = dragStartLeaderRot;
 		dragGroundOffset = 0.0f;
 		if(dragStartFollowGround){
 			rw::V3d hitPos, hitNormal;
@@ -1453,19 +1764,20 @@ dogizmo(void)
 			inst->m_matrix.at.z = gizobj.at.z;
 			rw::Quat newLeaderRot = QuatFromMatrix(inst->m_matrix);
 
-			// Compute rotation delta: the rotation that transforms startRot into newRot
-			rw::Quat deltaQ = rw::mult(newLeaderRot, rw::conj(dragStartLeaderRot));
+			// Stored instance quaternions are conjugated relative to world-space rotation.
+			// To apply the leader's world-space delta to the rest of the selection, the
+			// stored-space delta must be built as conj(start) * new, not new * conj(start).
+			rw::Quat deltaQ = NormalizeQuatOrIdentity(rw::mult(rw::conj(dragStartLeaderRot), newLeaderRot));
 
 			// Apply to all affected objects: orbit positions around leader, compose rotations.
-			// conj(deltaQ) converts from stored-quaternion space to world space;
-			// right-multiplying oldRot by deltaQ applies the delta on the world side
-			// of this codebase's conj(m_rotation) matrix convention.
+			// conj(deltaQ) is the world-space delta; right-multiplying oldRot by deltaQ
+			// applies that world delta under this codebase's conj(m_rotation) convention.
 			rw::Quat worldQ = rw::conj(deltaQ);
 			for(int i = 0; i < dragNumTransforms; i++){
 				ObjectInst *obj = dragTransforms[i].inst;
 				rw::V3d offset = sub(dragTransforms[i].oldPos, dragStartLeaderPos);
 				obj->m_translation = add(dragStartLeaderPos, rw::rotate(offset, worldQ));
-				obj->m_rotation = rw::mult(dragTransforms[i].oldRot, deltaQ);
+				obj->m_rotation = NormalizeQuatOrIdentity(rw::mult(dragTransforms[i].oldRot, deltaQ));
 				obj->m_isDirty = true;
 				obj->UpdateMatrix();
 				updateRwFrame(obj);
@@ -1604,13 +1916,22 @@ Draw(void)
 	if(gRenderAttribZones)
 		Zones::RenderAttribZones();
 	Path::hoveredNode = nil;
+	SAPaths::hoveredNode = nil;
 	Effects::hoveredEffect = nil;
-	if(gRenderPedPaths)
+	if(gRenderLegacyPedPaths)
 		Path::RenderPedPaths();
-	if(gRenderCarPaths)
+	if(gRenderLegacyCarPaths)
 		Path::RenderCarPaths();
+	if(gRenderSaPedPaths)
+		SAPaths::RenderPedPaths();
+	if(gRenderSaCarPaths)
+		SAPaths::RenderCarPaths();
+	if(gRenderSaAreaGrid)
+		SAPaths::RenderAreaGrid();
 	if(gRenderEffects)
 		Effects::Render();
+	if(WaterLevel::gWaterEditMode)
+		WaterLevel::RenderEditOverlay();
 
 	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHAALWAYS);	// don't mess up GUI
 	// This fucks up the z buffer, but what else can we do?

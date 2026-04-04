@@ -28,6 +28,8 @@ typedef unsigned int uint;
 
 struct ObjectInst;
 
+#include "sapaths.h"
+
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
 #else
@@ -41,6 +43,16 @@ struct ObjectInst;
 void panic(const char *fmt, ...);
 void debug(const char *fmt, ...);
 void log(const char *fmt, ...);
+void SetupStyle(void);
+void SetupFonts(void);
+bool GetEditorRootDirectory(char *dir, size_t size);
+bool GetGameRootDirectory(char *dir, size_t size);
+bool BuildPath(char *dst, size_t size, const char *dir, const char *name);
+bool EnsureParentDirectoriesForPath(const char *path);
+bool GetArianeDataDirectory(char *dir, size_t size);
+bool GetArianeDataPath(char *dst, size_t size, const char *name);
+FILE *fopenArianeDataRead(const char *name, const char *legacyName = nil);
+FILE *fopenArianeDataWrite(const char *name);
 void setHotReloadTracePath(const char *path);
 void hotReloadTrace(const char *fmt, ...);
 void addToLogWindow(const char *fmt, va_list args);
@@ -84,6 +96,9 @@ SphereIntersect(const CSphere &sph, const Ray &ray)
 	float discr = sq(b) - 4*a*c;
 	return discr > 0.0f;
 }
+bool IntersectRayTriangle(const Ray &ray, rw::V3d a, rw::V3d b, rw::V3d c, float *t);
+bool IntersectRaySphere(const Ray &ray, const CSphere &sphere, float *t);
+bool IntersectRayColModel(const Ray &worldRay, ObjectInst *inst, rw::V3d *hitPos);
 
 //
 // Options
@@ -104,6 +119,15 @@ extern bool gDoBackfaceCulling;
 extern bool gPlayAnimations;
 extern bool gUseViewerCam;
 extern bool gDrawTarget;
+void SetInstIplFilterKey(ObjectInst *inst, const char *sceneName);
+bool IsInstVisibleByIplFilter(const ObjectInst *inst);
+void RefreshIplVisibilityEntries(void);
+int GetIplVisibilityEntryCount(void);
+const char *GetIplVisibilityEntryName(int i);
+bool GetIplVisibilityEntryVisible(int i);
+void SetIplVisibilityEntryVisible(int i, bool visible);
+void SetAllIplVisibilityEntries(bool visible);
+void ShowOnlyIplVisibilityEntry(int i);
 
 // non-rendering things
 extern bool gRenderCollision;
@@ -113,8 +137,11 @@ extern bool gRenderNavigZones;
 extern bool gRenderInfoZones;
 extern bool gRenderCullZones;
 extern bool gRenderAttribZones;
-extern bool gRenderPedPaths;
-extern bool gRenderCarPaths;
+extern bool gRenderLegacyPedPaths;
+extern bool gRenderLegacyCarPaths;
+extern bool gRenderSaPedPaths;
+extern bool gRenderSaCarPaths;
+extern bool gRenderSaAreaGrid;
 extern bool gRenderEffects;
 extern bool gRenderTimecycleBoxes;
 
@@ -376,6 +403,8 @@ void PasteClipboard(void);
 // Prefabs
 int ExportPrefab(const char *path);
 int ImportPrefab(const char *path);
+int ExportSelectedDffs(const char *dir, int *numFailed);
+int ExportSelectedTxds(const char *dir, int *numFailed);
 
 // Toast notifications
 enum ToastCategory {
@@ -399,6 +428,8 @@ enum DiffFlags {
 };
 int GetInstanceDiffFlags(ObjectInst *inst);
 void StampChangeSeq(ObjectInst *inst);
+uint32 BumpChangeSeq(void);
+uint32 GetLatestChangeSeq(void);
 
 // Object Spawner
 extern bool gPlaceMode;
@@ -407,9 +438,11 @@ void SpawnPlaceObject(rw::V3d position);
 void SpawnExitPlaceMode(void);
 int GetSpawnObjectId(void);
 void SetSpawnObjectId(int id);
+void SetCustomPlacementIpl(const char *logicalPath, const char *sourcePath, bool addToDat);
 int GetLodForObject(int id);
 int SnapSelectedToGround(bool alignRotation);
 bool GetGroundPlacementSurface(rw::V3d pos, rw::V3d *hitPos, rw::V3d *hitNormal = nil, bool ignoreSelection = false);
+rw::V3d GetPlacementPosition(void);
 
 // Object Browser categories & favourites
 void InitObjectCategories(void);
@@ -424,6 +457,7 @@ void InitPreviewRenderer(void);
 void ShutdownPreviewRenderer(void);
 void RenderPreviewObject(int objectId);
 extern rw::Texture *gPreviewTexture;
+void HandleCustomImportDrop(const char *path);
 
 // Game Data structures
 
@@ -433,6 +467,7 @@ void RefreshCdImageMappings(void);
 uint8 *ReadFileFromImage(int i, int *size);
 GameFile *GetGameFileFromImage(int i);
 const char *GetCdImageLogicalName(int i);
+const char *GetCdImageSourcePath(int i);
 bool WriteFileToImage(int i, uint8 *data, int size);
 bool BuildModloaderImageEntryExportPath(int i, char *dst, size_t size);
 void RequestObject(int id);
@@ -451,6 +486,7 @@ void RegisterTexStorePlugin(void);
 TxdDef *GetTxdDef(int i);
 int FindTxdSlot(const char *name);
 int AddTxdSlot(const char *name);
+bool RemoveTxdSlot(int i);
 void TxdPush(void);
 void TxdPop(void);
 bool IsTxdLoaded(int i);
@@ -561,6 +597,7 @@ struct ObjectDef
 	void SetFlags(int flags);
 };
 ObjectDef *AddObjectDef(int id);
+void RemoveObjectDef(int id);
 ObjectDef *GetObjectDef(int id);
 ObjectDef *GetObjectDef(const char *name, int *id);
 
@@ -618,6 +655,7 @@ struct ObjectInst
 	int m_iplIndex;		// index of this instance within its IPL file (for save)
 	int32 m_imageIndex;	// IMG directory index (for binary IPL save), -1 if text IPL
 	int m_binInstIndex;	// index within binary IPL instance array
+	char m_iplFilterKey[256];
 
 	GameFile *m_file;
 
@@ -638,6 +676,7 @@ struct ObjectInst
 extern CPtrList instances;
 extern CPtrList selection;
 ObjectInst *GetInstanceByID(int32 id);
+int32 pick(void);
 ObjectInst *AddInstance(void);
 void ClearSelection(void);
 void DeleteSelected(void);
@@ -821,7 +860,7 @@ ObjectInst **GetInstArray(int i);
 int GetInstArraySize(int i);
 IplDef *GetIplDef(int i);
 int AddIplSlot(const char *name);
-void LoadIpl(int i);
+void LoadIpl(int i, const char *sceneName = nil);
 
 // File Loader
 
@@ -836,6 +875,16 @@ struct BinaryIplSaveResult
 	int32 failedImages[256];
 	int numBlockedEmptyDeletes;
 	int numFailedFiles;
+};
+
+struct AutomaticBackupResult
+{
+	bool createdSnapshot;
+	bool hadWarnings;
+	int numTextFiles;
+	int numBinaryFiles;
+	int numErrors;
+	char snapshotPath[1024];
 };
 
 extern GameFile *currentFile;
@@ -856,6 +905,7 @@ void LoadCollisionFile(const char *path);
 rw::TexDictionary *LoadTexDictionary(const char *path);
 BinaryIplSaveResult SaveScene(const char *filename);
 BinaryIplSaveResult SaveBinaryIpls(void);
+AutomaticBackupResult CreateAutomaticBackup(const char *rootDir, int keepCount);
 }
 
 // Rendering
@@ -905,6 +955,7 @@ void BuildRenderList(void);
 void RenderOpaque(void);
 void RenderTransparent(void);
 void RenderEverything(void);
+ObjectInst *GetVisibleInstUnderRay(const Ray &ray, rw::V3d *hitPos = nil, float *hitT = nil);
 
 // Debug Render
 void RenderLine(rw::V3d v1, rw::V3d v2, rw::RGBA c1, rw::RGBA c2);
@@ -925,8 +976,71 @@ void RenderPostFX(void);
 
 namespace WaterLevel
 {
+	struct WaterVertex {
+		rw::V3d pos;
+		rw::V2d speed;
+		float waveunk, waveheight;
+	};
+	struct WaterQuad {
+		int indices[4];
+		int flags;	// bit 0: visible, bit 1: limited depth
+	};
+	struct WaterTri {
+		int indices[3];
+		int flags;
+	};
+
 	void Initialise(void);
 	void Render(void);
+
+	// Editor state
+	extern bool gWaterEditMode;
+	extern int gWaterSubMode;	// 0=polygon, 1=vertex
+	extern bool gWaterDirty;
+	extern int gWaterCreateMode;	// 0=off, 1..N=placing corners
+	extern int gWaterCreateShape;	// 0=quad, 1=triangle
+	extern float gWaterCreateZ;
+	extern bool gWaterSnapEnabled;
+	extern float gWaterSnapSize;
+
+	// Accessor API
+	int GetNumQuads(void);
+	int GetNumTris(void);
+	int GetNumVertices(void);
+	WaterVertex *GetVertex(int i);
+	WaterQuad *GetQuad(int i);
+	WaterTri *GetTri(int i);
+
+	// Editor functions
+	void HandleWaterTool(void);
+	void DoWaterGizmo(void);
+	void RenderEditOverlay(void);
+	bool SaveWater(void);
+	void ClearWaterPolySelection(void);
+	void ClearWaterVertexSelection(void);
+	void ClearWaterSelection(void);
+	void WeldCoincidentVertices(int vertexIndex, rw::V3d oldPos);
+	void EnterCreateMode(void);
+	void CancelCreateMode(void);
+	int PickWaterPoly(Ray ray, float *hitT = nil);
+	void SelectWaterPoly(int type, int index);
+	void DeleteSelectedWaterPolys(void);
+	void DuplicateSelectedWaterPolys(void);
+	void ReloadWater(void);
+
+	// Undo/Redo
+	void WaterUndoPush(void);
+	void WaterUndo(void);
+	void WaterRedo(void);
+	bool WaterCanUndo(void);
+	bool WaterCanRedo(void);
+
+	// Selection queries for gui
+	int GetNumSelectedPolys(void);
+	int GetNumSelectedVertices(void);
+	int GetSelectedPolyType(int sel);	// 0=quad, 1=tri
+	int GetSelectedPolyIndex(int sel);
+	int GetSelectedVertexIndex(int sel);
 };
 
 namespace Clouds

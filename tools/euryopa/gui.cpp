@@ -1,10 +1,17 @@
 #include "euryopa.h"
+#include "autocol.h"
 #include "modloader.h"
 #include "imgui/imgui_internal.h"
 #include "object_categories.h"
+#include "telemetry.h"
 #include "updater.h"
+#include "icons.h"
+#include <string>
+#include <vector>
 
 #ifdef _WIN32
+#include <windows.h>
+#include <commdlg.h>
 #include <Psapi.h>
 #pragma comment(lib, "Psapi.lib")
 #else
@@ -23,9 +30,36 @@ static bool showRenderingWindow;
 static bool showBrowserWindow;
 static bool showDiffWindow;
 static bool showToolsWindow = true;
+static bool gSaNodeJustSelected;
+static bool gBrowserIdeListDirty = true;
+static char gIplFilterSearch[128];
+
+static bool gAutomaticBackupsEnabled = true;
+static int gAutomaticBackupIntervalSeconds = 300;
+static int gAutomaticBackupKeepCount = 10;
+static int gCustomImportPreferredStartId = 18631;
+static const float gAutomaticBackupIdleSeconds = 5.0f;
+static float gAutomaticBackupSecondsSinceLastRun = 0.0f;
+static float gAutomaticBackupSecondsSinceLastChange = 0.0f;
+static uint32 gAutomaticBackupLastSeenSeq = 0;
+static uint32 gAutomaticBackupLastHandledSeq = 0;
+static char gAutomaticBackupLastSnapshot[1024];
 
 static void loadSaveSettings(void);
 static void saveSaveSettings(void);
+
+static int
+getDefaultCustomImportStartId(void)
+{
+	return isSA() ? 18631 : 0;
+}
+
+static void
+sanitizeCustomImportSettings(void)
+{
+	if(gCustomImportPreferredStartId < 0 || gCustomImportPreferredStartId >= NUMOBJECTDEFS)
+		gCustomImportPreferredStartId = getDefaultCustomImportStartId();
+}
 
 static bool
 getEditorRootDirectory(char *dir, size_t size)
@@ -68,6 +102,99 @@ buildPath(char *dst, size_t size, const char *dir, const char *name)
 	const char *sep = (dir[len-1] == '/') ? "" : "/";
 #endif
 	return snprintf(dst, size, "%s%s%s", dir, sep, name) < (int)size;
+}
+
+static bool
+getLegacyRootPath(char *dst, size_t size, const char *name)
+{
+	char rootDir[2048];
+	return getEditorRootDirectory(rootDir, sizeof(rootDir)) &&
+	       buildPath(dst, size, rootDir, name);
+}
+
+static void
+sanitizeAutomaticBackupSettings(void)
+{
+	if(gAutomaticBackupIntervalSeconds < 10)
+		gAutomaticBackupIntervalSeconds = 10;
+	if(gAutomaticBackupIntervalSeconds > 24*60*60)
+		gAutomaticBackupIntervalSeconds = 24*60*60;
+	if(gAutomaticBackupKeepCount < 1)
+		gAutomaticBackupKeepCount = 1;
+	if(gAutomaticBackupKeepCount > 100)
+		gAutomaticBackupKeepCount = 100;
+}
+
+static bool
+runAutomaticBackup(bool manual)
+{
+	char backupRoot[2048];
+	FileLoader::AutomaticBackupResult result;
+	uint32 latestSeq = GetLatestChangeSeq();
+
+	sanitizeAutomaticBackupSettings();
+	if(!GetArianeDataPath(backupRoot, sizeof(backupRoot), "automatic_backups")){
+		if(manual)
+			Toast(TOAST_SAVE, "Automatic Backup: failed to resolve backup folder");
+		return false;
+	}
+
+	result = FileLoader::CreateAutomaticBackup(backupRoot, gAutomaticBackupKeepCount);
+	gAutomaticBackupSecondsSinceLastRun = 0.0f;
+
+	if(result.createdSnapshot){
+		if(!result.hadWarnings)
+			gAutomaticBackupLastHandledSeq = latestSeq;
+		strncpy(gAutomaticBackupLastSnapshot, result.snapshotPath, sizeof(gAutomaticBackupLastSnapshot));
+		gAutomaticBackupLastSnapshot[sizeof(gAutomaticBackupLastSnapshot)-1] = '\0';
+		if(manual)
+			Toast(TOAST_SAVE, "Automatic Backup: %d text + %d streamed file(s)",
+			      result.numTextFiles, result.numBinaryFiles);
+		else
+			log("Automatic Backup: created %s (%d text, %d streamed, %d warning(s))\n",
+			    result.snapshotPath, result.numTextFiles, result.numBinaryFiles, result.numErrors);
+		if(!manual && result.hadWarnings)
+			Toast(TOAST_SAVE, "Automatic Backup: created with %d warning(s)", result.numErrors);
+		return true;
+	}
+
+	if(result.numErrors > 0){
+		Toast(TOAST_SAVE, "Automatic Backup: failed with %d warning(s)", result.numErrors);
+		return false;
+	}
+
+	gAutomaticBackupLastHandledSeq = latestSeq;
+	if(manual)
+		Toast(TOAST_SAVE, "Automatic Backup: nothing to back up");
+	return false;
+}
+
+static void
+automaticBackupTick(void)
+{
+	float dt = ImGui::GetIO().DeltaTime;
+	uint32 latestSeq = GetLatestChangeSeq();
+
+	if(latestSeq != gAutomaticBackupLastSeenSeq){
+		gAutomaticBackupLastSeenSeq = latestSeq;
+		gAutomaticBackupSecondsSinceLastChange = 0.0f;
+	}else
+		gAutomaticBackupSecondsSinceLastChange += dt;
+
+	gAutomaticBackupSecondsSinceLastRun += dt;
+
+	if(!gAutomaticBackupsEnabled)
+		return;
+	if(latestSeq == gAutomaticBackupLastHandledSeq)
+		return;
+	if(gAutomaticBackupSecondsSinceLastRun < (float)gAutomaticBackupIntervalSeconds)
+		return;
+	if(gAutomaticBackupSecondsSinceLastChange < gAutomaticBackupIdleSeconds)
+		return;
+	if(gGizmoUsing)
+		return;
+
+	runAutomaticBackup(false);
 }
 
 #ifdef _WIN32
@@ -977,22 +1104,27 @@ testInGame(void)
 	// Camera heading
 	float heading = TheCamera.getHeading();
 
-	char rootDir[2048];
 	char teleportPath[2048];
-	if(!getEditorRootDirectory(rootDir, sizeof(rootDir)) ||
-	   !buildPath(teleportPath, sizeof(teleportPath), rootDir, "ariane_teleport.txt")){
+	char legacyTeleportPath[2048];
+	if(!GetArianeDataPath(teleportPath, sizeof(teleportPath), "ariane_teleport.txt") ||
+	   !getLegacyRootPath(legacyTeleportPath, sizeof(legacyTeleportPath), "ariane_teleport.txt")){
 		Toast(TOAST_SAVE, "Failed to resolve game folder");
 		return;
 	}
 
-	// Write the teleport file next to the editor executable.
+	// Write the teleport handoff into ariane/ and mirror the legacy root
+	// location so older in-game plugins continue to work.
 	FILE *f = fopen(teleportPath, "w");
-	if(f){
-		fprintf(f, "%f %f %f %f %d\n", pos.x, pos.y, pos.z, heading, currentArea);
-		fclose(f);
-	} else {
+	if(f == nil){
 		Toast(TOAST_SAVE, "Failed to write teleport file");
 		return;
+	}
+	fprintf(f, "%f %f %f %f %d\n", pos.x, pos.y, pos.z, heading, currentArea);
+	fclose(f);
+	FILE *legacy = fopen(legacyTeleportPath, "w");
+	if(legacy){
+		fprintf(legacy, "%f %f %f %f %d\n", pos.x, pos.y, pos.z, heading, currentArea);
+		fclose(legacy);
 	}
 
 	// Launch game executable
@@ -1002,8 +1134,10 @@ testInGame(void)
 	else if(isSA()) exeName = "gta_sa.exe";
 
 #ifdef _WIN32
+	char rootDir[2048];
 	char exePath[2048];
-	if(!buildPath(exePath, sizeof(exePath), rootDir, exeName)){
+	if(!getEditorRootDirectory(rootDir, sizeof(rootDir)) ||
+	   !buildPath(exePath, sizeof(exePath), rootDir, exeName)){
 		Toast(TOAST_SAVE, "Failed to resolve %s", exeName);
 		return;
 	}
@@ -1041,10 +1175,14 @@ hotReloadIpls(void)
 	char reloadPath[2048];
 	char entityReloadPath[2048];
 	char tracePath[2048];
+	char legacyReloadPath[2048];
+	char legacyEntityReloadPath[2048];
 	if(!getEditorRootDirectory(rootDir, sizeof(rootDir)) ||
-	   !buildPath(tracePath, sizeof(tracePath), rootDir, "ariane_hot_reload_log.txt") ||
-	   !buildPath(reloadPath, sizeof(reloadPath), rootDir, "ariane_reload.txt") ||
-	   !buildPath(entityReloadPath, sizeof(entityReloadPath), rootDir, "ariane_reload_entities.txt")){
+	   !GetArianeDataPath(tracePath, sizeof(tracePath), "ariane_hot_reload_log.txt") ||
+	   !GetArianeDataPath(reloadPath, sizeof(reloadPath), "ariane_reload.txt") ||
+	   !GetArianeDataPath(entityReloadPath, sizeof(entityReloadPath), "ariane_reload_entities.txt") ||
+	   !getLegacyRootPath(legacyReloadPath, sizeof(legacyReloadPath), "ariane_reload.txt") ||
+	   !getLegacyRootPath(legacyEntityReloadPath, sizeof(legacyEntityReloadPath), "ariane_reload_entities.txt")){
 		Toast(TOAST_SAVE, "Hot Reload: failed to resolve game folder");
 		return;
 	}
@@ -1105,14 +1243,20 @@ hotReloadIpls(void)
 	}
 
 	if(numNames > 0){
-
 		FILE *f = fopen(reloadPath, "w");
+		FILE *legacy = fopen(legacyReloadPath, "w");
 		if(f){
 			for(int i = 0; i < numNames; i++)
 				fprintf(f, "%s\n", iplNames[i]);
 			fclose(f);
+			if(legacy){
+				for(int i = 0; i < numNames; i++)
+					fprintf(legacy, "%s\n", iplNames[i]);
+				fclose(legacy);
+			}
 			numStreamingIpls = numNames;
-		}
+		}else if(legacy)
+			fclose(legacy);
 	}
 
 	// --- Entity deletes/moves (manipulated directly in game memory) ---
@@ -1120,6 +1264,7 @@ hotReloadIpls(void)
 	// if binary IMG patching/reload fails for a given IPL, the live entity
 	// still gets moved in-game.
 	FILE *fe = fopen(entityReloadPath, "w");
+	FILE *legacyFe = fopen(legacyEntityReloadPath, "w");
 	if(fe){
 		for(p = instances.first; p; p = p->next){
 			ObjectInst *inst = (ObjectInst*)p->item;
@@ -1161,6 +1306,19 @@ hotReloadIpls(void)
 					GetAreaFlags(inst),
 					lodModelId,
 					lodX, lodY, lodZ);
+				if(legacyFe)
+					fprintf(legacyFe, "A %d %f %f %f %f %f %f %f %d %d %f %f %f\n",
+						inst->m_objectId,
+						inst->m_translation.x,
+						inst->m_translation.y,
+						inst->m_translation.z,
+						inst->m_rotation.x,
+						inst->m_rotation.y,
+						inst->m_rotation.z,
+						inst->m_rotation.w,
+						GetAreaFlags(inst),
+						lodModelId,
+						lodX, lodY, lodZ);
 				numEntityCmds++;
 				inst->m_gameEntityExists = true;
 				inst->m_isAdded = false;
@@ -1176,6 +1334,12 @@ hotReloadIpls(void)
 					inst->m_origTranslation.x,
 					inst->m_origTranslation.y,
 					inst->m_origTranslation.z);
+				if(legacyFe)
+					fprintf(legacyFe, "D %d %f %f %f\n",
+						inst->m_objectId,
+						inst->m_origTranslation.x,
+						inst->m_origTranslation.y,
+						inst->m_origTranslation.z);
 				numEntityCmds++;
 				inst->m_gameEntityExists = false;
 			}else if(needsMove){
@@ -1192,6 +1356,19 @@ hotReloadIpls(void)
 					inst->m_rotation.y,
 					inst->m_rotation.z,
 					inst->m_rotation.w);
+				if(legacyFe)
+					fprintf(legacyFe, "M %d %f %f %f %f %f %f %f %f %f %f\n",
+						inst->m_objectId,
+						inst->m_origTranslation.x,
+						inst->m_origTranslation.y,
+						inst->m_origTranslation.z,
+						inst->m_translation.x,
+						inst->m_translation.y,
+						inst->m_translation.z,
+						inst->m_rotation.x,
+						inst->m_rotation.y,
+						inst->m_rotation.z,
+						inst->m_rotation.w);
 				numEntityCmds++;
 				// Update orig so next reload knows where the game entity now is
 				inst->m_origTranslation = inst->m_translation;
@@ -1199,10 +1376,13 @@ hotReloadIpls(void)
 			}
 		}
 		fclose(fe);
+		if(legacyFe)
+			fclose(legacyFe);
 
 		if(numEntityCmds == 0)
 			remove(entityReloadPath);
-	}
+	}else if(legacyFe)
+		fclose(legacyFe);
 
 	if(numStreamingIpls == 0 && numEntityCmds == 0){
 		if(totalBlockedDeletes)
@@ -1228,55 +1408,953 @@ hotReloadIpls(void)
 
 static bool gOpenExportPrefab = false;
 static bool gOpenImportPrefab = false;
+static bool gOpenCustomImport = false;
 static void uiExportPrefabPopup(void);
 static void uiImportPrefabPopup(void);
+static void uiCustomImportPopup(void);
+static void trimLineEnding(char *line);
+static int findSuggestedCustomImportId(void);
+
+static const char *CUSTOM_IMPORT_MANIFEST_LOGICAL_PATH = "ariane_custom.txt";
+static const char *CUSTOM_IMPORT_IDE_LOGICAL_PATH = "data/maps/ariane/custom.ide";
+static const char *CUSTOM_IMPORT_IPL_LOGICAL_PATH = "data/maps/ariane/custom.ipl";
+
+struct CustomImportState
+{
+	bool active;
+	char sourceBase[MODELNAMELEN];
+	char modelName[MODELNAMELEN];
+	char txdName[MODELNAMELEN];
+	char sourceDir[1024];
+	char dffSource[1024];
+	char txdSource[1024];
+	char colSource[1024];
+	bool hasCol;
+	bool preferAutoCol;
+	int objectId;
+	float drawDist;
+	ObjectDef previewObj;
+	char error[512];
+	char warning[512];
+};
+static CustomImportState gCustomImport = {};
+static GameFile *gCustomImportIdeFile = nil;
+static GameFile *gCustomImportIplFile = nil;
+
+struct FileRollbackEntry
+{
+	std::string path;
+	bool existed;
+	std::vector<char> data;
+};
+
+static const char*
+pathFilename(const char *path)
+{
+	const char *slash = strrchr(path, '/');
+	const char *backslash = strrchr(path, '\\');
+	if(backslash && (slash == nil || backslash > slash))
+		slash = backslash;
+	return slash ? slash + 1 : path;
+}
+
+static bool
+pathsEqualCiNormalized(const char *a, const char *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	while(*a || *b){
+		char ca = *a++;
+		char cb = *b++;
+		if(ca == '\\') ca = '/';
+		if(cb == '\\') cb = '/';
+		if(ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
+		if(cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
+		if(ca != cb)
+			return false;
+	}
+	return true;
+}
+
+static bool
+pathContainsModloaderDir(const char *path)
+{
+	if(path == nil || path[0] == '\0')
+		return false;
+	char normalized[1024];
+	size_t i = 0;
+	for(; path[i] && i < sizeof(normalized)-1; i++){
+		char c = path[i];
+		if(c == '\\') c = '/';
+		if(c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+		normalized[i] = c;
+	}
+	normalized[i] = '\0';
+	return strstr(normalized, "/modloader/") != nil ||
+	       strcmp(normalized, "modloader") == 0 ||
+	       strncmp(normalized, "modloader/", 10) == 0;
+}
+
+static bool
+pickFileDialog(char *dst, size_t size, const char *expectedExt)
+{
+	if(dst == nil || size == 0)
+		return false;
+
+#ifdef _WIN32
+	char filename[MAX_PATH] = "";
+	OPENFILENAMEA ofn = {};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.lpstrFile = filename;
+	ofn.nMaxFile = sizeof(filename);
+	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+	if(!GetOpenFileNameA(&ofn))
+		return false;
+	strncpy(dst, filename, size-1);
+	dst[size-1] = '\0';
+	return true;
+#else
+	const char *command =
+#ifdef __APPLE__
+		"osascript -e 'POSIX path of (choose file)'";
+#else
+		"sh -lc 'if command -v zenity >/dev/null 2>&1; then zenity --file-selection; "
+		"elif command -v kdialog >/dev/null 2>&1; then kdialog --getopenfilename; fi'";
+#endif
+	FILE *pipe = popen(command, "r");
+	if(pipe == nil)
+		return false;
+	bool ok = fgets(dst, (int)size, pipe) != nil;
+	pclose(pipe);
+	if(!ok)
+		return false;
+	trimLineEnding(dst);
+	return dst[0] != '\0';
+#endif
+}
+
+static bool
+pathHasExtensionCi(const char *path, const char *ext)
+{
+	size_t pathLen = strlen(path);
+	size_t extLen = strlen(ext);
+	if(pathLen < extLen)
+		return false;
+	return rw::strncmp_ci(path + pathLen - extLen, ext, (int)extLen) == 0;
+}
+
+static void
+stripExtensionCopy(const char *path, char *dst, size_t size)
+{
+	const char *filename = pathFilename(path);
+	const char *dot = strrchr(filename, '.');
+	size_t len = dot && dot > filename ? (size_t)(dot - filename) : strlen(filename);
+	if(len >= size)
+		len = size - 1;
+	memcpy(dst, filename, len);
+	dst[len] = '\0';
+}
+
+static bool
+getDirectoryCopy(const char *path, char *dst, size_t size)
+{
+	const char *slash = strrchr(path, '/');
+	const char *backslash = strrchr(path, '\\');
+	if(backslash && (slash == nil || backslash > slash))
+		slash = backslash;
+	if(slash == nil){
+		if(size == 0) return false;
+		dst[0] = '\0';
+		return true;
+	}
+	size_t len = (size_t)(slash - path);
+	if(len >= size)
+		return false;
+	memcpy(dst, path, len);
+	dst[len] = '\0';
+	return true;
+}
+
+static bool
+buildSiblingPath(char *dst, size_t size, const char *dir, const char *base, const char *ext)
+{
+	if(dir == nil || dir[0] == '\0')
+		return snprintf(dst, size, "%s%s", base, ext) < (int)size;
+	return snprintf(dst, size, "%s/%s%s", dir, base, ext) < (int)size;
+}
+
+static bool
+buildCustomImportModelLogicalPath(char *dst, size_t size, const char *name, const char *ext)
+{
+	return snprintf(dst, size, "models/gta3.img/%s.%s", name, ext) < (int)size;
+}
+
+static bool
+buildCustomImportColLogicalPath(char *dst, size_t size, const char *name)
+{
+	return snprintf(dst, size, "data/maps/ariane/cols/%s.col", name) < (int)size;
+}
+
+static bool
+copyFileExact(const char *src, const char *dst)
+{
+	FILE *in = fopen(src, "rb");
+	if(in == nil)
+		return false;
+	if(!EnsureParentDirectoriesForPath(dst)){
+		fclose(in);
+		return false;
+	}
+	FILE *out = fopen(dst, "wb");
+	if(out == nil){
+		fclose(in);
+		return false;
+	}
+
+	char buffer[64*1024];
+	bool ok = true;
+	while(!feof(in)){
+		size_t n = fread(buffer, 1, sizeof(buffer), in);
+		if(n == 0)
+			break;
+		if(fwrite(buffer, 1, n, out) != n){
+			ok = false;
+			break;
+		}
+	}
+	fclose(in);
+	fclose(out);
+	return ok;
+}
+
+static bool
+writeFileExact(const char *path, const char *data, size_t size)
+{
+	if(!EnsureParentDirectoriesForPath(path))
+		return false;
+	FILE *f = fopen(path, "wb");
+	if(f == nil)
+		return false;
+	bool ok = fwrite(data, 1, size, f) == size;
+	fclose(f);
+	return ok;
+}
+
+static bool
+isValidColFourcc(uint32 fourcc)
+{
+	return fourcc == 0x4C4C4F43 || fourcc == 0x324C4F43 ||
+	       fourcc == 0x334C4F43 || fourcc == 0x344C4F43;
+}
+
+static bool
+readFileExact(const char *path, std::vector<char> &data)
+{
+	FILE *f = fopen(path, "rb");
+	if(f == nil)
+		return false;
+
+	if(fseek(f, 0, SEEK_END) != 0){
+		fclose(f);
+		return false;
+	}
+	long size = ftell(f);
+	if(size < 0){
+		fclose(f);
+		return false;
+	}
+	if(fseek(f, 0, SEEK_SET) != 0){
+		fclose(f);
+		return false;
+	}
+	data.resize((size_t)size);
+	bool ok = size == 0 || fread(data.data(), 1, (size_t)size, f) == (size_t)size;
+	fclose(f);
+	return ok;
+}
+
+static bool
+forEachColEntry(std::vector<char> &data, bool (*cb)(ColFileHeader *header, size_t offset, void *ctx), void *ctx)
+{
+	size_t offset = 0;
+	bool sawEntry = false;
+	while(offset + 32 <= data.size()){
+		ColFileHeader *header = (ColFileHeader*)&data[offset];
+		if(!isValidColFourcc(header->fourcc) || header->modelsize < 24)
+			return sawEntry;
+		sawEntry = true;
+		if(!cb(header, offset, ctx))
+			return false;
+
+		size_t nextOffset = offset + 8 + (size_t)header->modelsize;
+		if(nextOffset <= offset)
+			return false;
+		if(nextOffset > data.size())
+			nextOffset = data.size();
+		offset = nextOffset;
+	}
+	return sawEntry;
+}
+
+struct ColInspectContext
+{
+	const char *modelName;
+	int count;
+	bool allMatch;
+	char firstName[25];
+};
+
+static bool
+inspectColEntry(ColFileHeader *header, size_t, void *ctx)
+{
+	ColInspectContext *inspect = (ColInspectContext*)ctx;
+	char entryName[25];
+	memcpy(entryName, header->name, sizeof(header->name));
+	entryName[sizeof(header->name)] = '\0';
+	if(inspect->count == 0){
+		strncpy(inspect->firstName, entryName, sizeof(inspect->firstName)-1);
+		inspect->firstName[sizeof(inspect->firstName)-1] = '\0';
+	}
+	if(rw::strncmp_ci(entryName, inspect->modelName, MODELNAMELEN) != 0)
+		inspect->allMatch = false;
+	inspect->count++;
+	return true;
+}
+
+static bool
+inspectColFileForImport(const char *path, int *entryCount, bool *allEntriesMatchModel,
+                        bool *singleEntryNeedsRename, const char *modelName)
+{
+	std::vector<char> data;
+	if(!readFileExact(path, data) || data.size() < 32)
+		return false;
+
+	ColInspectContext ctx = {};
+	ctx.modelName = modelName;
+	ctx.allMatch = true;
+	ctx.firstName[0] = '\0';
+	if(!forEachColEntry(data, inspectColEntry, &ctx) || ctx.count == 0)
+		return false;
+
+	if(entryCount) *entryCount = ctx.count;
+	if(allEntriesMatchModel) *allEntriesMatchModel = ctx.allMatch;
+	if(singleEntryNeedsRename) *singleEntryNeedsRename = ctx.count == 1 &&
+		rw::strncmp_ci(ctx.firstName, modelName, MODELNAMELEN) != 0;
+	return true;
+}
+
+static bool
+copyColWithInternalRename(const char *src, const char *dst, const char *modelName)
+{
+	std::vector<char> data;
+	if(!readFileExact(src, data) || data.size() < 32)
+		return false;
+	size_t offset = 0;
+	bool sawEntry = false;
+	while(offset + 32 <= data.size()){
+		ColFileHeader *header = (ColFileHeader*)&data[offset];
+		if(!isValidColFourcc(header->fourcc) || header->modelsize < 24)
+			break;
+		sawEntry = true;
+		if(offset + 8 + (size_t)header->modelsize > data.size())
+			header->modelsize = (uint32)(data.size() - offset - 8);
+		size_t modelLen = strlen(modelName);
+		if(modelLen >= sizeof(header->name))
+			return false;
+		memcpy(header->name, modelName, modelLen);
+		header->name[modelLen] = '\0';
+
+		size_t nextOffset = offset + 8 + (size_t)header->modelsize;
+		if(nextOffset <= offset)
+			return false;
+		offset = nextOffset;
+	}
+	if(!sawEntry)
+		return false;
+	return writeFileExact(dst, data.data(), data.size());
+}
+
+static bool
+ensureTextFileExists(const char *path, const char *contents)
+{
+	if(doesFileExist(path))
+		return true;
+	if(!EnsureParentDirectoriesForPath(path))
+		return false;
+	FILE *f = fopen(path, "w");
+	if(f == nil)
+		return false;
+	fputs(contents, f);
+	fclose(f);
+	return true;
+}
+
+static bool
+captureRollbackEntry(std::vector<FileRollbackEntry> &entries, const char *path)
+{
+	for(size_t i = 0; i < entries.size(); i++)
+		if(entries[i].path == path)
+			return true;
+
+	FileRollbackEntry entry;
+	entry.path = path;
+	entry.existed = doesFileExist(path);
+	if(entry.existed){
+		FILE *f = fopen(path, "rb");
+		if(f == nil)
+			return false;
+		if(fseek(f, 0, SEEK_END) != 0){
+			fclose(f);
+			return false;
+		}
+		long size = ftell(f);
+		if(size < 0){
+			fclose(f);
+			return false;
+		}
+		if(fseek(f, 0, SEEK_SET) != 0){
+			fclose(f);
+			return false;
+		}
+		entry.data.resize((size_t)size);
+		if(size > 0 && fread(entry.data.data(), 1, (size_t)size, f) != (size_t)size){
+			fclose(f);
+			return false;
+		}
+		fclose(f);
+	}
+	entries.push_back(entry);
+	return true;
+}
+
+static void
+rollbackTouchedFiles(const std::vector<FileRollbackEntry> &entries)
+{
+	for(size_t i = entries.size(); i > 0; i--){
+		const FileRollbackEntry &entry = entries[i-1];
+		if(entry.existed)
+			writeFileExact(entry.path.c_str(), entry.data.data(), entry.data.size());
+		else
+			remove(entry.path.c_str());
+	}
+}
+
+static void
+trimLineEnding(char *line)
+{
+	char *p = line + strlen(line);
+	while(p > line && (p[-1] == '\n' || p[-1] == '\r'))
+		*--p = '\0';
+}
+
+static bool
+appendUniqueLine(const char *path, const char *line)
+{
+	char existing[1024];
+	FILE *f = fopen(path, "r");
+	if(f){
+		while(fgets(existing, sizeof(existing), f)){
+			trimLineEnding(existing);
+			if(strcmp(existing, line) == 0){
+				fclose(f);
+				return true;
+			}
+		}
+		fclose(f);
+	}
+	if(!EnsureParentDirectoriesForPath(path))
+		return false;
+	f = fopen(path, "a");
+	if(f == nil)
+		return false;
+	bool needNewline = false;
+	if(fseek(f, 0, SEEK_END) == 0 && ftell(f) > 0){
+		if(fseek(f, -1, SEEK_END) == 0)
+			needNewline = fgetc(f) != '\n';
+		fseek(f, 0, SEEK_END);
+	}
+	if(needNewline)
+		fputc('\n', f);
+	fprintf(f, "%s\n", line);
+	fclose(f);
+	return true;
+}
+
+static void
+resetCustomImportPreview(void)
+{
+	memset(&gCustomImport.previewObj, 0, sizeof(gCustomImport.previewObj));
+	gCustomImport.previewObj.m_type = ObjectDef::ATOMIC;
+	gCustomImport.previewObj.m_numAtomics = 1;
+	gCustomImport.previewObj.m_drawDist[0] = gCustomImport.drawDist;
+}
+
+static void
+resetCustomImportState(void)
+{
+	memset(&gCustomImport, 0, sizeof(gCustomImport));
+	gCustomImport.active = true;
+	gCustomImport.objectId = findSuggestedCustomImportId();
+	gCustomImport.drawDist = 300.0f;
+	resetCustomImportPreview();
+}
+
+static void
+beginEmptyCustomImport(void)
+{
+	resetCustomImportState();
+	gOpenCustomImport = true;
+}
+
+static void
+clearCustomImportMessages(void)
+{
+	gCustomImport.error[0] = '\0';
+	gCustomImport.warning[0] = '\0';
+}
+
+static void
+clearCustomImportColSelection(void)
+{
+	gCustomImport.colSource[0] = '\0';
+	gCustomImport.hasCol = false;
+	gCustomImport.preferAutoCol = true;
+	clearCustomImportMessages();
+}
+
+static void
+setCustomImportColPath(const char *path)
+{
+	if(path == nil || path[0] == '\0'){
+		clearCustomImportColSelection();
+		return;
+	}
+	strncpy(gCustomImport.colSource, path, sizeof(gCustomImport.colSource)-1);
+	gCustomImport.colSource[sizeof(gCustomImport.colSource)-1] = '\0';
+	gCustomImport.hasCol = true;
+	gCustomImport.preferAutoCol = false;
+	clearCustomImportMessages();
+}
+
+static void
+autofillCustomImportSiblingPaths(const char *baseName)
+{
+	char txdPath[1024];
+	char colPath[1024];
+	if(gCustomImport.sourceDir[0] == '\0' || baseName == nil || baseName[0] == '\0')
+		return;
+	if(buildSiblingPath(txdPath, sizeof(txdPath), gCustomImport.sourceDir, baseName, ".txd") &&
+	   doesFileExist(txdPath)){
+		strncpy(gCustomImport.txdSource, txdPath, sizeof(gCustomImport.txdSource)-1);
+		gCustomImport.txdSource[sizeof(gCustomImport.txdSource)-1] = '\0';
+	}
+	if(!gCustomImport.preferAutoCol &&
+	   buildSiblingPath(colPath, sizeof(colPath), gCustomImport.sourceDir, baseName, ".col") &&
+	   doesFileExist(colPath))
+		setCustomImportColPath(colPath);
+}
+
+static void
+setCustomImportDffPath(const char *path)
+{
+	char detectedBase[MODELNAMELEN];
+	if(path == nil || path[0] == '\0')
+		return;
+	strncpy(gCustomImport.dffSource, path, sizeof(gCustomImport.dffSource)-1);
+	gCustomImport.dffSource[sizeof(gCustomImport.dffSource)-1] = '\0';
+	if(getDirectoryCopy(path, gCustomImport.sourceDir, sizeof(gCustomImport.sourceDir))){
+		stripExtensionCopy(path, detectedBase, sizeof(detectedBase));
+		strncpy(gCustomImport.sourceBase, detectedBase, sizeof(gCustomImport.sourceBase)-1);
+		gCustomImport.sourceBase[sizeof(gCustomImport.sourceBase)-1] = '\0';
+		strncpy(gCustomImport.modelName, detectedBase, sizeof(gCustomImport.modelName)-1);
+		gCustomImport.modelName[sizeof(gCustomImport.modelName)-1] = '\0';
+		gCustomImport.txdSource[0] = '\0';
+		strncpy(gCustomImport.txdName, detectedBase, sizeof(gCustomImport.txdName)-1);
+		gCustomImport.txdName[sizeof(gCustomImport.txdName)-1] = '\0';
+		if(!gCustomImport.preferAutoCol){
+			gCustomImport.colSource[0] = '\0';
+			gCustomImport.hasCol = false;
+		}
+		autofillCustomImportSiblingPaths(detectedBase);
+	}
+	clearCustomImportMessages();
+}
+
+static void
+setCustomImportTxdPath(const char *path)
+{
+	char detectedBase[MODELNAMELEN];
+	if(path == nil || path[0] == '\0')
+		return;
+	strncpy(gCustomImport.txdSource, path, sizeof(gCustomImport.txdSource)-1);
+	gCustomImport.txdSource[sizeof(gCustomImport.txdSource)-1] = '\0';
+	stripExtensionCopy(path, detectedBase, sizeof(detectedBase));
+	strncpy(gCustomImport.txdName, detectedBase, sizeof(gCustomImport.txdName)-1);
+	gCustomImport.txdName[sizeof(gCustomImport.txdName)-1] = '\0';
+	clearCustomImportMessages();
+}
+
+static bool
+chooseCustomImportFile(const char *expectedExt, char *pickedPath, size_t pickedPathSize)
+{
+	char path[1024];
+	path[0] = '\0';
+	if(!pickFileDialog(path, sizeof(path), expectedExt))
+		return false;
+	if(!pathHasExtensionCi(path, expectedExt)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "Please choose a %s file.", expectedExt);
+		return false;
+	}
+	strncpy(pickedPath, path, pickedPathSize-1);
+	pickedPath[pickedPathSize-1] = '\0';
+	return true;
+}
+
+static int
+computeFlagsFromObjectDef(const ObjectDef *obj)
+{
+	int flags = 0;
+	switch(params.objFlagset){
+	case GAME_III:
+		if(obj->m_normalCull) flags |= 1;
+		if(obj->m_noFade) flags |= 2;
+		if(obj->m_drawLast) flags |= obj->m_additive ? 8 : 4;
+		if(obj->m_isSubway) flags |= 0x10;
+		if(obj->m_ignoreLight) flags |= 0x20;
+		if(obj->m_noZwrite) flags |= 0x40;
+		break;
+	case GAME_VC:
+		if(obj->m_wetRoadReflection) flags |= 1;
+		if(obj->m_noFade) flags |= 2;
+		if(obj->m_drawLast) flags |= obj->m_additive ? 8 : 4;
+		if(obj->m_isSubway) flags |= 0x10;
+		if(obj->m_ignoreLight) flags |= 0x20;
+		if(obj->m_noZwrite) flags |= 0x40;
+		if(obj->m_noShadows) flags |= 0x80;
+		if(obj->m_ignoreDrawDist) flags |= 0x100;
+		if(obj->m_isCodeGlass) flags |= 0x200;
+		if(obj->m_isArtistGlass) flags |= 0x400;
+		break;
+	case GAME_SA:
+		if(obj->m_drawLast) flags |= obj->m_additive ? 8 : 4;
+		if(obj->m_noZwrite) flags |= 0x40;
+		if(obj->m_noShadows) flags |= 0x80;
+		if(obj->m_noBackfaceCulling) flags |= 0x200000;
+		if(obj->m_type == ObjectDef::ATOMIC){
+			if(obj->m_wetRoadReflection) flags |= 1;
+			if(obj->m_dontCollideWithFlyer) flags |= 0x8000;
+			if(obj->m_isCodeGlass) flags |= 0x200;
+			if(obj->m_isArtistGlass) flags |= 0x400;
+			if(obj->m_isGarageDoor) flags |= 0x800;
+			if(obj->m_isDamageable && !obj->m_isTimed) flags |= 0x1000;
+			if(obj->m_isTree) flags |= 0x2000;
+			if(obj->m_isPalmTree) flags |= 0x4000;
+			if(obj->m_isTag) flags |= 0x100000;
+			if(obj->m_noCover) flags |= 0x400000;
+			if(obj->m_wetOnly) flags |= 0x800000;
+		}else if(obj->m_isDoor)
+			flags |= 0x20;
+		break;
+	}
+	return flags;
+}
+
+static void
+uiObjectFlagsEditor(ObjectDef *obj)
+{
+	switch(params.objFlagset){
+	case GAME_III:
+		ImGui::Checkbox("Normal cull", &obj->m_normalCull);
+		ImGui::Checkbox("No Fade", &obj->m_noFade);
+		ImGui::Checkbox("Draw Last", &obj->m_drawLast);
+		ImGui::Checkbox("Additive Blend", &obj->m_additive);
+		if(obj->m_additive) obj->m_drawLast = true;
+		ImGui::Checkbox("Is Subway", &obj->m_isSubway);
+		ImGui::Checkbox("Ignore Light", &obj->m_ignoreLight);
+		ImGui::Checkbox("No Z-write", &obj->m_noZwrite);
+		break;
+
+	case GAME_VC:
+		ImGui::Checkbox("Wet Road Effect", &obj->m_wetRoadReflection);
+		ImGui::Checkbox("No Fade", &obj->m_noFade);
+		ImGui::Checkbox("Draw Last", &obj->m_drawLast);
+		ImGui::Checkbox("Additive Blend", &obj->m_additive);
+		if(obj->m_additive) obj->m_drawLast = true;
+		ImGui::Checkbox("Ignore Light", &obj->m_ignoreLight);
+		ImGui::Checkbox("No Z-write", &obj->m_noZwrite);
+		ImGui::Checkbox("No shadows", &obj->m_noShadows);
+		ImGui::Checkbox("Ignore Draw Dist", &obj->m_ignoreDrawDist);
+		ImGui::Checkbox("Code Glass", &obj->m_isCodeGlass);
+		ImGui::Checkbox("Artist Glass", &obj->m_isArtistGlass);
+		break;
+
+	case GAME_SA: {
+		ImGui::Checkbox("Draw Last", &obj->m_drawLast);
+		ImGui::Checkbox("Additive Blend", &obj->m_additive);
+		if(obj->m_additive) obj->m_drawLast = true;
+		ImGui::Checkbox("No Z-write", &obj->m_noZwrite);
+		ImGui::Checkbox("No shadows", &obj->m_noShadows);
+		ImGui::Checkbox("No Backface Culling", &obj->m_noBackfaceCulling);
+		if(obj->m_type == ObjectDef::ATOMIC){
+			ImGui::Checkbox("Wet Road Effect", &obj->m_wetRoadReflection);
+			ImGui::Checkbox("Don't collide with Flyer", &obj->m_dontCollideWithFlyer);
+
+			int flag = (int)obj->m_isCodeGlass |
+				(int)obj->m_isArtistGlass<<1 |
+				(int)obj->m_isGarageDoor<<2 |
+				(int)obj->m_isDamageable<<3 |
+				(int)obj->m_isTree<<4 |
+				(int)obj->m_isPalmTree<<5 |
+				(int)obj->m_isTag<<6 |
+				(int)obj->m_noCover<<7 |
+				(int)obj->m_wetOnly<<8;
+			ImGui::RadioButton("None", &flag, 0);
+			ImGui::RadioButton("Code Glass", &flag, 1);
+			ImGui::RadioButton("Artist Glass", &flag, 2);
+			ImGui::RadioButton("Garage Door", &flag, 4);
+			if(!obj->m_isTimed)
+				ImGui::RadioButton("Damageable", &flag, 8);
+			ImGui::RadioButton("Tree", &flag, 0x10);
+			ImGui::RadioButton("Palm Tree", &flag, 0x20);
+			ImGui::RadioButton("Tag", &flag, 0x40);
+			ImGui::RadioButton("No Cover", &flag, 0x80);
+			ImGui::RadioButton("Wet Only", &flag, 0x100);
+			obj->m_isCodeGlass = !!(flag & 1);
+			obj->m_isArtistGlass = !!(flag & 2);
+			obj->m_isGarageDoor = !!(flag & 4);
+			obj->m_isDamageable = !!(flag & 8);
+			obj->m_isTree = !!(flag & 0x10);
+			obj->m_isPalmTree = !!(flag & 0x20);
+			obj->m_isTag = !!(flag & 0x40);
+			obj->m_noCover = !!(flag & 0x80);
+			obj->m_wetOnly = !!(flag & 0x100);
+		}else if(obj->m_type == ObjectDef::CLUMP)
+			ImGui::Checkbox("Door", &obj->m_isDoor);
+		break;
+	}
+	}
+}
+
+static int
+findSuggestedCustomImportId(void)
+{
+	int limit = NUMOBJECTDEFS;
+	int start = gCustomImportPreferredStartId;
+	if(start < 0)
+		start = 0;
+	if(start >= limit)
+		start = limit - 1;
+	int maxExisting = start - 1;
+	for(int i = start; i < limit; i++)
+		if(GetObjectDef(i))
+			maxExisting = i;
+	for(int i = maxExisting + 1; i < limit; i++)
+		if(GetObjectDef(i) == nil)
+			return i;
+	for(int i = start; i < limit; i++)
+		if(GetObjectDef(i) == nil)
+			return i;
+	return -1;
+}
+
+static void
+beginCustomImportFromPath(const char *path)
+{
+	char detectedBase[MODELNAMELEN];
+	char dffPath[1024];
+	char txdPath[1024];
+	char colPath[1024];
+
+	resetCustomImportState();
+	stripExtensionCopy(path, detectedBase, sizeof(detectedBase));
+	if(!getDirectoryCopy(path, gCustomImport.sourceDir, sizeof(gCustomImport.sourceDir)))
+		return;
+	if(!buildSiblingPath(dffPath, sizeof(dffPath), gCustomImport.sourceDir, detectedBase, ".dff") ||
+	   !buildSiblingPath(txdPath, sizeof(txdPath), gCustomImport.sourceDir, detectedBase, ".txd") ||
+	   !buildSiblingPath(colPath, sizeof(colPath), gCustomImport.sourceDir, detectedBase, ".col"))
+		return;
+	if(!doesFileExist(dffPath) || !doesFileExist(txdPath)){
+		Toast(TOAST_SPAWN, "Custom import needs matching .dff and .txd in the same folder");
+		return;
+	}
+
+	strncpy(gCustomImport.sourceBase, detectedBase, sizeof(gCustomImport.sourceBase)-1);
+	strncpy(gCustomImport.modelName, detectedBase, sizeof(gCustomImport.modelName)-1);
+	strncpy(gCustomImport.txdName, detectedBase, sizeof(gCustomImport.txdName)-1);
+	strncpy(gCustomImport.dffSource, dffPath, sizeof(gCustomImport.dffSource)-1);
+	strncpy(gCustomImport.txdSource, txdPath, sizeof(gCustomImport.txdSource)-1);
+	if(doesFileExist(colPath)){
+		strncpy(gCustomImport.colSource, colPath, sizeof(gCustomImport.colSource)-1);
+		gCustomImport.hasCol = true;
+	}
+	gOpenCustomImport = true;
+}
+
+static bool
+hasInvalidModelTokenChars(const char *s)
+{
+	if(s == nil || s[0] == '\0')
+		return true;
+	for(const char *p = s; *p; p++)
+		if(!isalnum((unsigned char)*p) && *p != '_')
+			return true;
+	return false;
+}
+
+static GameFile*
+getOrCreateCustomImportGameFile(GameFile **cache, const char *logicalPath)
+{
+	if(*cache){
+		if((*cache)->sourcePath == nil){
+			const char *src = ModloaderGetSourcePath(logicalPath);
+			if(src)
+				(*cache)->sourcePath = strdup(src);
+			else{
+				char exportPath[1024];
+				if(BuildModloaderLogicalExportPath(logicalPath, exportPath, sizeof(exportPath)))
+					(*cache)->sourcePath = strdup(exportPath);
+			}
+		}
+		return *cache;
+	}
+	char mutablePath[256];
+	strncpy(mutablePath, logicalPath, sizeof(mutablePath)-1);
+	mutablePath[sizeof(mutablePath)-1] = '\0';
+	*cache = NewGameFile(mutablePath);
+	return *cache;
+}
+
+static bool
+spawnCustomImportedObject(int objectId)
+{
+	ObjectDef *obj = GetObjectDef(objectId);
+	if(obj == nil)
+		return false;
+
+	rw::V3d position = GetPlacementPosition();
+	GameFile *file = getOrCreateCustomImportGameFile(&gCustomImportIplFile, CUSTOM_IMPORT_IPL_LOGICAL_PATH);
+	int maxIplIndex = -1;
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *other = (ObjectInst*)p->item;
+		if(other->m_file == file && other->m_imageIndex < 0 && other->m_iplIndex > maxIplIndex)
+			maxIplIndex = other->m_iplIndex;
+	}
+
+	ObjectInst *inst = AddInstance();
+	inst->m_objectId = objectId;
+	inst->m_area = currentArea;
+	inst->m_rotation.x = 0.0f;
+	inst->m_rotation.y = 0.0f;
+	inst->m_rotation.z = 0.0f;
+	inst->m_rotation.w = 1.0f;
+	inst->m_translation = position;
+	inst->m_lodId = -1;
+	inst->m_lod = nil;
+	inst->m_numChildren = 0;
+	inst->m_file = file;
+	inst->m_imageIndex = -1;
+	inst->m_binInstIndex = -1;
+	inst->m_iplIndex = maxIplIndex + 1;
+	SetInstIplFilterKey(inst, file ? file->name : nil);
+	inst->m_isAdded = true;
+	inst->m_isDirty = true;
+	inst->m_savedStateValid = false;
+	inst->m_wasSavedDeleted = false;
+	inst->m_gameEntityExists = false;
+	StampChangeSeq(inst);
+
+	if(obj->m_isBigBuilding)
+		inst->SetupBigBuilding();
+	inst->UpdateMatrix();
+	if(!obj->IsLoaded()){
+		RequestObject(objectId);
+		LoadAllRequestedObjects();
+	}
+
+	inst->CreateRwObject();
+	if(obj->m_colModel)
+		InsertInstIntoSectors(inst);
+	else{
+		CPtrList *list = inst->m_isBigBuilding
+			? &outOfBoundsSector.bigbuildings : &outOfBoundsSector.buildings;
+		list->InsertItem(inst);
+	}
+
+	ClearSelection();
+	inst->Select();
+	ObjectInst *pasted[1] = { inst };
+	UndoRecordPaste(pasted, 1);
+	return true;
+}
+
+void
+HandleCustomImportDrop(const char *path)
+{
+	if(path == nil)
+		return;
+	if(pathHasExtensionCi(path, ".dff") ||
+	   pathHasExtensionCi(path, ".txd") ||
+	   pathHasExtensionCi(path, ".col"))
+		beginCustomImportFromPath(path);
+}
 
 static void
 uiMainmenu(void)
 {
 	if(ImGui::BeginMainMenuBar()){
-		if(ImGui::BeginMenu("File")){
-			if(ImGui::MenuItem("Save All IPLs", "Ctrl+S")){
+		if(ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " File")){
+			if(ImGui::MenuItem(ICON_FA_FLOPPY_DISK " Save All IPLs", "Ctrl+S")){
 				if(saveAllIpls())
 					Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
 			}
-			if(ImGui::MenuItem("Test in Game", "Ctrl+G")){
+			ImGui::SetItemTooltip("Saves all modified objects in their respective placement files (.ipl).");
+			if(ImGui::MenuItem(ICON_FA_GAMEPAD " Test in Game", "Ctrl+G")){
 				testInGame();
 			}
+			ImGui::SetItemTooltip("Launches your game and spawns you to the current camera position.\nRequires ariane.asi installed in your game folder.");
 			if(ImGui::MenuItem("Save to Modloader", nil,
 			                   gSaveDestination == SAVE_DESTINATION_MODLOADER)){
 				gSaveDestination = gSaveDestination == SAVE_DESTINATION_MODLOADER ?
 					SAVE_DESTINATION_ORIGINAL_FILES : SAVE_DESTINATION_MODLOADER;
 				saveSaveSettings();
 			}
-			if(ImGui::MenuItem("Hot Reload", "Ctrl+R")){
+			ImGui::SetItemTooltip("When enabled, saves go to modloader/Ariane/ instead of\noverwriting original game files.");
+			if(ImGui::MenuItem(ICON_FA_BOLT " Hot Reload", "Ctrl+R")){
 				hotReloadIpls();
 			}
+			ImGui::SetItemTooltip("Instantly apply your changes in a running SA game without restarting.\nRequires ariane.asi.");
 			ImGui::Separator();
-			if(ImGui::MenuItem("Export Prefab...", "Ctrl+Shift+E", false, selection.first != nil)){
+			if(ImGui::MenuItem(ICON_FA_FILE_EXPORT " Export Prefab...", "Ctrl+Shift+E", false, selection.first != nil)){
 				gOpenExportPrefab = true;
 			}
-			if(ImGui::MenuItem("Import Prefab...", "Ctrl+Shift+I")){
+			ImGui::SetItemTooltip("Saves the selected objects as a reusable prefab file (.ariane)\nthat you can import later or share.");
+			if(ImGui::MenuItem(ICON_FA_FILE_IMPORT " Import Prefab...", "Ctrl+Shift+I")){
 				gOpenImportPrefab = true;
 			}
+			ImGui::SetItemTooltip("Loads a previously exported prefab file and places those\nobjects into the current map.");
+			if(ImGui::MenuItem(ICON_FA_CUBE " Import Custom Object...")){
+				beginEmptyCustomImport();
+			}
+			ImGui::SetItemTooltip("Import a custom DFF/TXD into the editor as a new placeable object.\nAutomatically registers it in your game files, ready to use in game.");
 			ImGui::Separator();
-			if(ImGui::MenuItem("Exit", "Alt+F4")) sk::globals.quit = 1;
+			if(ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
 		}
-		if(ImGui::BeginMenu("Window")){
-			if(ImGui::MenuItem("Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
-			if(ImGui::MenuItem("View", "V", showViewWindow)) { showViewWindow ^= 1; }
-			if(ImGui::MenuItem("Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
-			if(ImGui::MenuItem("Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
-			if(ImGui::MenuItem("Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
-			if(ImGui::MenuItem("Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
-			if(ImGui::MenuItem("Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
-			if(ImGui::MenuItem("Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
-			if(ImGui::MenuItem("Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
+		if(ImGui::BeginMenu(ICON_FA_WINDOW_MAXIMIZE " Window")){
+			if(ImGui::MenuItem(ICON_FA_CLOUD_SUN " Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_EYE " View", "V", showViewWindow)) { showViewWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_PAINTBRUSH " Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_WRENCH " Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_CIRCLE_INFO " Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_PEN " Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_MAGNIFYING_GLASS " Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_CODE_COMPARE " Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_LIST " Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
 			if(ImGui::MenuItem("Demo ", nil, showDemoWindow)) { showDemoWindow ^= 1; }
-			if(ImGui::MenuItem("Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
+			if(ImGui::MenuItem(ICON_FA_CIRCLE_QUESTION " Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
 			ImGui::Separator();
-			if(ImGui::BeginMenu("Notifications")){
+			if(ImGui::BeginMenu(ICON_FA_BELL " Notifications")){
 				uiNotificationSettings();
 				ImGui::EndMenu();
 			}
@@ -1313,6 +2391,7 @@ uiMainmenu(void)
 	}
 	uiExportPrefabPopup();
 	uiImportPrefabPopup();
+	uiCustomImportPopup();
 }
 
 static void
@@ -1333,7 +2412,14 @@ uiExportPrefabPopup(void)
 		bool validName = prefabName[0] != '\0';
 		if(ImGui::Button("Export", ImVec2(120, 0)) && validName){
 			char path[512];
-			snprintf(path, sizeof(path), "prefabs/%s.ariane", prefabName);
+			char prefabDir[512];
+			if(!GetArianeDataPath(prefabDir, sizeof(prefabDir), "prefabs") ||
+			   snprintf(path, sizeof(path), "%s/%s.ariane", prefabDir, prefabName) >= (int)sizeof(path)){
+				Toast(TOAST_SAVE, "Failed to resolve prefab path");
+				ImGui::CloseCurrentPopup();
+				ImGui::EndPopup();
+				return;
+			}
 			int exported = ExportPrefab(path);
 			if(exported > 0)
 				Toast(TOAST_SAVE, "Exported %d instance(s) to %s", exported, path);
@@ -1350,9 +2436,8 @@ uiExportPrefabPopup(void)
 }
 
 static void
-scanPrefabDir(const char *dir, char files[][256], int *numFiles, int maxFiles)
+scanPrefabDir(const char *dir, char files[][256], char fullPaths[][512], int *numFiles, int maxFiles)
 {
-	*numFiles = 0;
 #ifdef _WIN32
 	char pattern[512];
 	snprintf(pattern, sizeof(pattern), "%s\\*.ariane", dir);
@@ -1361,8 +2446,18 @@ scanPrefabDir(const char *dir, char files[][256], int *numFiles, int maxFiles)
 	if(h == INVALID_HANDLE_VALUE) return;
 	do {
 		if(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && *numFiles < maxFiles){
+			bool duplicate = false;
+			for(int i = 0; i < *numFiles; i++)
+				if(strcmp(files[i], fd.cFileName) == 0){
+					duplicate = true;
+					break;
+				}
+			if(duplicate)
+				continue;
 			strncpy(files[*numFiles], fd.cFileName, 255);
 			files[*numFiles][255] = '\0';
+			snprintf(fullPaths[*numFiles], 512, "%s/%s", dir, fd.cFileName);
+			fullPaths[*numFiles][511] = '\0';
 			(*numFiles)++;
 		}
 	} while(FindNextFileA(h, &fd));
@@ -1376,8 +2471,18 @@ scanPrefabDir(const char *dir, char files[][256], int *numFiles, int maxFiles)
 		size_t len = strlen(ent->d_name);
 		if(len > 7 && strcmp(ent->d_name + len - 7, ".ariane") == 0){
 			if(*numFiles < maxFiles){
+				bool duplicate = false;
+				for(int i = 0; i < *numFiles; i++)
+					if(strcmp(files[i], ent->d_name) == 0){
+						duplicate = true;
+						break;
+					}
+				if(duplicate)
+					continue;
 				strncpy(files[*numFiles], ent->d_name, 255);
 				files[*numFiles][255] = '\0';
+				snprintf(fullPaths[*numFiles], 512, "%s/%s", dir, ent->d_name);
+				fullPaths[*numFiles][511] = '\0';
 				(*numFiles)++;
 			}
 		}
@@ -1390,16 +2495,21 @@ static void
 uiImportPrefabPopup(void)
 {
 	static char prefabFiles[128][256];
+	static char prefabPaths[128][512];
 	static int numPrefabFiles = 0;
 	static char manualPath[512] = "";
 	static int selectedFile = -1;
 
 	if(gOpenImportPrefab){
+		char prefabDir[512];
 		ImGui::OpenPopup("Import Prefab");
 		gOpenImportPrefab = false;
 		manualPath[0] = '\0';
 		selectedFile = -1;
-		scanPrefabDir("prefabs", prefabFiles, &numPrefabFiles, 128);
+		numPrefabFiles = 0;
+		if(GetArianeDataPath(prefabDir, sizeof(prefabDir), "prefabs"))
+			scanPrefabDir(prefabDir, prefabFiles, prefabPaths, &numPrefabFiles, 128);
+		scanPrefabDir("prefabs", prefabFiles, prefabPaths, &numPrefabFiles, 128);
 	}
 
 	if(ImGui::BeginPopupModal("Import Prefab", nil, ImGuiWindowFlags_AlwaysAutoResize)){
@@ -1408,14 +2518,12 @@ uiImportPrefabPopup(void)
 		if(numPrefabFiles > 0){
 			ImGui::Text("Available prefabs:");
 			ImGui::BeginChild("PrefabList", ImVec2(350, 150), true);
-			for(int i = 0; i < numPrefabFiles; i++){
+			for(int i = 0; i < numPrefabFiles; i++)
 				if(ImGui::Selectable(prefabFiles[i], selectedFile == i))
 					selectedFile = i;
-			}
 			ImGui::EndChild();
-		}else{
-			ImGui::TextDisabled("No .ariane files found in prefabs/");
-		}
+		}else
+			ImGui::TextDisabled("No .ariane files found in ariane/prefabs/ or prefabs/");
 
 		ImGui::Separator();
 		ImGui::InputText("Or path", manualPath, sizeof(manualPath));
@@ -1426,7 +2534,7 @@ uiImportPrefabPopup(void)
 			if(manualPath[0] != '\0')
 				strncpy(path, manualPath, sizeof(path));
 			else
-				snprintf(path, sizeof(path), "prefabs/%s", prefabFiles[selectedFile]);
+				strncpy(path, prefabPaths[selectedFile], sizeof(path));
 			path[sizeof(path)-1] = '\0';
 
 			int imported = ImportPrefab(path);
@@ -1444,10 +2552,459 @@ uiImportPrefabPopup(void)
 	}
 }
 
+static bool
+finalizeCustomImport(void)
+{
+	gCustomImport.error[0] = '\0';
+	gCustomImport.warning[0] = '\0';
+
+	if(!isSA()){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "Custom import is wired for GTA San Andreas only in this v1.");
+		return false;
+	}
+	if(gCustomImport.objectId < 0){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "No free stock-range ID was found.");
+		return false;
+	}
+	if(GetObjectDef(gCustomImport.objectId)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "ID %d is already in use.", gCustomImport.objectId);
+		return false;
+	}
+	if(hasInvalidModelTokenChars(gCustomImport.modelName) || hasInvalidModelTokenChars(gCustomImport.txdName)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "Model/TXD names must use only letters, digits, and underscores.");
+		return false;
+	}
+	if(GetObjectDef(gCustomImport.modelName, nil)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "Model name %s already exists. Change the model name first.", gCustomImport.modelName);
+		return false;
+	}
+	if(FindTxdSlot(gCustomImport.txdName) >= 0){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "TXD name %s already exists. Change the TXD name first.", gCustomImport.txdName);
+		return false;
+	}
+	if(strlen(gCustomImport.modelName) >= 24){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "Model name %s is too long for COL internal name/export (max 23 chars).", gCustomImport.modelName);
+		return false;
+	}
+
+	char dffLogical[256], txdLogical[256], colLogical[256];
+	char dffTarget[1024], txdTarget[1024], colTarget[1024];
+	char manifestPath[1024], iplPath[1024];
+	if(!buildCustomImportModelLogicalPath(dffLogical, sizeof(dffLogical), gCustomImport.modelName, "dff") ||
+	   !buildCustomImportModelLogicalPath(txdLogical, sizeof(txdLogical), gCustomImport.txdName, "txd") ||
+	   !buildCustomImportColLogicalPath(colLogical, sizeof(colLogical), gCustomImport.modelName) ||
+	   !BuildModloaderLogicalExportPath(CUSTOM_IMPORT_MANIFEST_LOGICAL_PATH, manifestPath, sizeof(manifestPath)) ||
+	   !BuildModloaderLogicalExportPath(CUSTOM_IMPORT_IPL_LOGICAL_PATH, iplPath, sizeof(iplPath)) ||
+	   !BuildModloaderLogicalExportPath(dffLogical, dffTarget, sizeof(dffTarget)) ||
+	   !BuildModloaderLogicalExportPath(txdLogical, txdTarget, sizeof(txdTarget)) ||
+	   !BuildModloaderLogicalExportPath(colLogical, colTarget, sizeof(colTarget))){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Couldn't build export paths.");
+		return false;
+	}
+
+	bool importCol = gCustomImport.hasCol;
+	std::vector<FileRollbackEntry> rollbackEntries;
+	if(importCol){
+		int colEntryCount = 0;
+		bool colAllMatch = false;
+		bool colNeedsRename = false;
+		if(!inspectColFileForImport(gCustomImport.colSource, &colEntryCount, &colAllMatch,
+		                            &colNeedsRename, gCustomImport.modelName)){
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Couldn't parse COL file %s.", gCustomImport.colSource);
+			return false;
+		}
+		if(colEntryCount != 1 && !colAllMatch){
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+			         "COL import only supports automatic renaming for single-entry COL files.");
+			return false;
+		}
+	}
+
+	if(!captureRollbackEntry(rollbackEntries, dffTarget) ||
+	   !captureRollbackEntry(rollbackEntries, txdTarget) ||
+	   !captureRollbackEntry(rollbackEntries, manifestPath) ||
+	   !captureRollbackEntry(rollbackEntries, iplPath) ||
+	   !captureRollbackEntry(rollbackEntries, colTarget)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Couldn't snapshot files for rollback.");
+		return false;
+	}
+
+	char idePath[1024];
+	if(!BuildModloaderLogicalExportPath(CUSTOM_IMPORT_IDE_LOGICAL_PATH, idePath, sizeof(idePath))){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to resolve custom IDE path.");
+		return false;
+	}
+	if(!captureRollbackEntry(rollbackEntries, idePath)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Couldn't snapshot files for rollback.");
+		return false;
+	}
+
+	if(!copyFileExact(gCustomImport.dffSource, dffTarget) ||
+	   !copyFileExact(gCustomImport.txdSource, txdTarget)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to copy one or more source files.");
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+
+	ModloaderInit();
+	const char *winningDff = ModloaderFindOverride(gCustomImport.modelName, "dff");
+	const char *winningTxd = ModloaderFindOverride(gCustomImport.txdName, "txd");
+	if(winningDff == nil || !pathsEqualCiNormalized(winningDff, dffTarget) ||
+	   winningTxd == nil || !pathsEqualCiNormalized(winningTxd, txdTarget)){
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		const char *shownDff = winningDff ? winningDff : "<none>";
+		const char *shownTxd = winningTxd ? winningTxd : "<none>";
+		bool sourceInModloader = pathContainsModloaderDir(gCustomImport.dffSource) ||
+		                        pathContainsModloaderDir(gCustomImport.txdSource);
+		if(sourceInModloader)
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+			         "Import is shadowed before Ariane wins override resolution. DFF winner: %s | TXD winner: %s. "
+			         "Tip: importing files from another modloader folder can cause this.",
+			         shownDff, shownTxd);
+		else
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+			         "Import is shadowed before Ariane wins override resolution. DFF winner: %s | TXD winner: %s.",
+			         shownDff, shownTxd);
+		return false;
+	}
+
+	if(!ensureTextFileExists(iplPath, "inst\nend\n") ||
+	   (importCol && !copyColWithInternalRename(gCustomImport.colSource, colTarget, gCustomImport.modelName))){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to prepare custom import files.");
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+
+	if(!doesFileExist(idePath)){
+		FILE *ide = fopen(idePath, "w");
+		if(ide == nil){
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Couldn't create %s", idePath);
+			rollbackTouchedFiles(rollbackEntries);
+			ModloaderInit();
+			return false;
+		}
+		fprintf(ide, "objs\nend\n");
+		fclose(ide);
+	}
+
+	std::vector<std::string> lines;
+	FILE *ide = fopen(idePath, "r");
+	if(ide){
+		char line[512];
+		while(fgets(line, sizeof(line), ide)){
+			trimLineEnding(line);
+			lines.push_back(line);
+		}
+		fclose(ide);
+	}
+	bool inserted = false;
+	char ideEntry[512];
+	gCustomImport.previewObj.m_drawDist[0] = gCustomImport.drawDist;
+	int ideFlags = computeFlagsFromObjectDef(&gCustomImport.previewObj);
+	snprintf(ideEntry, sizeof(ideEntry), "%d, %s, %s, %.1f, %d",
+	         gCustomImport.objectId, gCustomImport.modelName, gCustomImport.txdName,
+	         gCustomImport.drawDist, ideFlags);
+	for(size_t i = 0; i < lines.size(); i++){
+		if(strcmp(lines[i].c_str(), ideEntry) == 0){
+			inserted = true;
+			break;
+		}
+		if(strcmp(lines[i].c_str(), "end") == 0){
+			lines.insert(lines.begin() + (long)i, ideEntry);
+			inserted = true;
+			break;
+		}
+	}
+	if(!inserted){
+		lines.push_back("objs");
+		lines.push_back(ideEntry);
+		lines.push_back("end");
+	}
+	ide = fopen(idePath, "w");
+	if(ide == nil){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Couldn't rewrite %s", idePath);
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+	for(size_t i = 0; i < lines.size(); i++)
+		fprintf(ide, "%s\n", lines[i].c_str());
+	fclose(ide);
+
+	ObjectDef *obj = AddObjectDef(gCustomImport.objectId);
+	if(obj == nil){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to allocate custom object.");
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+	int createdTxdSlot = -1;
+	auto rollbackRegisteredState = [&](){
+		RemoveObjectDef(gCustomImport.objectId);
+		if(createdTxdSlot >= 0)
+			RemoveTxdSlot(createdTxdSlot);
+	};
+	obj->m_type = ObjectDef::ATOMIC;
+	strncpy(obj->m_name, gCustomImport.modelName, MODELNAMELEN);
+	obj->m_name[MODELNAMELEN-1] = '\0';
+	obj->m_txdSlot = AddTxdSlot(gCustomImport.txdName);
+	createdTxdSlot = obj->m_txdSlot;
+	obj->m_numAtomics = 1;
+	obj->m_drawDist[0] = gCustomImport.drawDist;
+	obj->SetFlags(ideFlags);
+	obj->m_isTimed = false;
+	obj->m_file = getOrCreateCustomImportGameFile(&gCustomImportIdeFile, CUSTOM_IMPORT_IDE_LOGICAL_PATH);
+	obj->SetupBigBuilding(gCustomImport.objectId, gCustomImport.objectId + 1);
+
+	RequestObject(gCustomImport.objectId);
+	LoadAllRequestedObjects();
+	if(obj->m_atomics[0] == nil){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+		         "Failed to load imported DFF/TXD for %s.", gCustomImport.modelName);
+		rollbackRegisteredState();
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+
+	if(!importCol){
+		AutoColStats stats = {};
+		std::vector<char> generatedCol;
+		char autoColError[256];
+		autoColError[0] = '\0';
+		if(!GenerateCol3FromAtomic(obj->m_atomics[0], gCustomImport.modelName, generatedCol, &stats,
+		                           autoColError, sizeof(autoColError)) ||
+		   !writeFileExact(colTarget, generatedCol.data(), generatedCol.size())){
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error), "%s",
+			         autoColError[0] ? autoColError : "Failed to auto-generate COL from DFF geometry.");
+			rollbackRegisteredState();
+			rollbackTouchedFiles(rollbackEntries);
+			ModloaderInit();
+			return false;
+		}
+		int removedTriangles = stats.removedDuplicateIndexTriangles +
+		                      stats.removedZeroAreaTriangles +
+		                      stats.removedCollinearTriangles;
+		if(stats.exceededSoftTriangleThreshold || removedTriangles > 0){
+			snprintf(gCustomImport.warning, sizeof(gCustomImport.warning),
+			         "Auto-generated COL from DFF geometry (%d -> %d tris, %d -> %d verts).",
+			         stats.originalTriangles, stats.finalTriangles,
+			         stats.originalVertices, stats.finalVertices);
+		}
+	}
+
+	char manifestLine[512];
+	snprintf(manifestLine, sizeof(manifestLine), "IDE %s", CUSTOM_IMPORT_IDE_LOGICAL_PATH);
+	if(!appendUniqueLine(manifestPath, manifestLine)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to update %s", manifestPath);
+		rollbackRegisteredState();
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+	snprintf(manifestLine, sizeof(manifestLine), "IPL %s", CUSTOM_IMPORT_IPL_LOGICAL_PATH);
+	if(!appendUniqueLine(manifestPath, manifestLine)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to update %s", manifestPath);
+		rollbackRegisteredState();
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+	snprintf(manifestLine, sizeof(manifestLine), "COLFILE 0 %s", colLogical);
+	if(!appendUniqueLine(manifestPath, manifestLine)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "Failed to register COLFILE addition.");
+		rollbackRegisteredState();
+		rollbackTouchedFiles(rollbackEntries);
+		ModloaderInit();
+		return false;
+	}
+
+	ModloaderInit();
+
+	{
+		char mutableColPath[256];
+		strncpy(mutableColPath, colLogical, sizeof(mutableColPath)-1);
+		mutableColPath[sizeof(mutableColPath)-1] = '\0';
+		GameFile *prevFile = FileLoader::currentFile;
+		FileLoader::currentFile = NewGameFile(mutableColPath);
+		FileLoader::LoadCollisionFile(colLogical);
+		FileLoader::currentFile = prevFile;
+		if(obj->m_colModel == nil && !importCol){
+			snprintf(gCustomImport.error, sizeof(gCustomImport.error),
+			         "Auto-generated COL did not attach to model name %s.", gCustomImport.modelName);
+			rollbackRegisteredState();
+			rollbackTouchedFiles(rollbackEntries);
+			ModloaderInit();
+			return false;
+		}
+		if(obj->m_colModel == nil && gCustomImport.warning[0] == '\0'){
+			snprintf(gCustomImport.warning, sizeof(gCustomImport.warning),
+			         importCol ?
+			         "COL imported, but no collision matched model name %s." :
+			         "COL auto-generated, but no collision matched model name %s.",
+			         gCustomImport.modelName);
+		}
+	}
+
+	SetCustomPlacementIpl(CUSTOM_IMPORT_IPL_LOGICAL_PATH, iplPath, false);
+	SetSpawnObjectId(gCustomImport.objectId);
+	if(!spawnCustomImportedObject(gCustomImport.objectId)){
+		snprintf(gCustomImport.error, sizeof(gCustomImport.error), "The object was imported but couldn't be spawned.");
+		return false;
+	}
+
+	gBrowserIdeListDirty = true;
+	if(gCustomImport.warning[0])
+		Toast(TOAST_SPAWN, "Imported %s (%d) with warning: %s",
+		      gCustomImport.modelName, gCustomImport.objectId, gCustomImport.warning);
+	else
+		Toast(TOAST_SPAWN, "Imported %s (%d)", gCustomImport.modelName, gCustomImport.objectId);
+	gCustomImport.active = false;
+	return true;
+}
+
+static void
+uiCustomImportPopup(void)
+{
+	if(gOpenCustomImport){
+		ImGui::OpenPopup("Import Custom Object");
+		gOpenCustomImport = false;
+	}
+
+	if(!ImGui::BeginPopupModal("Import Custom Object", nil, ImGuiWindowFlags_AlwaysAutoResize))
+		return;
+
+	ImGui::Text("Import custom object in front of camera");
+	ImGui::TextDisabled("v1 exports to modloader/Ariane");
+	ImGui::Separator();
+	ImGui::Text("Files");
+	if(ImGui::Button(gCustomImport.dffSource[0] ? pathFilename(gCustomImport.dffSource) : "Choose DFF...")){
+		char picked[1024];
+		if(chooseCustomImportFile(".dff", picked, sizeof(picked)))
+			setCustomImportDffPath(picked);
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("Required");
+	if(gCustomImport.dffSource[0]){
+		ImGui::SameLine();
+		if(ImGui::SmallButton("Clear##CustomImportDff")){
+			gCustomImport.dffSource[0] = '\0';
+			gCustomImport.txdSource[0] = '\0';
+			gCustomImport.txdName[0] = '\0';
+			if(!gCustomImport.preferAutoCol){
+				gCustomImport.colSource[0] = '\0';
+				gCustomImport.hasCol = false;
+			}
+			clearCustomImportMessages();
+		}
+	}
+
+	if(ImGui::Button(gCustomImport.txdSource[0] ? pathFilename(gCustomImport.txdSource) : "Choose TXD...")){
+		char picked[1024];
+		if(chooseCustomImportFile(".txd", picked, sizeof(picked)))
+			setCustomImportTxdPath(picked);
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("Required");
+	if(gCustomImport.txdSource[0]){
+		ImGui::SameLine();
+		if(ImGui::SmallButton("Clear##CustomImportTxd")){
+			gCustomImport.txdSource[0] = '\0';
+			gCustomImport.txdName[0] = '\0';
+			clearCustomImportMessages();
+		}
+	}
+
+	if(ImGui::Button(gCustomImport.hasCol && gCustomImport.colSource[0] ? pathFilename(gCustomImport.colSource) : "Choose COL...")){
+		char picked[1024];
+		if(chooseCustomImportFile(".col", picked, sizeof(picked)))
+			setCustomImportColPath(picked);
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("Optional");
+	if(gCustomImport.hasCol && gCustomImport.colSource[0]){
+		ImGui::SameLine();
+		if(ImGui::SmallButton("Clear##CustomImportCol"))
+			clearCustomImportColSelection();
+	}
+
+	if(!gCustomImport.dffSource[0] || !gCustomImport.txdSource[0]){
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "DFF and TXD are required.");
+	}else if(gCustomImport.hasCol && gCustomImport.colSource[0]){
+		ImGui::TextDisabled("Using provided COL: %s", pathFilename(gCustomImport.colSource));
+	}else{
+		ImGui::TextDisabled("No COL selected. Collision will be auto-generated.");
+	}
+	ImGui::TextDisabled("Tip: you can also drag & drop .dff/.txd/.col files anywhere in Ariane.");
+
+	ImGui::Separator();
+	ImGui::InputInt("Object ID", &gCustomImport.objectId);
+	int previousPreferredStartId = gCustomImportPreferredStartId;
+	ImGui::InputInt("Preferred ID Start", &gCustomImportPreferredStartId);
+	sanitizeCustomImportSettings();
+	if(gCustomImportPreferredStartId != previousPreferredStartId)
+		saveSaveSettings();
+	ImGui::SameLine();
+	if(ImGui::Button("Suggest Free ID"))
+		gCustomImport.objectId = findSuggestedCustomImportId();
+	ImGui::InputText("Model", gCustomImport.modelName, sizeof(gCustomImport.modelName));
+	ImGui::InputText("TXD", gCustomImport.txdName, sizeof(gCustomImport.txdName));
+	ImGui::DragFloat("Draw Distance", &gCustomImport.drawDist, 1.0f, 1.0f, 10000.0f, "%.1f");
+	gCustomImport.previewObj.m_drawDist[0] = gCustomImport.drawDist;
+
+	ImGui::Separator();
+	ImGui::Text("IDE Flags");
+	uiObjectFlagsEditor(&gCustomImport.previewObj);
+	ImGui::TextDisabled("Raw flags: 0x%X", computeFlagsFromObjectDef(&gCustomImport.previewObj));
+
+	if(gCustomImport.hasCol){
+		ImGui::Separator();
+		ImGui::TextDisabled("COL will be exported as %s.col and renamed internally if needed", gCustomImport.modelName);
+	}else{
+		ImGui::Separator();
+		ImGui::TextDisabled("COL will be auto-generated from DFF geometry as %s.col", gCustomImport.modelName);
+	}
+
+	if(gCustomImport.error[0]){
+		ImGui::Separator();
+		ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", gCustomImport.error);
+	}
+	if(gCustomImport.warning[0]){
+		ImGui::Separator();
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "%s", gCustomImport.warning);
+	}
+
+	ImGui::Separator();
+	bool canImport = gCustomImport.dffSource[0] != '\0' && gCustomImport.txdSource[0] != '\0';
+	ImGui::BeginDisabled(!canImport);
+	if(ImGui::Button("Import", ImVec2(120, 0))){
+		if(finalizeCustomImport())
+			ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if(ImGui::Button("Cancel", ImVec2(120, 0))){
+		gCustomImport.active = false;
+		gCustomImport.error[0] = '\0';
+		gCustomImport.warning[0] = '\0';
+		ImGui::CloseCurrentPopup();
+	}
+
+	ImGui::EndPopup();
+}
+
 static void
 uiHelpWindow(void)
 {
-	ImGui::Begin("Help", &showHelpWindow);
+	ImGui::Begin(ICON_FA_CIRCLE_QUESTION " Help", &showHelpWindow);
 
 	ImGui::BulletText("Camera controls:\n"
 		"LMB: first person look around\n"
@@ -1468,7 +3025,8 @@ uiHelpWindow(void)
 	ImGui::BulletText("Use the filter in the instance list to find instances by name.");
 	ImGui::Separator();
 	ImGui::BulletText("Gizmo: W = Translate, Q = Rotate\n"
-		"Select an object to manipulate it with the gizmo.");
+		"Select an object or SA path node to manipulate it.\n"
+		"SA path nodes use translate only.");
 	ImGui::BulletText("Delete/Backspace: delete selected building(s)\n"
 		"Deleting also removes linked LOD instances.");
 	ImGui::BulletText("Ctrl+C: Copy selected building(s)\n"
@@ -1480,6 +3038,19 @@ uiHelpWindow(void)
 	ImGui::BulletText("B: Toggle Object Browser\n"
 		"Click in 3D view to place selected object.\n"
 		"RMB or Escape to exit place mode.");
+	ImGui::Separator();
+	if(ImGui::CollapsingHeader("Privacy & Telemetry")){
+		bool telemetryEnabled = TelemetryIsEnabled();
+		if(ImGui::Checkbox("Anonymous telemetry", &telemetryEnabled)){
+			TelemetrySetEnabled(telemetryEnabled);
+			if(telemetryEnabled){
+				TelemetrySendPing();
+				Toast(TOAST_SAVE, "Anonymous telemetry enabled");
+			}else
+				Toast(TOAST_SAVE, "Anonymous telemetry disabled");
+		}
+		ImGui::TextDisabled("Enabled by default. Disable if you do not want usage pings.");
+	}
 
 	if(ImGui::CollapsingHeader("Dear ImGUI help")){
 		ImGui::ShowUserGuide();
@@ -1633,11 +3204,30 @@ uiView(void)
 		ImGui::Unindent();
 	}
 	if(!isSA()) ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
-	ImGui::Checkbox("Draw Car Paths", &gRenderCarPaths);
-	ImGui::Checkbox("Draw Ped Paths", &gRenderPedPaths);
+	ImGui::SeparatorText("Legacy Paths");
+	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
+	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);
+	if(isSA()){
+		ImGui::SeparatorText("San Andreas Streamed Paths");
+		ImGui::Checkbox("Draw SA Car Paths", &gRenderSaCarPaths);
+		ImGui::Checkbox("Draw SA Ped Paths", &gRenderSaPedPaths);
+		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
+		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
+	}
 
 
 	ImGui::Checkbox("Draw Water", &gRenderWater);
+	if(params.water == GAME_SA){
+		ImGui::SameLine();
+		if(ImGui::Button("Edit Water (H)")){
+			if(!WaterLevel::gWaterEditMode){
+				WaterLevel::gWaterEditMode = true;
+				ClearSelection();
+				if(gPlaceMode)
+					SpawnExitPlaceMode();
+			}
+		}
+	}
 	if(gameversion == GAME_SA)
 		ImGui::Checkbox("Play Animations", &gPlayAnimations);
 
@@ -1651,6 +3241,50 @@ uiView(void)
 	ImGui::Checkbox("Render all Timed Objects", &gNoTimeCull);
 	if(params.numAreas)
 		ImGui::Checkbox("Render all Areas", &gNoAreaCull);
+
+	ImGui::Separator();
+	ImGui::Text("IPL Visibility");
+	RefreshIplVisibilityEntries();
+
+	int numIpls = GetIplVisibilityEntryCount();
+	if(numIpls == 0){
+		ImGui::TextDisabled("No loaded IPLs");
+		return;
+	}
+
+	int numVisible = 0;
+	for(int i = 0; i < numIpls; i++)
+		if(GetIplVisibilityEntryVisible(i))
+			numVisible++;
+	ImGui::Text("%d visible / %d total", numVisible, numIpls);
+	ImGui::InputTextWithHint("##ipl_filter_search", "Search IPLs", gIplFilterSearch, sizeof(gIplFilterSearch));
+	if(ImGui::Button("Show All"))
+		SetAllIplVisibilityEntries(true);
+	ImGui::SameLine();
+	if(ImGui::Button("Hide All"))
+		SetAllIplVisibilityEntries(false);
+
+	float listHeight = ImGui::GetContentRegionAvail().y;
+	if(listHeight < 220.0f)
+		listHeight = 220.0f;
+	ImGui::BeginChild("##ipl_visibility_list", ImVec2(0, listHeight), true);
+	for(int i = 0; i < numIpls; i++){
+		const char *name = GetIplVisibilityEntryName(i);
+		if(gIplFilterSearch[0] != '\0' && ImStristr(name, nil, gIplFilterSearch, nil) == nil)
+			continue;
+
+		bool visible = GetIplVisibilityEntryVisible(i);
+		ImGui::PushID(i);
+		if(ImGui::SmallButton("Only"))
+			ShowOnlyIplVisibilityEntry(i);
+		ImGui::SameLine();
+		if(ImGui::Checkbox("##visible", &visible))
+			SetIplVisibilityEntryVisible(i, visible);
+		ImGui::SameLine();
+		ImGui::TextUnformatted(name);
+		ImGui::PopID();
+	}
+	ImGui::EndChild();
 }
 
 static void
@@ -1867,9 +3501,11 @@ uiPathInfo(ObjectInst *inst)
 		ObjectDef *obj;
 		obj = GetObjectDef(inst->m_objectId);
 
+		ImGui::TextDisabled("Legacy object-attached path patches");
+
 		if(obj->m_carPathIndex >= 0){
 			PathNode *nd = Path::GetCarNode(obj->m_carPathIndex,0);
-			ImGui::Text(nd->water ? "WaterPath" : "CarPath");
+			ImGui::Text(nd->water ? "Legacy Water Path" : "Legacy Car Path");
 			if(ImGui::BeginTable("Nodes", uiNumCarPathColumns(), ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 				uiCarPathHeader();
 				for(int i = 0; nd = Path::GetCarNode(obj->m_carPathIndex,i); i++){
@@ -1880,7 +3516,7 @@ uiPathInfo(ObjectInst *inst)
 			}
 		}
 		if(obj->m_pedPathIndex >= 0){
-			ImGui::Text("Ped Path");
+			ImGui::Text("Legacy Ped Path");
 			PathNode *nd;
 			if(ImGui::BeginTable("Nodes", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 				uiPedPathHeader();
@@ -1894,10 +3530,11 @@ uiPathInfo(ObjectInst *inst)
 	}else if(Path::selectedNode && !Path::selectedNode->isDetached()){
 		ObjectDef *obj = GetObjectDef(Path::selectedNode->objId);
 		ImGui::Text("Object %s", obj->m_name);
+		ImGui::TextDisabled("Legacy object-attached path patch");
 		uiFilteredInstanceList(obj);
 	}else if(Path::selectedNode && Path::selectedNode->tabId == 1){
 		int i = Path::selectedNode->idx;
-		ImGui::Text(Path::selectedNode->water ? "WaterPath %d" : "CarPath %d", i);
+		ImGui::Text(Path::selectedNode->water ? "Legacy Water Path %d" : "Legacy Car Path %d", i);
 		ImGui::PushID(i);
 		if(ImGui::BeginTable("Nodes", uiNumCarPathColumns(), ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 			uiCarPathHeader();
@@ -1912,7 +3549,7 @@ uiPathInfo(ObjectInst *inst)
 		ImGui::PopID();
 	}else if(Path::selectedNode && Path::selectedNode->tabId == 3){
 		int i = Path::selectedNode->idx;
-		ImGui::Text("PedPath %d", i);
+		ImGui::Text("Legacy Ped Path %d", i);
 		ImGui::PushID(i);
 		if(ImGui::BeginTable("Nodes", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)){
 			uiPedPathHeader();
@@ -2083,6 +3720,7 @@ uiInstInfo(ObjectInst *inst)
 		inst->m_rotation.z,
 		inst->m_rotation.w);
 	if(changed){
+		StampChangeSeq(inst);
 		inst->m_isDirty = true;
 		inst->UpdateMatrix();
 		if(inst->m_rwObject){
@@ -2143,79 +3781,7 @@ uiObjInfo(ObjectDef *obj)
 	if(obj->m_relatedTimeModel)
 		ImGui::Text("Related timed: %s\n", obj->m_relatedTimeModel->m_name);
 
-	switch(params.objFlagset){
-	case GAME_III:
-		ImGui::Checkbox("Normal cull", &obj->m_normalCull);
-		ImGui::Checkbox("No Fade", &obj->m_noFade);
-		ImGui::Checkbox("Draw Last", &obj->m_drawLast);
-		ImGui::Checkbox("Additive Blend", &obj->m_additive);
-		if(obj->m_additive) obj->m_drawLast = true;
-		ImGui::Checkbox("Is Subway", &obj->m_isSubway);
-		ImGui::Checkbox("Ignore Light", &obj->m_ignoreLight);
-		ImGui::Checkbox("No Z-write", &obj->m_noZwrite);
-		break;
-
-	case GAME_VC:
-		ImGui::Checkbox("Wet Road Effect", &obj->m_wetRoadReflection);
-		ImGui::Checkbox("No Fade", &obj->m_noFade);
-		ImGui::Checkbox("Draw Last", &obj->m_drawLast);
-		ImGui::Checkbox("Additive Blend", &obj->m_additive);
-		if(obj->m_additive) obj->m_drawLast = true;
-//		ImGui::Checkbox("Is Subway", &obj->m_isSubway);
-		ImGui::Checkbox("Ignore Light", &obj->m_ignoreLight);
-		ImGui::Checkbox("No Z-write", &obj->m_noZwrite);
-		ImGui::Checkbox("No shadows", &obj->m_noShadows);
-		ImGui::Checkbox("Ignore Draw Dist", &obj->m_ignoreDrawDist);
-		ImGui::Checkbox("Code Glass", &obj->m_isCodeGlass);
-		ImGui::Checkbox("Artist Glass", &obj->m_isArtistGlass);
-		break;
-
-	case GAME_SA:
-		ImGui::Checkbox("Draw Last", &obj->m_drawLast);
-		ImGui::Checkbox("Additive Blend", &obj->m_additive);
-		if(obj->m_additive) obj->m_drawLast = true;
-		ImGui::Checkbox("No Z-write", &obj->m_noZwrite);
-		ImGui::Checkbox("No shadows", &obj->m_noShadows);
-		ImGui::Checkbox("No Backface Culling", &obj->m_noBackfaceCulling);
-		if(obj->m_type == ObjectDef::ATOMIC){
-			ImGui::Checkbox("Wet Road Effect", &obj->m_wetRoadReflection);
-			ImGui::Checkbox("Don't collide with Flyer", &obj->m_dontCollideWithFlyer);
-
-			static int flag = 0;
-			flag = (int)obj->m_isCodeGlass |
-				(int)obj->m_isArtistGlass<<1 |
-				(int)obj->m_isGarageDoor<<2 |
-				(int)obj->m_isDamageable<<3 |
-				(int)obj->m_isTree<<4 |
-				(int)obj->m_isPalmTree<<5 |
-				(int)obj->m_isTag<<6 |
-				(int)obj->m_noCover<<7 |
-				(int)obj->m_wetOnly<<8;
-			ImGui::RadioButton("None", &flag, 0);
-			ImGui::RadioButton("Code Glass", &flag, 1);
-			ImGui::RadioButton("Artist Glass", &flag, 2);
-			ImGui::RadioButton("Garage Door", &flag, 4);
-			if(!obj->m_isTimed)
-				ImGui::RadioButton("Damageable", &flag, 8);
-			ImGui::RadioButton("Tree", &flag, 0x10);
-			ImGui::RadioButton("Palm Tree", &flag, 0x20);
-			ImGui::RadioButton("Tag", &flag, 0x40);
-			ImGui::RadioButton("No Cover", &flag, 0x80);
-			ImGui::RadioButton("Wet Only", &flag, 0x100);
-			obj->m_isCodeGlass = !!(flag & 1);
-			obj->m_isArtistGlass = !!(flag & 2);
-			obj->m_isGarageDoor = !!(flag & 4);
-			obj->m_isDamageable = !!(flag & 8);
-			obj->m_isTree = !!(flag & 0x10);
-			obj->m_isPalmTree = !!(flag & 0x20);
-			obj->m_isTag = !!(flag & 0x40);
-			obj->m_noCover = !!(flag & 0x80);
-			obj->m_wetOnly = !!(flag & 0x100);
-		}else if(obj->m_type == ObjectDef::CLUMP){
-			ImGui::Checkbox("Door", &obj->m_isDoor);
-		}
-		break;
-	}
+	uiObjectFlagsEditor(obj);
 
 }
 
@@ -2232,7 +3798,6 @@ struct CamSetting {
 	int area;
 };
 
-#include <vector>
 std::vector<CamSetting> camSettings;
 
 static void
@@ -2242,7 +3807,7 @@ loadCamSettings(void)
 	char line[256], *p, *pp;
 	FILE *f;
 
-	f = fopen("camsettings.txt", "r");
+	f = fopenArianeDataRead("camsettings.txt", "camsettings.txt");
 	if(f == nil)
 		return;
 	camSettings.clear();
@@ -2285,21 +3850,36 @@ loadSaveSettings(void)
 	char key[128];
 	int value;
 
-	f = fopen("savesettings.txt", "r");
+	sanitizeAutomaticBackupSettings();
+	sanitizeCustomImportSettings();
+	gAutomaticBackupLastSeenSeq = GetLatestChangeSeq();
+	gAutomaticBackupLastHandledSeq = gAutomaticBackupLastSeenSeq;
+	gAutomaticBackupLastSnapshot[0] = '\0';
+
+	f = fopenArianeDataRead("savesettings.txt", "savesettings.txt");
 	if(f == nil)
 		return;
 
 	while(fgets(line, sizeof(line), f)){
 		if(sscanf(line, "%127s %d", key, &value) != 2)
 			continue;
-		if(strcmp(key, "save_destination") != 0)
-			continue;
-		if(value == SAVE_DESTINATION_MODLOADER)
-			gSaveDestination = SAVE_DESTINATION_MODLOADER;
-		else
-			gSaveDestination = SAVE_DESTINATION_ORIGINAL_FILES;
+		if(strcmp(key, "save_destination") == 0){
+			if(value == SAVE_DESTINATION_MODLOADER)
+				gSaveDestination = SAVE_DESTINATION_MODLOADER;
+			else
+				gSaveDestination = SAVE_DESTINATION_ORIGINAL_FILES;
+		}else if(strcmp(key, "automatic_backups") == 0)
+			gAutomaticBackupsEnabled = value != 0;
+		else if(strcmp(key, "automatic_backup_interval") == 0)
+			gAutomaticBackupIntervalSeconds = value;
+		else if(strcmp(key, "automatic_backup_keep") == 0)
+			gAutomaticBackupKeepCount = value;
+		else if(strcmp(key, "custom_import_start_id") == 0)
+			gCustomImportPreferredStartId = value;
 	}
 
+	sanitizeAutomaticBackupSettings();
+	sanitizeCustomImportSettings();
 	fclose(f);
 }
 
@@ -2308,7 +3888,7 @@ saveCamSettings(void)
 {
 	FILE *f;
 
-	f = fopen("camsettings.txt", "w");
+	f = fopenArianeDataWrite("camsettings.txt");
 	if(f == nil)
 		return;
 
@@ -2331,11 +3911,17 @@ saveSaveSettings(void)
 {
 	FILE *f;
 
-	f = fopen("savesettings.txt", "w");
+	sanitizeAutomaticBackupSettings();
+	sanitizeCustomImportSettings();
+	f = fopenArianeDataWrite("savesettings.txt");
 	if(f == nil)
 		return;
 
 	fprintf(f, "save_destination %d\n", (int)gSaveDestination);
+	fprintf(f, "automatic_backups %d\n", gAutomaticBackupsEnabled ? 1 : 0);
+	fprintf(f, "automatic_backup_interval %d\n", gAutomaticBackupIntervalSeconds);
+	fprintf(f, "automatic_backup_keep %d\n", gAutomaticBackupKeepCount);
+	fprintf(f, "custom_import_start_id %d\n", gCustomImportPreferredStartId);
 	fclose(f);
 }
 
@@ -2365,7 +3951,7 @@ uiEditorWindow(void)
 	ObjectDef *obj;
 	TxdDef *txd;
 
-	ImGui::Begin("Editor Window", &showEditorWindow);
+	ImGui::Begin(ICON_FA_PEN " Editor", &showEditorWindow);
 
 	if(ImGui::TreeNode("Camera")){
 		ImGui::InputFloat3("Cam position", (float*)&TheCamera.m_position);
@@ -2499,10 +4085,10 @@ uiEditorWindow(void)
 
 	PathNode *nd;
 	if(nd = Path::GetDetachedCarNode(0,0))
-	if(ImGui::TreeNode("Detached Car Paths")){
+	if(ImGui::TreeNode("Detached Legacy Car Paths")){
 		for(int i = 0; nd = Path::GetDetachedCarNode(i,0); i++){
-			static char str[20];
-			sprintf(str, nd->water ? "WaterPath %d" : "CarPath %d", i);
+			static char str[32];
+			sprintf(str, nd->water ? "Legacy Water Path %d" : "Legacy Car Path %d", i);
 			ImGui::PushID(i);
 			ImGui::Selectable(str);
 			ImGui::PopID();
@@ -2518,10 +4104,10 @@ uiEditorWindow(void)
 	}
 
 	if(nd = Path::GetDetachedPedNode(0,0))
-	if(ImGui::TreeNode("Detached Ped Paths")){
+	if(ImGui::TreeNode("Detached Legacy Ped Paths")){
 		for(int i = 0; nd = Path::GetDetachedPedNode(i,0); i++){
-			static char str[20];
-			sprintf(str,"PedPath %d", i);
+			static char str[32];
+			sprintf(str,"Legacy Ped Path %d", i);
 			ImGui::PushID(i);
 			ImGui::Selectable(str);
 			ImGui::PopID();
@@ -2542,7 +4128,7 @@ uiEditorWindow(void)
 static void
 uiToolsWindow(void)
 {
-	ImGui::Begin("Tools", &showToolsWindow);
+	ImGui::Begin(ICON_FA_WRENCH " Tools", &showToolsWindow);
 
 	// Gizmo
 	ImGui::Checkbox("Gizmo", &gGizmoEnabled);
@@ -2555,6 +4141,7 @@ uiToolsWindow(void)
 			gGizmoMode = GIZMO_ROTATE;
 
 		ImGui::Checkbox("Grid Snap", &gGizmoSnap);
+		ImGui::SetItemTooltip("Snap gizmo movements to fixed increments.");
 		if(gGizmoSnap){
 			char buf[32];
 			ImGui::SameLine();
@@ -2597,29 +4184,362 @@ uiToolsWindow(void)
 	// Placement
 	ImGui::Text("Placement");
 	ImGui::Checkbox("Snap to object", &gPlaceSnapToObjects);
+	ImGui::SetItemTooltip("When placing objects, snap to the surface of existing objects under the cursor.");
 	ImGui::Checkbox("Snap to ground", &gPlaceSnapToGround);
+	ImGui::SetItemTooltip("When placing objects, snap to the ground below the cursor.");
 
 	ImGui::Separator();
 
 	// Dragging
 	ImGui::Text("Dragging");
 	ImGui::Checkbox("Follow ground", &gDragFollowGround);
+	ImGui::SetItemTooltip("While dragging objects, keep them glued to the ground surface.");
 	ImGui::BeginDisabled(!gDragFollowGround);
 	ImGui::Indent();
 	ImGui::Checkbox("Align to surface", &gDragAlignToSurface);
+	ImGui::SetItemTooltip("While dragging, rotate the object to match the ground slope.");
 	ImGui::Unindent();
 	ImGui::EndDisabled();
 
+	ImGui::Separator();
+
+	// Automatic backups
+	ImGui::Text("Automatic Backups");
+	bool backupSettingsChanged = false;
+	if(ImGui::Checkbox("Enabled", &gAutomaticBackupsEnabled))
+		backupSettingsChanged = true;
+	ImGui::SetItemTooltip("Periodically save a backup of all modified IPLs.");
+	if(ImGui::InputInt("Interval (sec)", &gAutomaticBackupIntervalSeconds))
+		backupSettingsChanged = true;
+	ImGui::SetItemTooltip("Seconds between automatic backup snapshots.");
+	if(ImGui::InputInt("Keep snapshots", &gAutomaticBackupKeepCount))
+		backupSettingsChanged = true;
+	ImGui::SetItemTooltip("Number of backup snapshots to keep. Oldest are deleted first.");
+	sanitizeAutomaticBackupSettings();
+	if(backupSettingsChanged)
+		saveSaveSettings();
+	ImGui::TextDisabled("Idle debounce: %.0f sec", gAutomaticBackupIdleSeconds);
+	if(gAutomaticBackupLastSnapshot[0])
+		ImGui::TextWrapped("Last snapshot: %s", gAutomaticBackupLastSnapshot);
+	if(ImGui::Button("Create Backup Now"))
+		runAutomaticBackup(true);
+
+		ImGui::End();
+	}
+
+static bool waterPanelEditActive;
+
+static void
+waterPanelCheckUndoPush(void)
+{
+	if(ImGui::IsItemActivated() && !waterPanelEditActive){
+		WaterLevel::WaterUndoPush();
+		waterPanelEditActive = true;
+	}
+	if(!ImGui::IsAnyItemActive())
+		waterPanelEditActive = false;
+}
+
+static void
+uiWaterWindow(void)
+{
+	if(!ImGui::IsAnyItemActive())
+		waterPanelEditActive = false;
+
+	ImGui::Begin("Water Editor", nil);
+
+	// Creation mode UI
+	if(WaterLevel::gWaterCreateMode > 0){
+		const char *shapeName = WaterLevel::gWaterCreateShape == 0 ? "QUAD" : "TRIANGLE";
+		ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.4f, 1.0f), "CREATE %s", shapeName);
+		ImGui::Separator();
+		ImGui::DragFloat("Z Height", &WaterLevel::gWaterCreateZ, 0.5f);
+		const char *shapeNames[] = { "Quad (2 clicks)", "Triangle (3 clicks)" };
+		int prevShape = WaterLevel::gWaterCreateShape;
+		ImGui::Combo("Shape", &WaterLevel::gWaterCreateShape, shapeNames, 2);
+		if(WaterLevel::gWaterCreateShape != prevShape){
+			// Restart placement with new shape
+			WaterLevel::CancelCreateMode();
+			WaterLevel::EnterCreateMode();
+		}
+		ImGui::Checkbox("Snap to Grid", &WaterLevel::gWaterSnapEnabled);
+		if(WaterLevel::gWaterSnapEnabled){
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(60);
+			ImGui::DragFloat("##SnapSize", &WaterLevel::gWaterSnapSize, 1.0f, 1.0f, 100.0f, "%.0f");
+		}
+		ImGui::Separator();
+		int neededCorners = WaterLevel::gWaterCreateShape == 0 ? 2 : 3;
+		ImGui::Text("Click corner %d of %d", WaterLevel::gWaterCreateMode, neededCorners);
+		ImGui::Text("Shift+click: keep creating after placement");
+		ImGui::Text("Right-click or Esc: cancel");
+		ImGui::Separator();
+		ImGui::Text("Quads: %d/%d  Tris: %d/%d  Verts: %d/%d",
+			WaterLevel::GetNumQuads(), NUMWATERQUADS,
+			WaterLevel::GetNumTris(), NUMWATERTRIS,
+			WaterLevel::GetNumVertices(), NUMWATERVERTICES);
+		ImGui::End();
+		return;
+	}
+
+	const char *modeName = WaterLevel::gWaterSubMode == 0 ? "Polygon" : "Vertex";
+	ImGui::Text("Mode: %s (Tab to switch)", modeName);
+	ImGui::Separator();
+
+	int numPolySel = WaterLevel::GetNumSelectedPolys();
+	int numVertSel = WaterLevel::GetNumSelectedVertices();
+
+	if(WaterLevel::gWaterSubMode == 0){
+		// Polygon mode
+		if(numPolySel == 0){
+			ImGui::Text("Click a water polygon to select it");
+			ImGui::Text("Shift+click: add, Ctrl+click: toggle");
+			ImGui::Text("N: create new quad");
+		}else if(numPolySel == 1){
+			int ptype = WaterLevel::GetSelectedPolyType(0);
+			int pidx = WaterLevel::GetSelectedPolyIndex(0);
+			const char *shapeName = ptype == 0 ? "Quad" : "Triangle";
+			ImGui::Text("Water %s #%d", shapeName, pidx);
+
+			// Flags
+			int *flagsPtr;
+			int numVerts;
+			int *indices;
+			if(ptype == 0){
+				WaterLevel::WaterQuad *q = WaterLevel::GetQuad(pidx);
+				flagsPtr = &q->flags;
+				numVerts = 4;
+				indices = q->indices;
+			}else{
+				WaterLevel::WaterTri *t = WaterLevel::GetTri(pidx);
+				flagsPtr = &t->flags;
+				numVerts = 3;
+				indices = t->indices;
+			}
+
+			bool visible = (*flagsPtr & 1) != 0;
+			bool limited = (*flagsPtr & 2) != 0;
+			if(ImGui::Checkbox("Visible", &visible)){
+				WaterLevel::WaterUndoPush();
+				*flagsPtr = (*flagsPtr & ~1) | (visible ? 1 : 0);
+				WaterLevel::gWaterDirty = true;
+			}
+			ImGui::SameLine();
+			if(ImGui::Checkbox("Limited Depth", &limited)){
+				WaterLevel::WaterUndoPush();
+				*flagsPtr = (*flagsPtr & ~2) | (limited ? 2 : 0);
+				WaterLevel::gWaterDirty = true;
+			}
+
+			ImGui::Separator();
+
+			// Per-vertex properties
+			for(int j = 0; j < numVerts; j++){
+				WaterLevel::WaterVertex *v = WaterLevel::GetVertex(indices[j]);
+				ImGui::PushID(j);
+				char label[32];
+				snprintf(label, sizeof(label), "Vertex %d", j);
+				if(ImGui::TreeNode(label)){
+					bool changed = false;
+					rw::V3d oldPos = v->pos;
+					changed |= ImGui::DragFloat3("Position", (float*)&v->pos, 0.1f);
+					waterPanelCheckUndoPush();
+					changed |= ImGui::DragFloat2("Flow", (float*)&v->speed, 0.01f, -2.0f, 1.984375f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+					waterPanelCheckUndoPush();
+					changed |= ImGui::DragFloat("Big waves", &v->waveunk, 0.01f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+					waterPanelCheckUndoPush();
+					changed |= ImGui::DragFloat("Small waves", &v->waveheight, 0.01f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+					waterPanelCheckUndoPush();
+					if(changed){
+						WaterLevel::WeldCoincidentVertices(indices[j], oldPos);
+						WaterLevel::gWaterDirty = true;
+					}
+					ImGui::TreePop();
+				}
+				ImGui::PopID();
+			}
+
+			ImGui::Separator();
+
+			// Flatten Z button
+			if(ImGui::Button("Flatten Z")){
+				WaterLevel::WaterUndoPush();
+				float avgZ = 0.0f;
+				for(int j = 0; j < numVerts; j++)
+					avgZ += WaterLevel::GetVertex(indices[j])->pos.z;
+				avgZ /= (float)numVerts;
+				for(int j = 0; j < numVerts; j++){
+					rw::V3d op = WaterLevel::GetVertex(indices[j])->pos;
+					WaterLevel::GetVertex(indices[j])->pos.z = avgZ;
+					WaterLevel::WeldCoincidentVertices(indices[j], op);
+				}
+				WaterLevel::gWaterDirty = true;
+			}
+
+			// Set Z
+			static float setZValue = 0.0f;
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(80);
+			ImGui::DragFloat("##SetZ", &setZValue, 0.1f);
+			ImGui::SameLine();
+			if(ImGui::Button("Set Z")){
+				WaterLevel::WaterUndoPush();
+				for(int j = 0; j < numVerts; j++){
+					rw::V3d op = WaterLevel::GetVertex(indices[j])->pos;
+					WaterLevel::GetVertex(indices[j])->pos.z = setZValue;
+					WaterLevel::WeldCoincidentVertices(indices[j], op);
+				}
+				WaterLevel::gWaterDirty = true;
+			}
+		}else{
+			// Multiple polygons selected
+			ImGui::Text("%d polygons selected", numPolySel);
+			ImGui::Separator();
+
+			// Bulk set Z
+			static float bulkZ = 0.0f;
+			ImGui::DragFloat("Z value", &bulkZ, 0.1f);
+			if(ImGui::Button("Set All Z")){
+				WaterLevel::WaterUndoPush();
+				for(int i = 0; i < numPolySel; i++){
+					int pt = WaterLevel::GetSelectedPolyType(i);
+					int pi = WaterLevel::GetSelectedPolyIndex(i);
+					int n; int *idx;
+					if(pt == 0){
+						n = 4; idx = WaterLevel::GetQuad(pi)->indices;
+					}else{
+						n = 3; idx = WaterLevel::GetTri(pi)->indices;
+					}
+					for(int j = 0; j < n; j++){
+						rw::V3d op = WaterLevel::GetVertex(idx[j])->pos;
+						WaterLevel::GetVertex(idx[j])->pos.z = bulkZ;
+						WaterLevel::WeldCoincidentVertices(idx[j], op);
+					}
+				}
+				WaterLevel::gWaterDirty = true;
+			}
+		}
+	}else{
+		// Vertex mode
+		if(numVertSel == 0){
+			ImGui::Text("Click a vertex to select it");
+			ImGui::Text("Shift+click: add, Ctrl+click: toggle");
+		}else if(numVertSel == 1){
+			int vi = WaterLevel::GetSelectedVertexIndex(0);
+			WaterLevel::WaterVertex *v = WaterLevel::GetVertex(vi);
+			ImGui::Text("Water Vertex #%d", vi);
+			ImGui::Separator();
+			bool changed = false;
+			rw::V3d oldPos = v->pos;
+			changed |= ImGui::DragFloat3("Position", (float*)&v->pos, 0.1f);
+			waterPanelCheckUndoPush();
+			changed |= ImGui::DragFloat2("Flow", (float*)&v->speed, 0.01f, -2.0f, 1.984375f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+			waterPanelCheckUndoPush();
+			changed |= ImGui::DragFloat("Big waves", &v->waveunk, 0.01f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+			waterPanelCheckUndoPush();
+			changed |= ImGui::DragFloat("Small waves", &v->waveheight, 0.01f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+			waterPanelCheckUndoPush();
+			if(changed){
+				WaterLevel::WeldCoincidentVertices(vi, oldPos);
+				WaterLevel::gWaterDirty = true;
+			}
+		}else{
+			ImGui::Text("%d vertices selected", numVertSel);
+			ImGui::Separator();
+			static float bulkZ = 0.0f;
+			ImGui::DragFloat("Z value", &bulkZ, 0.1f);
+			if(ImGui::Button("Set All Z")){
+				WaterLevel::WaterUndoPush();
+				for(int i = 0; i < numVertSel; i++){
+					int vi = WaterLevel::GetSelectedVertexIndex(i);
+					rw::V3d op = WaterLevel::GetVertex(vi)->pos;
+					WaterLevel::GetVertex(vi)->pos.z = bulkZ;
+					WaterLevel::WeldCoincidentVertices(vi, op);
+				}
+				WaterLevel::gWaterDirty = true;
+			}
+		}
+	}
+
+	ImGui::Separator();
+
+	// Tools
+	ImGui::Checkbox("Snap to Grid", &WaterLevel::gWaterSnapEnabled);
+	if(WaterLevel::gWaterSnapEnabled){
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(60);
+		ImGui::DragFloat("##SnapSz", &WaterLevel::gWaterSnapSize, 1.0f, 1.0f, 100.0f, "%.0f");
+	}
+
+	ImGui::Separator();
+
+	// Stats and actions
+	int nq = WaterLevel::GetNumQuads(), nt = WaterLevel::GetNumTris(), nv = WaterLevel::GetNumVertices();
+	ImGui::Text("Quads: %d/301  Tris: %d/6  Verts: %d", nq, nt, nv);
+	if(nq > 301 || nt > 6)
+		ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Exceeds game polygon limits!");
+	ImGui::TextDisabled("Unique vertex limit (1021) checked on save");
+	if(WaterLevel::gWaterDirty)
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Unsaved changes (Ctrl+S to save)");
+	if(WaterLevel::WaterCanUndo()) ImGui::SameLine();
+	if(WaterLevel::WaterCanUndo() && ImGui::SmallButton("Undo"))
+		WaterLevel::WaterUndo();
+	if(WaterLevel::WaterCanRedo()) ImGui::SameLine();
+	if(WaterLevel::WaterCanRedo() && ImGui::SmallButton("Redo"))
+		WaterLevel::WaterRedo();
+
+	if(ImGui::Button("Reload water.dat")){
+		WaterLevel::ReloadWater();
+		Toast(TOAST_SAVE, "Reloaded water.dat");
+	}
+
 	ImGui::End();
+
 }
 
 static void
 uiInstWindow(void)
 {
-	ImGui::Begin("Object Info", &showInstanceWindow);
-
+	ImGui::Begin(ICON_FA_CIRCLE_INFO " Object Info", &showInstanceWindow);
 
 	if(selection.first){
+		int numSelected = 0;
+		for(CPtrNode *sel = selection.first; sel; sel = sel->next)
+			numSelected++;
+		ImGui::Text("%d selected", numSelected);
+		char exportDir[1024];
+		bool haveExportDir = GetArianeDataPath(exportDir, sizeof(exportDir), "dff-txd-exports");
+		if(ImGui::Button("Export DFF")){
+			if(!haveExportDir){
+				Toast(TOAST_SAVE, "Failed to resolve dff-txd-exports path");
+			}else{
+				int failed = 0;
+				int exported = ExportSelectedDffs(exportDir, &failed);
+				if(exported > 0 || failed == 0)
+					Toast(TOAST_SAVE, "Exported %d DFF(s) to %s%s", exported, exportDir,
+					      failed > 0 ? " (some skipped)" : "");
+				else
+					Toast(TOAST_SAVE, "Failed to export DFF(s)");
+			}
+		}
+		ImGui::SameLine();
+		if(ImGui::Button("Export TXD")){
+			if(!haveExportDir){
+				Toast(TOAST_SAVE, "Failed to resolve dff-txd-exports path");
+			}else{
+				int failed = 0;
+				int exported = ExportSelectedTxds(exportDir, &failed);
+				if(exported > 0 || failed == 0)
+					Toast(TOAST_SAVE, "Exported %d TXD(s) to %s%s", exported, exportDir,
+					      failed > 0 ? " (some skipped)" : "");
+				else
+					Toast(TOAST_SAVE, "Failed to export TXD(s)");
+			}
+		}
+		if(haveExportDir)
+			ImGui::TextDisabled("%s", exportDir);
+		ImGui::Separator();
+
 		ObjectInst *inst = (ObjectInst*)selection.first->item;
 		ObjectDef *obj = GetObjectDef(inst->m_objectId);
 		if(ImGui::CollapsingHeader("Instance"))
@@ -2630,12 +4550,18 @@ uiInstWindow(void)
 			if(ImGui::CollapsingHeader("Effects"))
 				uiFxInfo(inst);
 		if(obj->m_carPathIndex >=0 || obj->m_pedPathIndex >= 0)
-			if(ImGui::CollapsingHeader("Path"))
+			if(ImGui::CollapsingHeader("Legacy Paths"))
 				uiPathInfo(inst);
 	}else{
 		if(Path::selectedNode)// && Path::selectedNode->isDetached())
-		if(ImGui::CollapsingHeader("Path"))
+		if(ImGui::CollapsingHeader("Legacy Paths"))
 			uiPathInfo(nil);
+		if(SAPaths::HasInfoToShow()){
+			if(gSaNodeJustSelected)
+				ImGui::SetNextItemOpen(true);
+			if(ImGui::CollapsingHeader("San Andreas Streamed Paths"))
+				SAPaths::DrawInfoPanel();
+		}
 
 /*
 		if(Effects::selectedEffect)
@@ -2744,7 +4670,7 @@ static void
 uiBrowserWindow(void)
 {
 	ImGui::SetNextWindowSize(ImVec2(420, 700), ImGuiCond_FirstUseEver);
-	ImGui::Begin("Object Browser", &showBrowserWindow);
+	ImGui::Begin(ICON_FA_MAGNIFYING_GLASS " Object Browser", &showBrowserWindow);
 
 	int selId = GetSpawnObjectId();
 	static int filtered[NUMOBJECTDEFS];
@@ -2853,8 +4779,8 @@ uiBrowserWindow(void)
 			// Collect unique IDE file names
 			static const char *ideFiles[512];
 			static int numIdeFiles = 0;
-			static bool ideCollected = false;
-			if(!ideCollected){
+			if(gBrowserIdeListDirty){
+				numIdeFiles = 0;
 				for(int i = 0; i < NUMOBJECTDEFS; i++){
 					ObjectDef *obj = GetObjectDef(i);
 					if(obj == nil || obj->m_file == nil) continue;
@@ -2866,7 +4792,7 @@ uiBrowserWindow(void)
 					if(!found && numIdeFiles < 512)
 						ideFiles[numIdeFiles++] = obj->m_file->name;
 				}
-				ideCollected = true;
+				gBrowserIdeListDirty = false;
 			}
 
 			// IDE dropdown
@@ -2951,7 +4877,7 @@ uiBrowserWindow(void)
 static void
 uiDiffWindow(void)
 {
-	ImGui::Begin("Changes Since Last Save", &showDiffWindow);
+	ImGui::Begin(ICON_FA_CODE_COMPARE " Changes Since Last Save", &showDiffWindow);
 
 	// Count changes by category
 	int numAdded = 0, numDeleted = 0, numMoved = 0, numRotated = 0, numRestored = 0;
@@ -3104,24 +5030,36 @@ gui(void)
 	Path::guiHoveredNode = nil;
 	uiMainmenu();
 	UpdaterDrawGui();
+	automaticBackupTick();
 
-	// Copy/Paste
-	if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')){
-		int before = 0;
-		for(CPtrNode *p = selection.first; p; p = p->next) before++;
-		CopySelected();
-		if(before > 0)
-			Toast(TOAST_COPY_PASTE, "Copied %d instance(s)", before);
+	// Ctrl+D duplicate in water mode
+	if(WaterLevel::gWaterEditMode && CPad::IsCtrlDown() && CPad::IsKeyJustDown('D')){
+		int count = WaterLevel::GetNumSelectedPolys();
+		if(count > 0){
+			WaterLevel::DuplicateSelectedWaterPolys();
+			Toast(TOAST_COPY_PASTE, "Duplicated %d water polygon(s)", count);
+		}
 	}
-	if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('V')){
-		int before = 0;
-		for(CPtrNode *p = instances.first; p; p = p->next) before++;
-		PasteClipboard();
-		int after = 0;
-		for(CPtrNode *p = instances.first; p; p = p->next) after++;
-		int pasted = after - before;
-		if(pasted > 0)
-			Toast(TOAST_COPY_PASTE, "Pasted %d instance(s)", pasted);
+
+	// Copy/Paste (not in water edit mode)
+	if(!WaterLevel::gWaterEditMode){
+		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')){
+			int before = 0;
+			for(CPtrNode *p = selection.first; p; p = p->next) before++;
+			CopySelected();
+			if(before > 0)
+				Toast(TOAST_COPY_PASTE, "Copied %d instance(s)", before);
+		}
+		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('V')){
+			int before = 0;
+			for(CPtrNode *p = instances.first; p; p = p->next) before++;
+			PasteClipboard();
+			int after = 0;
+			for(CPtrNode *p = instances.first; p; p = p->next) after++;
+			int pasted = after - before;
+			if(pasted > 0)
+				Toast(TOAST_COPY_PASTE, "Pasted %d instance(s)", pasted);
+		}
 	}
 
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')) gUseViewerCam = !gUseViewerCam;
@@ -3135,34 +5073,65 @@ gui(void)
 		gOpenImportPrefab = true;
 	}
 
-	// Gizmo mode shortcuts
-	if(CPad::IsKeyJustDown('W')) gGizmoMode = GIZMO_TRANSLATE;
-	if(CPad::IsKeyJustDown('Q')) gGizmoMode = GIZMO_ROTATE;
+	// Gizmo mode shortcuts (not in water edit mode — water gizmo is always translate)
+	if(!WaterLevel::gWaterEditMode){
+		if(CPad::IsKeyJustDown('W')) gGizmoMode = GIZMO_TRANSLATE;
+		if(CPad::IsKeyJustDown('Q')) gGizmoMode = GIZMO_ROTATE;
+	}
 
-	// Delete selected instances
+	// Delete
 	if(CPad::IsKeyJustDown(KEY_DEL) || CPad::IsKeyJustDown(KEY_BACKSP)){
-		int count = 0;
-		for(CPtrNode *p = selection.first; p; p = p->next) count++;
-		if(count > 0){
-			DeleteSelected();
-			Toast(TOAST_DELETE, "Deleted %d instance(s)", count);
+		if(WaterLevel::gWaterEditMode){
+			int count = WaterLevel::GetNumSelectedPolys();
+			if(count > 0){
+				WaterLevel::DeleteSelectedWaterPolys();
+				Toast(TOAST_DELETE, "Deleted %d water polygon(s)", count);
+			}
+		}else{
+			int count = 0;
+			for(CPtrNode *p = selection.first; p; p = p->next) count++;
+			if(count > 0){
+				DeleteSelected();
+				Toast(TOAST_DELETE, "Deleted %d instance(s)", count);
+			}
 		}
 	}
 
 	// Undo/Redo
 	if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('Z')){
-		Undo();
-		Toast(TOAST_UNDO_REDO, "Undo");
+		if(WaterLevel::gWaterEditMode){
+			if(WaterLevel::WaterCanUndo()){
+				WaterLevel::WaterUndo();
+				Toast(TOAST_UNDO_REDO, "Water Undo");
+			}
+		}else{
+			Undo();
+			Toast(TOAST_UNDO_REDO, "Undo");
+		}
 	}
 	if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('Y')){
-		Redo();
-		Toast(TOAST_UNDO_REDO, "Redo");
+		if(WaterLevel::gWaterEditMode){
+			if(WaterLevel::WaterCanRedo()){
+				WaterLevel::WaterRedo();
+				Toast(TOAST_UNDO_REDO, "Water Redo");
+			}
+		}else{
+			Redo();
+			Toast(TOAST_UNDO_REDO, "Redo");
+		}
 	}
 
-	// Ctrl+S to save all IPLs
+	// Ctrl+S to save
 	if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('S')){
-		if(saveAllIpls())
-			Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
+		if(WaterLevel::gWaterEditMode){
+			if(WaterLevel::gWaterDirty){
+				if(WaterLevel::SaveWater())
+					Toast(TOAST_SAVE, "Saved water.dat to %s", getSaveDestinationLabel());
+			}
+		}else{
+			if(saveAllIpls())
+				Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
+		}
 	}
 
 	// Ctrl+G to test in game
@@ -3180,21 +5149,22 @@ gui(void)
 
 	if(CPad::IsKeyJustDown('T')) showTimeWeatherWindow ^= 1;
 	if(showTimeWeatherWindow){
-		ImGui::Begin("Time & Weather", &showTimeWeatherWindow);
+		ImGui::Begin(ICON_FA_CLOUD_SUN " Time & Weather", &showTimeWeatherWindow);
 		uiTimeWeather();
 		ImGui::End();
 	}
 
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('V')) showViewWindow ^= 1;
 	if(showViewWindow){
-		ImGui::Begin("View", &showViewWindow);
+		ImGui::SetNextWindowSize(ImVec2(460.0f, 640.0f), ImGuiCond_FirstUseEver);
+		ImGui::Begin(ICON_FA_EYE " View", &showViewWindow);
 		uiView();
 		ImGui::End();
 	}
 
 	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('R')) showRenderingWindow ^= 1;
 	if(showRenderingWindow){
-		ImGui::Begin("Rendering", &showRenderingWindow);
+		ImGui::Begin(ICON_FA_PAINTBRUSH " Rendering", &showRenderingWindow);
 		uiRendering();
 		ImGui::End();
 	}
@@ -3202,6 +5172,13 @@ gui(void)
 	if(CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
 	if(showToolsWindow) uiToolsWindow();
 
+	{
+		static SAPaths::Node *prevSaNode = nil;
+		gSaNodeJustSelected = SAPaths::selectedNode != nil && SAPaths::selectedNode != prevSaNode;
+		prevSaNode = SAPaths::selectedNode;
+		if(gSaNodeJustSelected)
+			showInstanceWindow = true;
+	}
 	if(!CPad::IsCtrlDown() && !CPad::IsShiftDown() && CPad::IsKeyJustDown('I')) showInstanceWindow ^= 1;
 	if(showInstanceWindow) uiInstWindow();
 
@@ -3223,9 +5200,52 @@ gui(void)
 			SpawnExitPlaceMode();
 	}
 
-	// Escape exits place mode
-	if(CPad::IsKeyJustDown(KEY_ESC) && gPlaceMode)
-		SpawnExitPlaceMode();
+	// Escape: cancel creation, exit water mode, or exit place mode
+	if(CPad::IsKeyJustDown(KEY_ESC)){
+		if(WaterLevel::gWaterCreateMode > 0){
+			WaterLevel::CancelCreateMode();
+		}else if(WaterLevel::gWaterEditMode){
+			WaterLevel::gWaterEditMode = false;
+			WaterLevel::ClearWaterSelection();
+			WaterLevel::gWaterSubMode = 0;
+		}else if(gPlaceMode)
+			SpawnExitPlaceMode();
+	}
+
+	// H toggles water edit mode (SA only)
+	if(params.water == GAME_SA && CPad::IsKeyJustDown('H') && !CPad::IsCtrlDown()){
+		WaterLevel::gWaterEditMode = !WaterLevel::gWaterEditMode;
+		if(WaterLevel::gWaterEditMode){
+			ClearSelection();
+			if(gPlaceMode)
+				SpawnExitPlaceMode();
+		}else{
+			WaterLevel::CancelCreateMode();
+			WaterLevel::ClearWaterSelection();
+			WaterLevel::gWaterSubMode = 0;
+		}
+	}
+
+	// Tab switches water sub-mode (cancel creation first)
+	if(WaterLevel::gWaterEditMode && CPad::IsKeyJustDown(KEY_TAB)){
+		WaterLevel::CancelCreateMode();
+		if(WaterLevel::gWaterSubMode == 0){
+			WaterLevel::ClearWaterPolySelection();
+			WaterLevel::gWaterSubMode = 1;
+		}else{
+			WaterLevel::ClearWaterVertexSelection();
+			WaterLevel::gWaterSubMode = 0;
+		}
+	}
+
+	// N enters quad creation mode
+	if(WaterLevel::gWaterEditMode && !WaterLevel::gWaterCreateMode && CPad::IsKeyJustDown('N') && !CPad::IsCtrlDown()){
+		WaterLevel::EnterCreateMode();
+	}
+
+	// Water editor window
+	if(WaterLevel::gWaterEditMode)
+		uiWaterWindow();
 
 	if(showHelpWindow) uiHelpWindow();
 	if(showDemoWindow){
@@ -3249,6 +5269,56 @@ gui(void)
 				"PLACE: %s  [Click=Place | Shift+Click=Multi | RMB/Esc=Cancel]", obj->m_name);
 			ImGui::End();
 		}
+	}
+
+	// Water hover hint (when not in water edit mode, mouse over water)
+	if(!WaterLevel::gWaterEditMode && !gPlaceMode && params.water == GAME_SA){
+		ImGuiIO &hintIO = ImGui::GetIO();
+		if(!hintIO.WantCaptureMouse){
+			Ray ray;
+			ray.start = TheCamera.m_position;
+			ray.dir = normalize(TheCamera.m_mouseDir);
+			float waterT = 1.0e30f;
+			int hit = WaterLevel::PickWaterPoly(ray, &waterT);
+			bool showHint = hit != INT_MIN && waterT < 750.0f;
+			if(showHint){
+				float sceneT = 1.0e30f;
+				if(GetVisibleInstUnderRay(ray, nil, &sceneT) && sceneT + 0.5f < waterT)
+					showHint = false;
+			}
+			if(showHint){
+				ImGui::SetNextWindowPos(ImVec2(hintIO.MousePos.x + 15, hintIO.MousePos.y + 15));
+				ImGui::SetNextWindowBgAlpha(0.7f);
+				ImGui::Begin("##WaterHint", nil,
+					ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+					ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+					ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoInputs);
+				ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "H - Edit Water");
+				ImGui::End();
+			}
+		}
+	}
+
+	// Water edit mode overlay
+	if(WaterLevel::gWaterEditMode){
+		ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 40));
+		ImGui::SetNextWindowBgAlpha(0.6f);
+		ImGui::Begin("##WaterMode", nil,
+			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoFocusOnAppearing);
+		if(WaterLevel::gWaterCreateMode > 0){
+			const char *shape = WaterLevel::gWaterCreateShape == 0 ? "QUAD" : "TRI";
+			int needed = WaterLevel::gWaterCreateShape == 0 ? 2 : 3;
+			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.4f, 1.0f),
+				"CREATE %s [corner %d/%d] Z=%.1f | RMB/Esc:cancel | Shift+click:multi",
+				shape, WaterLevel::gWaterCreateMode, needed, WaterLevel::gWaterCreateZ);
+		}else{
+			const char *subMode = WaterLevel::gWaterSubMode == 0 ? "polygon" : "vertex";
+			ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
+				"WATER [%s] | H:exit | Tab:mode | N:new | Del:delete | Ctrl+D:dup | Ctrl+Z/Y:undo | Ctrl+S:save", subMode);
+		}
+		ImGui::End();
 	}
 
 	uiToasts();
