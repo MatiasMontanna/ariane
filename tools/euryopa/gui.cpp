@@ -3214,7 +3214,6 @@ uiView(void)
 		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
 		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
 	}
->>>>>>> remotes/upstream/master
 
 
 	ImGui::Checkbox("Draw Water", &gRenderWater);
