@@ -3195,7 +3195,7 @@ uiView(void)
 	ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
 	ImGui::Checkbox("Draw Car Paths", &gRenderCarPaths);
 	ImGui::Checkbox("Draw Ped Paths", &gRenderPedPaths);
-=======
+
 	if(!isSA()) ImGui::Checkbox("Draw 2dfx", &gRenderEffects);
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
