@@ -395,6 +395,8 @@ RenderWorldLabels(void)
 		return;
 
 	const ImU32 colYellow = IM_COL32(255, 255, 0, 255);
+	float screenH = (float)sk::globals.height;
+	float screenW = (float)sk::globals.width;
 
 	for(CPtrNode *p = instances.first; p; p = p->next){
 		ObjectInst *inst = (ObjectInst*)p->item;
@@ -410,12 +412,15 @@ RenderWorldLabels(void)
 		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, true))
 			continue;
 
-		if(screen.x < -50.0f || screen.x > (float)sk::globals.width + 50.0f ||
-		   screen.y < -50.0f || screen.y > (float)sk::globals.height + 50.0f)
+		float sx = screen.x;
+		float sy = screenH - screen.y;
+
+		if(sx < -100.0f || sx > screenW + 100.0f ||
+		   sy < -100.0f || sy > screenH + 100.0f)
 			continue;
 
-		float x = screen.x;
-		float y = screen.y;
+		float x = sx;
+		float y = sy;
 
 		if(gRenderAreaIdLabels){
 			char buf[64];
@@ -441,9 +446,11 @@ RenderWorldLabels(void)
 
 					rw::V3d effScreen;
 					if(Sprite::CalcScreenCoors(worldPos, &effScreen, &w, &h, true)){
-						if(effScreen.x >= -50.0f && effScreen.x <= (float)sk::globals.width + 50.0f &&
-						   effScreen.y >= -50.0f && effScreen.y <= (float)sk::globals.height + 50.0f){
-							Render2dfxLabelAtScreen(drawList, effScreen.x, effScreen.y, e);
+						float ex = effScreen.x;
+						float ey = screenH - effScreen.y;
+						if(ex >= -100.0f && ex <= screenW + 100.0f &&
+						   ey >= -100.0f && ey <= screenH + 100.0f){
+							Render2dfxLabelAtScreen(drawList, ex, ey, e);
 						}
 					}
 				}

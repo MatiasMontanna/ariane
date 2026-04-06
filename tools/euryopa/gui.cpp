@@ -5150,8 +5150,12 @@ gui(void)
 						count++;
 					}
 				}
-				if(count > 0)
-					Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
+				if(count > 0){
+					if(count > 64)
+						Toast(TOAST_UNDO_REDO, "Selected %d instance(s) (gizmo limited to 64)", count);
+					else
+						Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
+				}
 			}
 		}
 		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')){
