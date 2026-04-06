@@ -3730,7 +3730,7 @@ uiFxTable(ObjectInst *inst)
 		ImGui::SameLine();
 
 		char label[64];
-		snprintf(label, sizeof(label), "%s##eff%d", GetEffectTypeName(e->type), i);
+		snprintf(label, sizeof(label), "%s##eff%d", Effects::GetEffectTypeName(e->type), i);
 
 		if(ImGui::Selectable(label, e == Effects::selectedEffect, ImGuiSelectableFlags_None, ImVec2(0, 0)))
 			Effects::selectedEffect = e;
