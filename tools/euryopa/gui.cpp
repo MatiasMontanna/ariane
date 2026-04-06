@@ -2309,6 +2309,20 @@ uiMainmenu(void)
 					Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
 			}
 			ImGui::SetItemTooltip("Saves all modified objects in their respective placement files (.ipl).");
+			if(ImGui::MenuItem("Select All", "Ctrl+A")){
+				ClearSelection();
+				int count = 0;
+				for(CPtrNode *p = instances.first; p; p = p->next){
+					ObjectInst *inst = (ObjectInst*)p->item;
+					if(!inst->m_isDeleted){
+						inst->Select();
+						count++;
+					}
+				}
+				if(count > 0)
+					Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
+			}
+			ImGui::SetItemTooltip("Selects all objects in the current map.");
 			if(ImGui::MenuItem(ICON_FA_GAMEPAD " Test in Game", "Ctrl+G")){
 				testInGame();
 			}
@@ -5124,6 +5138,22 @@ gui(void)
 
 	// Copy/Paste (not in water edit mode)
 	if(!WaterLevel::gWaterEditMode){
+		// Select all
+		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('A')){
+			if(!WaterLevel::gWaterEditMode){
+				ClearSelection();
+				int count = 0;
+				for(CPtrNode *p = instances.first; p; p = p->next){
+					ObjectInst *inst = (ObjectInst*)p->item;
+					if(!inst->m_isDeleted){
+						inst->Select();
+						count++;
+					}
+				}
+				if(count > 0)
+					Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
+			}
+		}
 		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')){
 			int before = 0;
 			for(CPtrNode *p = selection.first; p; p = p->next) before++;
