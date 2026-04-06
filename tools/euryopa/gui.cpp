@@ -3599,12 +3599,14 @@ static const char *fxTypeNames[] = {
 };
 static const char *flareTypeNames[] = { "None", "Sun", "Headlight" };
 
+namespace Effects {
 const char*
 GetEffectTypeName(int type)
 {
 	if(type < 0 || type >= (int)IM_ARRAYSIZE(fxTypeNames))
 		return "Unknown";
 	return fxTypeNames[type];
+}
 }
 
 void
