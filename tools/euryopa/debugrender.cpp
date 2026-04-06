@@ -394,18 +394,18 @@ RenderWorldLabels(void)
 
 		rw::V3d screen;
 		float w, h;
-		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, true))
+		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, false))
 			continue;
 
 		float x = screen.x;
-		float y = screen.y - 20.0f;
+		float y = screen.y;
 
 		if(gRenderAreaIdLabels){
 			char buf[64];
 			snprintf(buf, sizeof(buf), "Area:%d", inst->m_area);
 			drawList->AddText(ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, buf);
 			drawList->AddText(ImVec2(x, y), colYellow, buf);
-			y -= 15.0f;
+			y -= 14.0f;
 		}
 
 		if(gRender2dfxLabels){
@@ -416,8 +416,11 @@ RenderWorldLabels(void)
 					if(e == nil)
 						continue;
 
+					rw::V3d worldPos;
+					rw::V3d::transformPoints(&worldPos, &e->pos, 1, &inst->m_matrix);
+
 					rw::V3d effScreen;
-					if(Sprite::CalcScreenCoors(e->pos, &effScreen, &w, &h, true)){
+					if(Sprite::CalcScreenCoors(worldPos, &effScreen, &w, &h, false)){
 						Render2dfxLabel(drawList, effScreen.x, effScreen.y, e);
 					}
 				}
