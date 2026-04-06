@@ -229,157 +229,125 @@ RenderAxesWidget(rw::V3d pos, rw::V3d x, rw::V3d y, rw::V3d z)
 }
 
 static void
-RenderLabelAtScreen(ImDrawList* drawList, float sx, float sy, const char* text, ImU32 color)
+RenderLabelWithBg(ImDrawList* drawList, float sx, float sy, const char* text, ImU32 textColor, ImU32 bgColor)
 {
 	ImFont* font = ImGui::GetFont();
-	float fontSize = ImGui::GetFontSize();
+	float fontSize = 15.0f;
 	ImVec2 textSize = ImGui::CalcTextSize(text);
+	float padding = 4.0f;
 	float x = sx - textSize.x * 0.5f;
-	drawList->AddText(font, fontSize, ImVec2(x + 1.0f, sy + 1.0f), IM_COL32_BLACK, text);
-	drawList->AddText(font, fontSize, ImVec2(x, sy), color, text);
+	float y = sy - textSize.y * 0.5f;
+	
+	ImRect bgRect(ImVec2(x - padding, y - padding), 
+	              ImVec2(x + textSize.x + padding, y + textSize.y + padding));
+	drawList->AddRectFilled(bgRect.Min, bgRect.Max, bgColor, 3.0f);
+	drawList->AddText(font, fontSize, ImVec2(x, y), textColor, text);
 }
 
 static void
-RenderLabelLine(ImDrawList* drawList, float sx, float sy, const char* text, ImU32 color)
+RenderLabelLineWithBg(ImDrawList* drawList, float sx, float sy, const char* text, ImU32 textColor, ImU32 bgColor)
 {
 	ImFont* font = ImGui::GetFont();
-	float fontSize = ImGui::GetFontSize();
-	drawList->AddText(font, fontSize, ImVec2(sx + 1.0f, sy + 1.0f), IM_COL32_BLACK, text);
-	drawList->AddText(font, fontSize, ImVec2(sx, sy), color, text);
+	float fontSize = 15.0f;
+	ImVec2 textSize = ImGui::CalcTextSize(text);
+	float padding = 4.0f;
+	float x = sx;
+	float y = sy - textSize.y * 0.5f;
+	
+	ImRect bgRect(ImVec2(x - padding, y - padding), 
+	              ImVec2(x + textSize.x + padding, y + textSize.y + padding));
+	drawList->AddRectFilled(bgRect.Min, bgRect.Max, bgColor, 3.0f);
+	drawList->AddText(font, fontSize, ImVec2(x, y), textColor, text);
 }
 
 static void
 Render2dfxLabelAtScreen(ImDrawList* drawList, float sx, float sy, Effect* e)
 {
-	const ImU32 colCyan = IM_COL32(0, 255, 255, 255);
-	const ImU32 colGreen = IM_COL32(0, 255, 0, 255);
-	const ImU32 colYellow = IM_COL32(255, 255, 0, 255);
+	const ImU32 colCyan = IM_COL32(0, 220, 255, 255);
+	const ImU32 colGreen = IM_COL32(100, 255, 100, 255);
+	const ImU32 colYellow = IM_COL32(255, 255, 100, 255);
 	const ImU32 colWhite = IM_COL32(255, 255, 255, 255);
-	const ImU32 colOrange = IM_COL32(255, 165, 0, 255);
-	const ImU32 colPink = IM_COL32(255, 105, 180, 255);
-	const ImU32 colPurple = IM_COL32(200, 100, 255, 255);
+	const ImU32 colOrange = IM_COL32(255, 200, 100, 255);
+	const ImU32 colPink = IM_COL32(255, 150, 200, 255);
+	const ImU32 colPurple = IM_COL32(200, 150, 255, 255);
+	const ImU32 bgDark = IM_COL32(0, 0, 0, 180);
 
 	char buf[128];
-	float lineH = 14.0f;
-	const char* typeName = Effects::GetEffectTypeName(e->type);
+	float lineH = 20.0f;
 	float y = sy;
 
 	switch(e->type){
 	case FX_LIGHT:
-		snprintf(buf, sizeof(buf), "Light [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
-		snprintf(buf, sizeof(buf), "Tex:%.12s", e->light.coronaTex);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
-		snprintf(buf, sizeof(buf), "Corona:%.1f Shadow:%.1f", e->light.coronaSize, e->light.shadowSize);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
-		snprintf(buf, sizeof(buf), "Flash:%d LODDist:%.0f", e->light.flashiness, e->light.lodDist);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
-		snprintf(buf, sizeof(buf), "Flare:%d Reflect:%d", e->light.lensFlareType, e->light.reflection);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
-		snprintf(buf, sizeof(buf), "ShdAlpha:%d Flags:0x%X", e->light.shadowAlpha, e->light.flags);
-		RenderLabelLine(drawList, sx, y, buf, colCyan);
+		snprintf(buf, sizeof(buf), "[%d] %s | %s", e->id, "Light", e->light.coronaTex);
+		RenderLabelWithBg(drawList, sx, y, buf, colCyan, bgDark); y += lineH;
+		snprintf(buf, sizeof(buf), "C:%.1f S:%.1f | F:%d L:%.0f", 
+			e->light.coronaSize, e->light.shadowSize, e->light.flashiness, e->light.lodDist);
+		RenderLabelWithBg(drawList, sx, y, buf, colCyan, bgDark);
 		break;
 
 	case FX_PARTICLE:
-		snprintf(buf, sizeof(buf), "Particle [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colPurple); y += lineH;
-		snprintf(buf, sizeof(buf), "Name:%.20s", e->prtcl.name);
-		RenderLabelLine(drawList, sx, y, buf, colPurple); y += lineH;
-		snprintf(buf, sizeof(buf), "Type:%d Size:%.1f", e->prtcl.particleType, e->prtcl.size);
-		RenderLabelLine(drawList, sx, y, buf, colPurple); y += lineH;
-		snprintf(buf, sizeof(buf), "Dir:(%.2f,%.2f,%.2f)", e->prtcl.dir.x, e->prtcl.dir.y, e->prtcl.dir.z);
-		RenderLabelLine(drawList, sx, y, buf, colPurple);
+		snprintf(buf, sizeof(buf), "[%d] %s | %s", e->id, "Particle", e->prtcl.name);
+		RenderLabelWithBg(drawList, sx, y, buf, colPurple, bgDark); y += lineH;
+		snprintf(buf, sizeof(buf), "T:%d Sz:%.1f", e->prtcl.particleType, e->prtcl.size);
+		RenderLabelWithBg(drawList, sx, y, buf, colPurple, bgDark);
 		break;
 
 	case FX_LOOKATPOINT:
-		snprintf(buf, sizeof(buf), "LookAt [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colPink); y += lineH;
+		snprintf(buf, sizeof(buf), "[%d] %s", e->id, "LookAt");
+		RenderLabelWithBg(drawList, sx, y, buf, colPink, bgDark); y += lineH;
 		snprintf(buf, sizeof(buf), "Type:%d Prob:%d", e->look.type, e->look.probability);
-		RenderLabelLine(drawList, sx, y, buf, colPink); y += lineH;
-		snprintf(buf, sizeof(buf), "Dir:(%.2f,%.2f,%.2f)", e->look.dir.x, e->look.dir.y, e->look.dir.z);
-		RenderLabelLine(drawList, sx, y, buf, colPink);
+		RenderLabelWithBg(drawList, sx, y, buf, colPink, bgDark);
 		break;
 
 	case FX_PEDQUEUE:
-		snprintf(buf, sizeof(buf), "PedQueue [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colYellow); y += lineH;
-		snprintf(buf, sizeof(buf), "Script:%.6s Type:%d", e->queue.scriptName, e->queue.type);
-		RenderLabelLine(drawList, sx, y, buf, colYellow); y += lineH;
-		snprintf(buf, sizeof(buf), "Interest:%d LookAt:%d", e->queue.interest, e->queue.lookAt);
-		RenderLabelLine(drawList, sx, y, buf, colYellow); y += lineH;
-		snprintf(buf, sizeof(buf), "Flags:0x%X", e->queue.flags);
-		RenderLabelLine(drawList, sx, y, buf, colYellow);
+		snprintf(buf, sizeof(buf), "[%d] %s | %.6s", e->id, "PedQueue", e->queue.scriptName);
+		RenderLabelWithBg(drawList, sx, y, buf, colYellow, bgDark); y += lineH;
+		snprintf(buf, sizeof(buf), "T:%d Int:%d LAt:%d", e->queue.type, e->queue.interest, e->queue.lookAt);
+		RenderLabelWithBg(drawList, sx, y, buf, colYellow, bgDark);
 		break;
 
 	case FX_INTERIOR:
-		snprintf(buf, sizeof(buf), "Interior [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
-		snprintf(buf, sizeof(buf), "Group:%d Type:%d", e->interior.group, e->interior.type);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
+		snprintf(buf, sizeof(buf), "[%d] %s | G:%d T:%d", e->id, "Interior", e->interior.group, e->interior.type);
+		RenderLabelWithBg(drawList, sx, y, buf, colGreen, bgDark); y += lineH;
 		snprintf(buf, sizeof(buf), "Size:%.1fx%.1fx%.1f", e->interior.width, e->interior.depth, e->interior.height);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
-		snprintf(buf, sizeof(buf), "Rot:%.1f", e->interior.rot);
-		RenderLabelLine(drawList, sx, y, buf, colGreen);
+		RenderLabelWithBg(drawList, sx, y, buf, colGreen, bgDark);
 		break;
 
 	case FX_ENTRYEXIT:
-		snprintf(buf, sizeof(buf), "EntryExit [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colOrange); y += lineH;
-		snprintf(buf, sizeof(buf), "Title:%.6s Area:%d", e->entryExit.title, e->entryExit.areaCode);
-		RenderLabelLine(drawList, sx, y, buf, colOrange); y += lineH;
-		snprintf(buf, sizeof(buf), "Entry Ang:%.0f Exit Ang:%.0f", e->entryExit.enterAngle, e->entryExit.exitAngle);
-		RenderLabelLine(drawList, sx, y, buf, colOrange); y += lineH;
-		snprintf(buf, sizeof(buf), "Radius:%.1fx%.1f", e->entryExit.radiusX, e->entryExit.radiusY);
-		RenderLabelLine(drawList, sx, y, buf, colOrange); y += lineH;
-		snprintf(buf, sizeof(buf), "Open:%d Shut:%d", e->entryExit.openTime, e->entryExit.shutTime);
-		RenderLabelLine(drawList, sx, y, buf, colOrange); y += lineH;
-		snprintf(buf, sizeof(buf), "Extra:0x%X ExCol:%d", e->entryExit.extraFlags, e->entryExit.extraColor);
-		RenderLabelLine(drawList, sx, y, buf, colOrange);
+		snprintf(buf, sizeof(buf), "[%d] %s | %.6s A:%d", e->id, "EntryExit", e->entryExit.title, e->entryExit.areaCode);
+		RenderLabelWithBg(drawList, sx, y, buf, colOrange, bgDark); y += lineH;
+		snprintf(buf, sizeof(buf), "R:%.1fx%.1f | O:%d S:%d", e->entryExit.radiusX, e->entryExit.radiusY, 
+			e->entryExit.openTime, e->entryExit.shutTime);
+		RenderLabelWithBg(drawList, sx, y, buf, colOrange, bgDark);
 		break;
 
 	case FX_ROADSIGN:
-		snprintf(buf, sizeof(buf), "Roadsign [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
+		snprintf(buf, sizeof(buf), "[%d] %s | %.10s", e->id, "Roadsign", e->roadsign.text[0]);
+		RenderLabelWithBg(drawList, sx, y, buf, colGreen, bgDark); y += lineH;
 		snprintf(buf, sizeof(buf), "Size:%.1fx%.1f", e->roadsign.width, e->roadsign.height);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
-		snprintf(buf, sizeof(buf), "Rot:(%.1f,%.1f,%.1f)", e->roadsign.rotX, e->roadsign.rotY, e->roadsign.rotZ);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
-		snprintf(buf, sizeof(buf), "Flags:0x%X", e->roadsign.flags);
-		RenderLabelLine(drawList, sx, y, buf, colGreen); y += lineH;
-		snprintf(buf, sizeof(buf), "Text:%.12s", e->roadsign.text[0]);
-		RenderLabelLine(drawList, sx, y, buf, colGreen);
+		RenderLabelWithBg(drawList, sx, y, buf, colGreen, bgDark);
 		break;
 
 	case FX_TRIGGERPOINT:
-		snprintf(buf, sizeof(buf), "Trigger [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colWhite); y += lineH;
-		snprintf(buf, sizeof(buf), "Index:%d", e->triggerPoint.index);
-		RenderLabelLine(drawList, sx, y, buf, colWhite);
+		snprintf(buf, sizeof(buf), "[%d] %s | Idx:%d", e->id, "Trigger", e->triggerPoint.index);
+		RenderLabelWithBg(drawList, sx, y, buf, colWhite, bgDark);
 		break;
 
 	case FX_COVERPOINT:
-		snprintf(buf, sizeof(buf), "Cover [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
+		snprintf(buf, sizeof(buf), "[%d] %s | U:%d", e->id, "Cover", e->coverPoint.usage);
+		RenderLabelWithBg(drawList, sx, y, buf, colCyan, bgDark); y += lineH;
 		snprintf(buf, sizeof(buf), "Dir:(%.2f,%.2f)", e->coverPoint.dirX, e->coverPoint.dirY);
-		RenderLabelLine(drawList, sx, y, buf, colCyan); y += lineH;
-		snprintf(buf, sizeof(buf), "Usage:%d", e->coverPoint.usage);
-		RenderLabelLine(drawList, sx, y, buf, colCyan);
+		RenderLabelWithBg(drawList, sx, y, buf, colCyan, bgDark);
 		break;
 
 	case FX_ESCALATOR:
-		snprintf(buf, sizeof(buf), "Escalator [%d]", e->id);
-		RenderLabelLine(drawList, sx, y, buf, colPink); y += lineH;
-		snprintf(buf, sizeof(buf), "GoingUp:%s", e->escalator.goingUp ? "Yes" : "No");
-		RenderLabelLine(drawList, sx, y, buf, colPink); y += lineH;
-		snprintf(buf, sizeof(buf), "Start:(%.1f,%.1f,%.1f)", e->escalator.bottom.x, e->escalator.bottom.y, e->escalator.bottom.z);
-		RenderLabelLine(drawList, sx, y, buf, colPink); y += lineH;
-		snprintf(buf, sizeof(buf), "End:(%.1f,%.1f,%.1f)", e->escalator.end.x, e->escalator.end.y, e->escalator.end.z);
-		RenderLabelLine(drawList, sx, y, buf, colPink);
+		snprintf(buf, sizeof(buf), "[%d] %s | %s", e->id, "Escalator", e->escalator.goingUp ? "Up" : "Down");
+		RenderLabelWithBg(drawList, sx, y, buf, colPink, bgDark);
 		break;
 
 	default:
-		snprintf(buf, sizeof(buf), "%s [%d]", typeName, e->id);
-		RenderLabelLine(drawList, sx, y, buf, colWhite);
+		snprintf(buf, sizeof(buf), "[%d] %s", e->id, Effects::GetEffectTypeName(e->type));
+		RenderLabelWithBg(drawList, sx, y, buf, colWhite, bgDark);
 		break;
 	}
 }
@@ -419,9 +387,9 @@ RenderWorldLabels(void)
 
 		if(gRenderAreaIdLabels){
 			char buf[64];
-			snprintf(buf, sizeof(buf), "Area:%d", inst->m_area);
-			RenderLabelAtScreen(drawList, x, y, buf, colYellow);
-			y += 14.0f;
+			snprintf(buf, sizeof(buf), "Area %d", inst->m_area);
+			RenderLabelWithBg(drawList, x, y, buf, IM_COL32(255, 255, 100, 255), IM_COL32(0, 0, 0, 160));
+			y += 22.0f;
 		}
 
 		if(gRender2dfxLabels){
