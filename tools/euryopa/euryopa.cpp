@@ -82,6 +82,11 @@ bool gSaCarPathTrafficFreezeRoutes = false;
 bool gRenderSaCarPathParkedCars = false;
 int gSaCarPathParkedCarCount = 8;
 
+// World labels
+bool gRenderAreaIdLabels;
+bool gRender2dfxLabels;
+float gWorldLabelDrawDist = 300.0f;
+
 // SA postfx
 int  gColourFilter;
 bool gRadiosity;
@@ -1959,8 +1964,9 @@ Draw(void)
 		WaterLevel::RenderEditOverlay();
 
 	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHAALWAYS);	// don't mess up GUI
-	// This fucks up the z buffer, but what else can we do?
+	// This fucked up the z buffer, but what else can we do?
 	RenderDebugLines();
+	RenderWorldLabels();
 	ImGui::EndFrame();
 	ImGui::Render();
 

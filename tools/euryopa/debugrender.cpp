@@ -227,3 +227,98 @@ RenderAxesWidget(rw::V3d pos, rw::V3d x, rw::V3d y, rw::V3d z)
 	RenderLine(pos, add(pos, y), green, green);
 	RenderLine(pos, add(pos, z), blue, blue);
 }
+
+void
+RenderWorldLabels(void)
+{
+	if(!ImGui::GetCurrentContext())
+		return;
+
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	if(drawList == nil)
+		return;
+
+	const ImVec4 yellow(1.0f, 1.0f, 0.0f, 0.9f);
+	const ImVec4 cyan(0.0f, 1.0f, 1.0f, 0.9f);
+	const ImVec4 white(1.0f, 1.0f, 1.0f, 0.9f);
+	const ImVec4 green(0.0f, 1.0f, 0.0f, 0.9f);
+
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		if(inst->m_isDeleted)
+			continue;
+
+		float dist = TheCamera.distanceTo(inst->m_translation);
+		if(dist > gWorldLabelDrawDist)
+			continue;
+
+		rw::V3d screen;
+		float w, h;
+		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, true))
+			continue;
+
+		float x = screen.x;
+		float y = screen.y - 20.0f;
+
+		if(gRenderAreaIdLabels){
+			char buf[64];
+			snprintf(buf, sizeof(buf), "Area:%d", inst->m_area);
+			drawList->AddText(ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, buf);
+			drawList->AddText(ImVec2(x, y), ImColor(yellow), buf);
+			y -= 15.0f;
+		}
+
+		if(gRender2dfxLabels){
+			ObjectDef *obj = GetObjectDef(inst->m_objectId);
+			if(obj && obj->m_numEffects > 0){
+				for(int i = 0; i < obj->m_numEffects; i++){
+					Effect *e = Effects::GetEffect(obj->m_effectIndex + i);
+					if(e == nil)
+						continue;
+
+					rw::V3d effScreen;
+					if(Sprite::CalcScreenCoors(e->pos, &effScreen, &w, &h, true)){
+						float effX = effScreen.x;
+						float effY = effScreen.y - 10.0f;
+
+						char buf[128];
+						const char *typeName = Effects::GetEffectTypeName(e->type);
+
+						switch(e->type){
+						case FX_LIGHT:
+							snprintf(buf, sizeof(buf), "%s L:%s", typeName, e->light.coronaTex);
+							drawList->AddText(ImVec2(effX + 1.0f, effY + 1.0f), IM_COL32_BLACK, buf);
+							drawList->AddText(ImVec2(effX, effY), ImColor(cyan), buf);
+							break;
+						case FX_INTERIOR:
+							snprintf(buf, sizeof(buf), "%s G:%d T:%d", typeName, e->interior.group, e->interior.type);
+							drawList->AddText(ImVec2(effX + 1.0f, effY + 1.0f), IM_COL32_BLACK, buf);
+							drawList->AddText(ImVec2(effX, effY), ImColor(green), buf);
+							break;
+						case FX_ENTRYEXIT:
+							snprintf(buf, sizeof(buf), "%s Area:%d '%s'", typeName, e->entryExit.areaCode, e->entryExit.title);
+							drawList->AddText(ImVec2(effX + 1.0f, effY + 1.0f), IM_COL32_BLACK, buf);
+							drawList->AddText(ImVec2(effX, effY), ImColor(white), buf);
+							break;
+						case FX_PEDQUEUE:
+							snprintf(buf, sizeof(buf), "%s Type:%d", typeName, e->queue.type);
+							drawList->AddText(ImVec2(effX + 1.0f, effY + 1.0f), IM_COL32_BLACK, buf);
+							drawList->AddText(ImVec2(effX, effY), ImColor(yellow), buf);
+							break;
+						case FX_ROADSIGN:
+							snprintf(buf, sizeof(buf), "%s W:%.1f H:%.1f", typeName, e->roadsign.width, e->roadsign.height);
+							drawList->AddText(ImVec2(effX + 1.0f, effY + 1.0f), IM_COL32_BLACK, buf);
+							drawList->AddText(ImVec2(effX, effY), ImColor(green), buf);
+							break;
+						default:
+							snprintf(buf, sizeof(buf), "%s", typeName);
+							drawList->AddText(ImVec2(effX + 1.0f, effY + 1.0f), IM_COL32_BLACK, buf);
+							drawList->AddText(ImVec2(effX, effY), ImColor(white), buf);
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+}

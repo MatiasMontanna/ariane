@@ -154,6 +154,11 @@ extern bool gSaCarPathTrafficFreezeRoutes;
 extern bool gRenderSaCarPathParkedCars;
 extern int gSaCarPathParkedCarCount;
 
+// World labels
+extern bool gRenderAreaIdLabels;
+extern bool gRender2dfxLabels;
+extern float gWorldLabelDrawDist;
+
 // SA postfx
 extern int  gColourFilter;
 extern bool gRadiosity;
@@ -823,6 +828,7 @@ extern Effect *hoveredEffect, *guiHoveredEffect;
 extern Effect *selectedEffect;
 void AddEffect(Effect e);
 Effect *GetEffect(int idx);
+const char* GetEffectTypeName(int type);
 void RenderLights(void);
 void Render(void);
 }
@@ -1045,7 +1051,7 @@ void RenderAxesWidget(rw::V3d pos, rw::V3d x, rw::V3d y, rw::V3d z);
 
 void RenderEverythingCollisions(void);
 void RenderDebugLines(void);
-
+void RenderWorldLabels(void);
 
 void RenderPostFX(void);
 

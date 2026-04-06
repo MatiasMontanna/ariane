@@ -3198,6 +3198,11 @@ uiView(void)
 	}
 	ImGui::Checkbox("Render 2dfx Lights", &gRenderLightEffects);
 	ImGui::Checkbox("Show 2dfx Markers", &gRenderEffects);
+	ImGui::SeparatorText("World Labels");
+	ImGui::Checkbox("Show Object Area ID", &gRenderAreaIdLabels);
+	ImGui::Checkbox("Show 2dfx Properties", &gRender2dfxLabels);
+	if(gRenderAreaIdLabels || gRender2dfxLabels)
+		ImGui::SliderFloat("Label Distance", &gWorldLabelDrawDist, 50.0f, 1000.0f, "%.0f");
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
 	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);
@@ -3594,7 +3599,7 @@ static const char *fxTypeNames[] = {
 };
 static const char *flareTypeNames[] = { "None", "Sun", "Headlight" };
 
-static const char*
+const char*
 GetEffectTypeName(int type)
 {
 	if(type < 0 || type >= (int)IM_ARRAYSIZE(fxTypeNames))
