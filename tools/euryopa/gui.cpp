@@ -3044,18 +3044,6 @@ uiHelpWindow(void)
 		"Click in 3D view to place selected object.\n"
 		"RMB or Escape to exit place mode.");
 	ImGui::Separator();
-	if(ImGui::CollapsingHeader("Privacy & Telemetry")){
-		bool telemetryEnabled = TelemetryIsEnabled();
-		if(ImGui::Checkbox("Anonymous telemetry", &telemetryEnabled)){
-			TelemetrySetEnabled(telemetryEnabled);
-			if(telemetryEnabled){
-				TelemetrySendPing();
-				Toast(TOAST_SAVE, "Anonymous telemetry enabled");
-			}else
-				Toast(TOAST_SAVE, "Anonymous telemetry disabled");
-		}
-		ImGui::TextDisabled("Enabled by default. Disable if you do not want usage pings.");
-	}
 
 	if(ImGui::CollapsingHeader("Dear ImGUI help")){
 		ImGui::ShowUserGuide();

@@ -671,9 +671,6 @@ InitRW(void)
 
 	RenderInit();
 
-	UpdaterCheckForUpdate();
-	TelemetrySendPing();
-
 	return true;
 }
 
