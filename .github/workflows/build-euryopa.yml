@@ -29,14 +29,25 @@ jobs:
           repository: Southland-FR/librw
           path: librw
 
-      - name: Patch librw rwbase.h include guards
+      - name: Patch librw header include guards
         shell: pwsh
         run: |
-          $file = "librw/src/rwbase.h"
-          $content = Get-Content $file -Raw
-          $patched = "#ifndef RWBASE_H`n#define RWBASE_H`n`n" + $content
-          $patched = $patched.TrimEnd() + "`n#endif"
-          Set-Content $file -Value $patched -NoNewline
+          $headers = @(
+            "rwanim.h", "rwbase.h", "rwcharset.h", "rwengine.h", 
+            "rwerror.h", "rwobjects.h", "rwpipeline.h", "rwplg.h", 
+            "rwplugins.h", "rwrender.h", "rwuserdata.h"
+          )
+          foreach ($h in $headers) {
+            $file = "librw/src/$h"
+            $guard = ($h -replace '\.h$', '').ToUpper() + "_H"
+            $content = Get-Content $file -Raw
+            if ($content -notmatch "^#ifndef $guard") {
+              $patched = "#ifndef $guard`n#define $guard`n`n" + $content
+              $patched = $patched.TrimEnd() + "`n#endif"
+              Set-Content $file -Value $patched -NoNewline
+              Write-Host "Patched $h with guard $guard"
+            }
+          }
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
