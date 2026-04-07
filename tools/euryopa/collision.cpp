@@ -275,21 +275,26 @@ ReadColModelVer4(CColModel *colmodel, uint8 *buf, int32 size)
 void
 RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds)
 {
+	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
 	static const rw::RGBA red = { 255, 0, 0, 255 };
 	static const rw::RGBA green = { 0, 255, 0, 255 };
 	static const rw::RGBA blue = { 0, 0, 255, 255 };
 	static const rw::RGBA magenta = { 255, 0, 255, 255 };
 	static const rw::RGBA white = { 255, 255, 255, 255 };
+	rw::RGBA colRed = { 255, 0, 0, alpha };
+	rw::RGBA colGreen = { 0, 255, 0, alpha };
+	rw::RGBA colMagenta = { 255, 0, 255, alpha };
+	rw::RGBA colWhite = { 255, 255, 255, alpha };
 	int i;
 	CColTriangle *tri;
 
-	RenderWireBox(&col->boundingBox, red, xform);
+	RenderWireBox(&col->boundingBox, colRed, xform);
 	if(onlyBounds)
 		return;
 	for(i = 0; i < col->numBoxes; i++)
-		RenderWireBox(&col->boxes[i].box, white, xform);
+		RenderWireBox(&col->boxes[i].box, colWhite, xform);
 	for(i = 0; i < col->numSpheres; i++)
-		RenderWireSphere(&col->spheres[i].sph, magenta, xform);
+		RenderWireSphere(&col->spheres[i].sph, colMagenta, xform);
 	for(i = 0; i < col->numTriangles; i++){
 		tri = &col->triangles[i];
 		if(col->flags & 0x80){
@@ -297,9 +302,9 @@ RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds)
 			v[0] = col->compVertices[tri->a].Uncompress();
 			v[1] = col->compVertices[tri->b].Uncompress();
 			v[2] = col->compVertices[tri->c].Uncompress();
-			RenderWireTriangle(&v[0], &v[1], &v[2], green, xform);
+			RenderWireTriangle(&v[0], &v[1], &v[2], colGreen, xform);
 		}else
 			RenderWireTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
-				green, xform);
+				colGreen, xform);
 	}
 }

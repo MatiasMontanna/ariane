@@ -131,6 +131,7 @@ void ShowOnlyIplVisibilityEntry(int i);
 
 // non-rendering things
 extern bool gRenderCollision;
+extern float gCollisionWireframeAlpha;
 extern bool gRenderZones;
 extern bool gRenderMapZones;
 extern bool gRenderNavigZones;

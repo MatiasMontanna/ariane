@@ -3242,6 +3242,8 @@ static void
 uiView(void)
 {
 	ImGui::Checkbox("Draw Collisions", &gRenderCollision);
+	if(gRenderCollision)
+		ImGui::SliderFloat("Collision Wireframe Alpha", &gCollisionWireframeAlpha, 0.0f, 1.0f, "%.2f");
 	if(params.timecycle == GAME_SA)
 		ImGui::Checkbox("Draw TimeCycle boxes", &gRenderTimecycleBoxes);
 	ImGui::Checkbox("Draw Zones", &gRenderZones);
