@@ -137,6 +137,9 @@ extern bool gRenderNavigZones;
 extern bool gRenderInfoZones;
 extern bool gRenderCullZones;
 extern bool gRenderAttribZones;
+extern bool gRenderMapZoneLabels;
+extern bool gRenderNavigZoneLabels;
+extern bool gRenderAttribZoneLabels;
 extern bool gRenderLegacyPedPaths;
 extern bool gRenderLegacyCarPaths;
 extern bool gRenderSaPedPaths;
@@ -215,6 +218,30 @@ void AddMirrorAttribZone(rw::V3d pos, float s1x, float s1y,
 	int flags, rw::Plane mirror);
 void RenderAttribZones(void);
 void RenderCullZones(void);
+
+struct ZoneLabelInfo
+{
+	rw::V3d center;
+	float width, height;
+	char name[16];
+	int type;
+	int level;
+};
+
+bool GetMapZone(int index, ZoneLabelInfo *info);
+int GetNumMapZones(void);
+bool GetNavigZone(int index, ZoneLabelInfo *info);
+int GetNumNavigZones(void);
+
+struct AttribZoneLabelInfo
+{
+	rw::V3d center;
+	float width, height;
+	int attribs;
+	int wantedLevelDrop;
+};
+bool GetAttribZone(int index, AttribZoneLabelInfo *info);
+int GetNumAttribZones(void);
 }
 
 // Game

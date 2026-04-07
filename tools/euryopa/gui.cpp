@@ -3215,7 +3215,10 @@ uiView(void)
 	ImGui::SeparatorText("World Labels");
 	ImGui::Checkbox("Show Object Area ID", &gRenderAreaIdLabels);
 	ImGui::Checkbox("Show 2dfx Properties", &gRender2dfxLabels);
-	if(gRenderAreaIdLabels || gRender2dfxLabels)
+	ImGui::Checkbox("Show Map Zone Labels", &gRenderMapZoneLabels);
+	ImGui::Checkbox("Show Navig Zone Labels", &gRenderNavigZoneLabels);
+	ImGui::Checkbox("Show Attrib Zone Labels", &gRenderAttribZoneLabels);
+	if(gRenderAreaIdLabels || gRender2dfxLabels || gRenderMapZoneLabels || gRenderNavigZoneLabels || gRenderAttribZoneLabels)
 		ImGui::SliderFloat("Label Distance", &gWorldLabelDrawDist, 0.0f, 1000.0f, "%.0f");
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);

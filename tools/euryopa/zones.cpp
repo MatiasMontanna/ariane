@@ -338,4 +338,74 @@ RenderCullZones(void)
 		RenderWireBox(&cullZones[i].box, col, &ident);
 }
 
+int
+GetNumMapZones(void)
+{
+	return numMapZones;
+}
+
+bool
+GetMapZone(int index, ZoneLabelInfo *info)
+{
+	if(index < 0 || index >= numMapZones)
+		return false;
+	Zone *z = &mapZones[index];
+	info->center.x = (z->box.min.x + z->box.max.x) * 0.5f;
+	info->center.y = (z->box.min.y + z->box.max.y) * 0.5f;
+	info->center.z = (z->box.min.z + z->box.max.z) * 0.5f;
+	info->width = z->box.max.x - z->box.min.x;
+	info->height = z->box.max.y - z->box.min.y;
+	strncpy(info->name, z->name, 8);
+	info->name[8] = '\0';
+	info->type = z->type;
+	info->level = z->level;
+	return true;
+}
+
+int
+GetNumNavigZones(void)
+{
+	return numNavigZones;
+}
+
+bool
+GetNavigZone(int index, ZoneLabelInfo *info)
+{
+	if(index < 0 || index >= numNavigZones)
+		return false;
+	Zone *z = &navigZones[index];
+	info->center.x = (z->box.min.x + z->box.max.x) * 0.5f;
+	info->center.y = (z->box.min.y + z->box.max.y) * 0.5f;
+	info->center.z = (z->box.min.z + z->box.max.z) * 0.5f;
+	info->width = z->box.max.x - z->box.min.x;
+	info->height = z->box.max.y - z->box.min.y;
+	strncpy(info->name, z->name, 8);
+	info->name[8] = '\0';
+	info->type = z->type;
+	info->level = z->level;
+	return true;
+}
+
+int
+GetNumAttribZones(void)
+{
+	return numAttribZones;
+}
+
+bool
+GetAttribZone(int index, AttribZoneLabelInfo *info)
+{
+	if(index < 0 || index >= numAttribZones)
+		return false;
+	AttribZone *az = &attribZones[index];
+	info->center.x = az->zone.posx + az->zone.side1x * 0.5f + az->zone.side2x * 0.5f;
+	info->center.y = az->zone.posy + az->zone.side1y * 0.5f + az->zone.side2y * 0.5f;
+	info->center.z = (az->zone.zmin + az->zone.zmax) * 0.5f;
+	info->width = az->zone.side1x + az->zone.side2x;
+	info->height = az->zone.side1y + az->zone.side2y;
+	info->attribs = az->attribs;
+	info->wantedLevelDrop = az->wantedLevelDrop;
+	return true;
+}
+
 }

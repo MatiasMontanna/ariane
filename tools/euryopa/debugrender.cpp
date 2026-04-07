@@ -395,6 +395,9 @@ RenderWorldLabels(void)
 		return;
 
 	const ImU32 colYellow = IM_COL32(255, 255, 0, 255);
+	const ImU32 colBlue = IM_COL32(100, 150, 255, 255);
+	const ImU32 colGreen = IM_COL32(100, 255, 100, 255);
+	const ImU32 colOrange = IM_COL32(255, 180, 100, 255);
 
 	for(CPtrNode *p = instances.first; p; p = p->next){
 		ObjectInst *inst = (ObjectInst*)p->item;
@@ -408,10 +411,6 @@ RenderWorldLabels(void)
 		rw::V3d screen;
 		float w, h;
 		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, true))
-			continue;
-
-		if(screen.x < -50.0f || screen.x > (float)sk::globals.width + 50.0f ||
-		   screen.y < -50.0f || screen.y > (float)sk::globals.height + 50.0f)
 			continue;
 
 		float x = screen.x;
@@ -441,13 +440,74 @@ RenderWorldLabels(void)
 
 					rw::V3d effScreen;
 					if(Sprite::CalcScreenCoors(worldPos, &effScreen, &w, &h, true)){
-						if(effScreen.x >= -50.0f && effScreen.x <= (float)sk::globals.width + 50.0f &&
-						   effScreen.y >= -50.0f && effScreen.y <= (float)sk::globals.height + 50.0f){
-							Render2dfxLabelAtScreen(drawList, effScreen.x, effScreen.y, e);
-						}
+						Render2dfxLabelAtScreen(drawList, effScreen.x, effScreen.y, e);
 					}
 				}
 			}
+		}
+	}
+
+	if(gRenderMapZoneLabels){
+		int n = Zones::GetNumMapZones();
+		for(int i = 0; i < n; i++){
+			Zones::ZoneLabelInfo info;
+			if(!Zones::GetMapZone(i, &info))
+				continue;
+			float dist = TheCamera.distanceTo(info.center);
+			if(dist > gWorldLabelDrawDist)
+				continue;
+			rw::V3d screen;
+			float w, h;
+			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, true))
+				continue;
+			char buf[128];
+			snprintf(buf, sizeof(buf), "MapZone:%s Lvl:%d", info.name, info.level);
+			RenderLabelAtScreen(drawList, screen.x, screen.y, buf, colBlue);
+		}
+	}
+
+	if(gRenderNavigZoneLabels){
+		int n = Zones::GetNumNavigZones();
+		for(int i = 0; i < n; i++){
+			Zones::ZoneLabelInfo info;
+			if(!Zones::GetNavigZone(i, &info))
+				continue;
+			float dist = TheCamera.distanceTo(info.center);
+			if(dist > gWorldLabelDrawDist)
+				continue;
+			rw::V3d screen;
+			float w, h;
+			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, true))
+				continue;
+			char buf[128];
+			const char *typeName = "Navig";
+			switch(info.type){
+			case 0: typeName = "Navig0"; break;
+			case 1: typeName = "Navig1"; break;
+			case 2: typeName = "Info"; break;
+			case 3: typeName = "MapZone"; break;
+			}
+			snprintf(buf, sizeof(buf), "%s:%s Lvl:%d", typeName, info.name, info.level);
+			RenderLabelAtScreen(drawList, screen.x, screen.y, buf, colGreen);
+		}
+	}
+
+	if(gRenderAttribZoneLabels){
+		int n = Zones::GetNumAttribZones();
+		for(int i = 0; i < n; i++){
+			Zones::AttribZoneLabelInfo info;
+			if(!Zones::GetAttribZone(i, &info))
+				continue;
+			float dist = TheCamera.distanceTo(info.center);
+			if(dist > gWorldLabelDrawDist)
+				continue;
+			rw::V3d screen;
+			float w, h;
+			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, true))
+				continue;
+			char buf[128];
+			snprintf(buf, sizeof(buf), "Attribz Flags:0x%X WLD:%d", info.attribs, info.wantedLevelDrop);
+			RenderLabelAtScreen(drawList, screen.x, screen.y, buf, colOrange);
 		}
 	}
 }
