@@ -133,6 +133,8 @@ void ShowOnlyIplVisibilityEntry(int i);
 extern bool gRenderCollision;
 extern float gCollisionWireframeAlpha;
 extern bool gRenderCollisionFromDff;
+extern bool gRenderCollisionBoth;
+extern float gCollisionDffWireframeDist;
 extern bool gRenderZones;
 extern bool gRenderMapZones;
 extern bool gRenderNavigZones;

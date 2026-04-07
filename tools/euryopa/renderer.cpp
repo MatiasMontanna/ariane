@@ -660,19 +660,26 @@ RenderCollision(ObjectInst *inst)
 	ObjectDef *obj = GetObjectDef(inst->m_objectId);
 	if(obj == nil) return;
 
-	if(gRenderCollisionFromDff){
-		for(int i = 0; i < obj->m_numAtomics; i++){
-			if(obj->m_atomics[i]){
-				RenderAtomicWireframe(obj->m_atomics[i], &inst->m_matrix);
+	bool renderDff = gRenderCollisionFromDff || gRenderCollisionBoth;
+	bool renderCol = !gRenderCollisionFromDff || gRenderCollisionBoth;
+
+	if(renderDff){
+		float camdist = TheCamera.distanceTo(inst->m_translation);
+		if(camdist <= gCollisionDffWireframeDist){
+			for(int i = 0; i < obj->m_numAtomics; i++){
+				if(obj->m_atomics[i]){
+					RenderAtomicWireframe(obj->m_atomics[i], &inst->m_matrix);
+				}
 			}
 		}
-		return;
 	}
 
-	if(obj->m_colModel)
-		RenderColModelWire(obj->m_colModel, &inst->m_matrix, obj->m_isBigBuilding);
-	else
-		printf("object %s has no LOD\n", obj->m_name);
+	if(renderCol){
+		if(obj->m_colModel)
+			RenderColModelWire(obj->m_colModel, &inst->m_matrix, obj->m_isBigBuilding);
+		else
+			printf("object %s has no LOD\n", obj->m_name);
+	}
 }
 
 void

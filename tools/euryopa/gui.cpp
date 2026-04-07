@@ -3246,6 +3246,12 @@ uiView(void)
 		ImGui::Indent();
 		ImGui::SliderFloat("Wireframe Alpha", &gCollisionWireframeAlpha, 0.0f, 1.0f, "%.2f");
 		ImGui::Checkbox("Render from DFF", &gRenderCollisionFromDff);
+		ImGui::Checkbox("Render Both (COL + DFF)", &gRenderCollisionBoth);
+		if(gRenderCollisionFromDff || gRenderCollisionBoth){
+			ImGui::Indent();
+			ImGui::SliderFloat("DFF Wireframe Distance", &gCollisionDffWireframeDist, 10.0f, 500.0f, "%.0f");
+			ImGui::Unindent();
+		}
 		ImGui::Unindent();
 	}
 	if(params.timecycle == GAME_SA)
