@@ -1,4 +1,27 @@
 #include "euryopa.h"
+#include <math.h>
+
+static ImU32
+GetAreaIdColor(int areaId)
+{
+	if(areaId < 0) return IM_COL32(128, 128, 128, 255);
+	int idx = areaId % 12;
+	static const ImU32 colors[] = {
+		IM_COL32(255, 255, 0, 255),
+		IM_COL32(255, 0, 255, 255),
+		IM_COL32(0, 255, 255, 255),
+		IM_COL32(255, 128, 0, 255),
+		IM_COL32(128, 0, 255, 255),
+		IM_COL32(0, 255, 128, 255),
+		IM_COL32(255, 0, 128, 255),
+		IM_COL32(0, 128, 255, 255),
+		IM_COL32(255, 255, 128, 255),
+		IM_COL32(128, 255, 0, 255),
+		IM_COL32(0, 255, 255, 255),
+		IM_COL32(255, 128, 255, 255)
+	};
+	return colors[idx];
+}
 
 struct DebugLine
 {
@@ -421,7 +444,8 @@ RenderWorldLabels(void)
 		if(gRenderAreaIdLabels){
 			char buf[64];
 			snprintf(buf, sizeof(buf), "Area:%d", inst->m_area);
-			RenderLabelAtScreen(drawList, x, y, buf, colYellow);
+			ImU32 color = gAreaIdColorByValue ? GetAreaIdColor(inst->m_area) : colYellow;
+			RenderLabelAtScreen(drawList, x, y, buf, color);
 			y += 14.0f;
 		}
 

@@ -91,6 +91,10 @@ int gSaCarPathParkedCarCount = 8;
 bool gRenderAreaIdLabels;
 bool gRender2dfxLabels;
 float gWorldLabelDrawDist = 300.0f;
+bool gAreaIdColorByValue;
+
+bool gAutoAnimateDayNight;
+bool gAutoAnimateLOD;
 
 // SA postfx
 int  gColourFilter;
@@ -1862,6 +1866,13 @@ Draw(void)
 	Timecycle::SetLights();
 
 	UpdateDayNightBalance();
+
+	if(gAutoAnimateLOD){
+		static float lodAnimTime = 0.0f;
+		lodAnimTime += timeStep * 0.5f;
+		float t = fabs(lodAnimTime - floorf(lodAnimTime + 0.5f) * 2.0f);
+		gRenderOnlyLod = t < 0.5f;
+	}
 
 	TheCamera.m_rwcam->setFarPlane(max(Timecycle::currentColours.farClp, 500.0f));
 	TheCamera.m_rwcam->fogPlane = Timecycle::currentColours.fogSt;

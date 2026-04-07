@@ -3199,6 +3199,7 @@ uiTimeWeather(void)
 
 	if(params.daynightPipe){
 		ImGui::SliderFloat("Day/Night Balance", &gDayNightBalance, 0.0f, 1.0f, "%.2f");
+		ImGui::Checkbox("Auto Day/Night", &gAutoAnimateDayNight);
 		if(gameplatform != PLATFORM_XBOX)
 			ImGui::SliderFloat("Wet Road Effect", &gWetRoadEffect, 0.0f, 1.0f, "%.2f");
 	}
@@ -3267,6 +3268,8 @@ uiView(void)
 	ImGui::Checkbox("Show 2dfx Markers", &gRenderEffects);
 	ImGui::SeparatorText("World Labels");
 	ImGui::Checkbox("Show Object Area ID", &gRenderAreaIdLabels);
+	if(gRenderAreaIdLabels)
+		ImGui::Checkbox("Color by Area ID", &gAreaIdColorByValue);
 	ImGui::Checkbox("Show 2dfx Properties", &gRender2dfxLabels);
 	ImGui::Checkbox("Show Map Zone Labels", &gRenderMapZoneLabels);
 	ImGui::Checkbox("Show Navig Zone Labels", &gRenderNavigZoneLabels);
@@ -3331,6 +3334,7 @@ uiView(void)
 	ImGui::RadioButton("Render only LOD", &render, 2);
 	gRenderOnlyHD = !!(render&1);
 	gRenderOnlyLod = !!(render&2);
+	ImGui::Checkbox("Auto LOD Transition", &gAutoAnimateLOD);
 	ImGui::SliderFloat("Draw Distance", &TheCamera.m_LODmult, 0.5f, 3.0f, "%.3f");
 	ImGui::Checkbox("Render all Timed Objects", &gNoTimeCull);
 	if(params.numAreas)

@@ -1,4 +1,5 @@
 #include "euryopa.h"
+#include <math.h>
 
 using namespace rw;
 
@@ -9,6 +10,13 @@ rw::ObjPipeline *buildingDNPipe;
 void
 UpdateDayNightBalance(void)
 {
+	if(gAutoAnimateDayNight){
+		static float animTime = 0.0f;
+		animTime += timeStep * 0.3f;
+		gDayNightBalance = fabs(animTime - floorf(animTime + 0.5f) * 2.0f);
+		return;
+	}
+
 	float minute = currentHour*60.0f + currentMinute;
 	const float morningStart = 6 * 60.0f;
 	const float morningEnd = 7 * 60.0f;

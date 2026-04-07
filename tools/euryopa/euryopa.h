@@ -163,6 +163,11 @@ extern int gSaCarPathParkedCarCount;
 extern bool gRenderAreaIdLabels;
 extern bool gRender2dfxLabels;
 extern float gWorldLabelDrawDist;
+extern bool gAreaIdColorByValue;
+
+// Auto-animations
+extern bool gAutoAnimateDayNight;
+extern bool gAutoAnimateLOD;
 
 // SA postfx
 extern int  gColourFilter;
