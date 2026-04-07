@@ -54,8 +54,31 @@ ExportObjectsJSON(FILE *file)
 		fprintf(file, "    \"objectId\": %d,\n", inst->m_objectId);
 		if(obj){
 			fprintf(file, "    \"objectName\": \"%s\",\n", obj->m_name);
+			fprintf(file, "    \"drawDist\": [%.4f, %.4f, %.4f],\n",
+				obj->m_drawDist[0], obj->m_drawDist[1], obj->m_drawDist[2]);
+			fprintf(file, "    \"minDrawDist\": %.4f,\n", obj->m_minDrawDist);
+			fprintf(file, "    \"flags\": {\n");
+			fprintf(file, "      \"drawLast\": %s,\n", obj->m_drawLast ? "true" : "false");
+			fprintf(file, "      \"additive\": %s,\n", obj->m_additive ? "true" : "false");
+			fprintf(file, "      \"noFade\": %s,\n", obj->m_noFade ? "true" : "false");
+			fprintf(file, "      \"noZwrite\": %s,\n", obj->m_noZwrite ? "true" : "false");
+			fprintf(file, "      \"noShadows\": %s,\n", obj->m_noShadows ? "true" : "false");
+			fprintf(file, "      \"ignoreDrawDist\": %s,\n", obj->m_ignoreDrawDist ? "true" : "false");
+			fprintf(file, "      \"isCodeGlass\": %s,\n", obj->m_isCodeGlass ? "true" : "false");
+			fprintf(file, "      \"isArtistGlass\": %s,\n", obj->m_isArtistGlass ? "true" : "false");
+			fprintf(file, "      \"noBackfaceCulling\": %s,\n", obj->m_noBackfaceCulling ? "true" : "false");
+			fprintf(file, "      \"isGarageDoor\": %s,\n", obj->m_isGarageDoor ? "true" : "false");
+			fprintf(file, "      \"isDamageable\": %s,\n", obj->m_isDamageable ? "true" : "false");
+			fprintf(file, "      \"isTree\": %s,\n", obj->m_isTree ? "true" : "false");
+			fprintf(file, "      \"isPalmTree\": %s,\n", obj->m_isPalmTree ? "true" : "false");
+			fprintf(file, "      \"isDoor\": %s,\n", obj->m_isDoor ? "true" : "false");
+			fprintf(file, "      \"isTimed\": %s\n", obj->m_isTimed ? "true" : "false");
+			fprintf(file, "    }");
+			if(obj->m_isTimed){
+				fprintf(file, ",\n    \"timeOn\": %d, \"timeOff\": %d", obj->m_timeOn, obj->m_timeOff);
+			}
 		}
-		fprintf(file, "    \"position\": { \"x\": %.4f, \"y\": %.4f, \"z\": %.4f },\n",
+		fprintf(file, ",\n    \"position\": { \"x\": %.4f, \"y\": %.4f, \"z\": %.4f },\n",
 			inst->m_translation.x, inst->m_translation.y, inst->m_translation.z);
 		fprintf(file, "    \"rotation\": { \"x\": %.4f, \"y\": %.4f, \"z\": %.4f, \"w\": %.4f },\n",
 			inst->m_rotation.x, inst->m_rotation.y,
@@ -79,7 +102,7 @@ ExportObjectsJSON(FILE *file)
 static void
 ExportObjectsCSV(FILE *file)
 {
-	fprintf(file, "instanceId,objectId,objectName,posX,posY,posZ,rotX,rotY,rotZ,rotW,area,numEffects,carPathIndex,pedPathIndex,isBigBuilding\n");
+	fprintf(file, "instanceId,objectId,objectName,posX,posY,posZ,rotX,rotY,rotZ,rotW,area,numEffects,carPathIndex,pedPathIndex,isBigBuilding,drawDist1,drawDist2,drawDist3,minDrawDist,drawLast,additive,noFade,noZwrite,noShadows,ignoreDrawDist,isCodeGlass,isArtistGlass,noBackfaceCulling,isGarageDoor,isDamageable,isTree,isPalmTree,isDoor,isTimed,timeOn,timeOff\n");
 	for(CPtrNode *node = instances.first; node != nil; node = node->next){
 		ObjectInst *inst = (ObjectInst*)node->item;
 		if(inst->m_isDeleted)
@@ -88,7 +111,7 @@ ExportObjectsCSV(FILE *file)
 		ObjectDef *obj = GetObjectDef(inst->m_objectId);
 		const char *name = obj ? obj->m_name : "";
 
-		fprintf(file, "%d,%d,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%s\n",
+		fprintf(file, "%d,%d,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%s,",
 			inst->m_id, inst->m_objectId, name,
 			inst->m_translation.x, inst->m_translation.y, inst->m_translation.z,
 			inst->m_rotation.x, inst->m_rotation.y,
@@ -98,6 +121,19 @@ ExportObjectsCSV(FILE *file)
 			obj ? obj->m_carPathIndex : -1,
 			obj ? obj->m_pedPathIndex : -1,
 			inst->m_isBigBuilding ? "true" : "false");
+		if(obj){
+			fprintf(file, "%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+				obj->m_drawDist[0], obj->m_drawDist[1], obj->m_drawDist[2],
+				obj->m_minDrawDist,
+				obj->m_drawLast, obj->m_additive, obj->m_noFade, obj->m_noZwrite,
+				obj->m_noShadows, obj->m_ignoreDrawDist,
+				obj->m_isCodeGlass, obj->m_isArtistGlass, obj->m_noBackfaceCulling,
+				obj->m_isGarageDoor, obj->m_isDamageable,
+				obj->m_isTree, obj->m_isPalmTree, obj->m_isDoor,
+				obj->m_isTimed, obj->m_timeOn, obj->m_timeOff);
+		}else{
+			fprintf(file, "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\n");
+		}
 	}
 }
 
@@ -361,6 +397,7 @@ Export2dfxJSON(FILE *file)
 
 			fprintf(file, "  {\n");
 			fprintf(file, "    \"objectId\": %d,\n", inst->m_objectId);
+			fprintf(file, "    \"objectName\": \"%s\",\n", obj->m_name);
 			fprintf(file, "    \"effectIndex\": %d,\n", i);
 			fprintf(file, "    \"type\": %d,\n", e->type);
 			fprintf(file, "    \"typeName\": \"%s\",\n", getEffectTypeName(e->type));
@@ -401,7 +438,7 @@ Export2dfxJSON(FILE *file)
 static void
 Export2dfxCSV(FILE *file)
 {
-	fprintf(file, "objectId,effectIndex,type,typeName,localX,localY,localZ,worldX,worldY,worldZ,extra1,extra2,extra3\n");
+	fprintf(file, "objectId,objectName,effectIndex,type,typeName,localX,localY,localZ,worldX,worldY,worldZ,extra1,extra2,extra3\n");
 	for(CPtrNode *node = instances.first; node != nil; node = node->next){
 		ObjectInst *inst = (ObjectInst*)node->item;
 		if(inst->m_isDeleted)
@@ -419,8 +456,8 @@ Export2dfxCSV(FILE *file)
 			rw::V3d worldPos;
 			rw::V3d::transformPoints(&worldPos, &e->pos, 1, &inst->m_matrix);
 
-			fprintf(file, "%d,%d,%d,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,",
-				inst->m_objectId, i, e->type, getEffectTypeName(e->type),
+			fprintf(file, "%d,%s,%d,%d,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,",
+				inst->m_objectId, obj->m_name, i, e->type, getEffectTypeName(e->type),
 				e->pos.x, e->pos.y, e->pos.z,
 				worldPos.x, worldPos.y, worldPos.z);
 
