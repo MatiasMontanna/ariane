@@ -3218,8 +3218,13 @@ uiView(void)
 	ImGui::Checkbox("Show Map Zone Labels", &gRenderMapZoneLabels);
 	ImGui::Checkbox("Show Navig Zone Labels", &gRenderNavigZoneLabels);
 	ImGui::Checkbox("Show Attrib Zone Labels", &gRenderAttribZoneLabels);
-	if(gRenderAreaIdLabels || gRender2dfxLabels || gRenderMapZoneLabels || gRenderNavigZoneLabels || gRenderAttribZoneLabels)
-		ImGui::SliderFloat("Label Distance", &gWorldLabelDrawDist, 0.0f, 1000.0f, "%.0f");
+	if(gRenderAreaIdLabels || gRender2dfxLabels || gRenderMapZoneLabels || gRenderNavigZoneLabels || gRenderAttribZoneLabels){
+		if(gRenderAreaIdLabels || gRender2dfxLabels)
+			ImGui::SliderFloat("Object Label Distance", &gWorldLabelDrawDist, 0.0f, 2000.0f, "%.0f");
+		if(gRenderMapZoneLabels || gRenderNavigZoneLabels || gRenderAttribZoneLabels)
+			ImGui::SliderFloat("Zone Label Distance", &gZoneLabelDrawDist, 0.0f, 2000.0f, "%.0f");
+		ImGui::SliderFloat("Text Far Clip", &gTextFarClip, 50.0f, 5000.0f, "%.0f");
+	}
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
 	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);

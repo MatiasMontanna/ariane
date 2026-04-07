@@ -140,6 +140,8 @@ extern bool gRenderAttribZones;
 extern bool gRenderMapZoneLabels;
 extern bool gRenderNavigZoneLabels;
 extern bool gRenderAttribZoneLabels;
+extern float gZoneLabelDrawDist;
+extern float gTextFarClip;
 extern bool gRenderLegacyPedPaths;
 extern bool gRenderLegacyCarPaths;
 extern bool gRenderSaPedPaths;

@@ -68,6 +68,8 @@ bool gRenderAttribZones;
 bool gRenderMapZoneLabels;
 bool gRenderNavigZoneLabels;
 bool gRenderAttribZoneLabels;
+float gZoneLabelDrawDist = 500.0f;
+float gTextFarClip = 1000.0f;
 bool gRenderLegacyPedPaths;
 bool gRenderLegacyCarPaths;
 bool gRenderSaPedPaths;

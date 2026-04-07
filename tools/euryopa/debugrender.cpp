@@ -410,7 +410,9 @@ RenderWorldLabels(void)
 
 		rw::V3d screen;
 		float w, h;
-		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, true))
+		if(!Sprite::CalcScreenCoors(inst->m_translation, &screen, &w, &h, false))
+			continue;
+		if(screen.z > gTextFarClip)
 			continue;
 
 		float x = screen.x;
@@ -439,8 +441,9 @@ RenderWorldLabels(void)
 						continue;
 
 					rw::V3d effScreen;
-					if(Sprite::CalcScreenCoors(worldPos, &effScreen, &w, &h, true)){
-						Render2dfxLabelAtScreen(drawList, effScreen.x, effScreen.y, e);
+					if(Sprite::CalcScreenCoors(worldPos, &effScreen, &w, &h, false)){
+						if(effScreen.z <= gTextFarClip)
+							Render2dfxLabelAtScreen(drawList, effScreen.x, effScreen.y, e);
 					}
 				}
 			}
@@ -454,11 +457,13 @@ RenderWorldLabels(void)
 			if(!Zones::GetMapZone(i, &info))
 				continue;
 			float dist = TheCamera.distanceTo(info.center);
-			if(dist > gWorldLabelDrawDist)
+			if(dist > gZoneLabelDrawDist)
 				continue;
 			rw::V3d screen;
 			float w, h;
-			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, true))
+			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, false))
+				continue;
+			if(screen.z > gTextFarClip)
 				continue;
 			char buf[128];
 			snprintf(buf, sizeof(buf), "MapZone:%s Lvl:%d", info.name, info.level);
@@ -473,11 +478,13 @@ RenderWorldLabels(void)
 			if(!Zones::GetNavigZone(i, &info))
 				continue;
 			float dist = TheCamera.distanceTo(info.center);
-			if(dist > gWorldLabelDrawDist)
+			if(dist > gZoneLabelDrawDist)
 				continue;
 			rw::V3d screen;
 			float w, h;
-			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, true))
+			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, false))
+				continue;
+			if(screen.z > gTextFarClip)
 				continue;
 			char buf[128];
 			const char *typeName = "Navig";
@@ -499,11 +506,13 @@ RenderWorldLabels(void)
 			if(!Zones::GetAttribZone(i, &info))
 				continue;
 			float dist = TheCamera.distanceTo(info.center);
-			if(dist > gWorldLabelDrawDist)
+			if(dist > gZoneLabelDrawDist)
 				continue;
 			rw::V3d screen;
 			float w, h;
-			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, true))
+			if(!Sprite::CalcScreenCoors(info.center, &screen, &w, &h, false))
+				continue;
+			if(screen.z > gTextFarClip)
 				continue;
 			char buf[128];
 			snprintf(buf, sizeof(buf), "Attribz Flags:0x%X WLD:%d", info.attribs, info.wantedLevelDrop);
