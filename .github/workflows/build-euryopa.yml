@@ -84,11 +84,9 @@ jobs:
           echo "channel=$branch" >> $env:GITHUB_OUTPUT
 
       - name: Generate librw project files
-        shell: pwsh
+        shell: cmd
         working-directory: ariane/librw
-        run: |
-          (Get-Content premake5.lua) -replace 'defines \{ "LODEPNG_NO_COMPILE_CPP" \}', 'defines { "LODEPNG_NO_COMPILE_CPP", "LODEPNG_NO_COMPILE_DECODER", "LODEPNG_NO_COMPILE_ENCODER" }' | Set-Content premake5.lua
-          premake5 vs2019
+        run: premake5 vs2019
 
       - name: Build librw
         shell: cmd
