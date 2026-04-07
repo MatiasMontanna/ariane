@@ -1,5 +1,6 @@
 #include "euryopa.h"
 #include "modloader.h"
+#include "carrec.h"
 #include <limits.h>
 #include <algorithm>
 #include <string.h>
@@ -1968,6 +1969,10 @@ Draw(void)
 		Path::RenderPedPaths();
 	if(gRenderLegacyCarPaths)
 		Path::RenderCarPaths();
+	if(gRenderCarrec){
+		Carrec::SetVisible(true);
+		Carrec::Render();
+	}
 	if(gRenderSaPedPaths)
 		SAPaths::RenderPedPaths();
 	if(gRenderSaCarPaths)
