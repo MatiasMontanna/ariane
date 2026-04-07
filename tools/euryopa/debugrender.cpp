@@ -93,6 +93,7 @@ RenderDebugLines(void)
 	int i;
 
 	rw::SetRenderStatePtr(rw::TEXTURERASTER, nil);
+	rw::SetRenderState(rw::VERTEXALPHA, 1);
 	rw::SetRenderState(rw::SRCBLEND, rw::BLENDSRCALPHA);
 	rw::SetRenderState(rw::DESTBLEND, rw::BLENDINVSRCALPHA);
 
