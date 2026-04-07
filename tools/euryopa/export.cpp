@@ -1,4 +1,5 @@
 #include "euryopa.h"
+#include "carrec.h"
 #include <cstdio>
 #include <cstring>
 
@@ -516,7 +517,75 @@ ExportData(const char *filename, ExportDataType type, int format)
 		if(format == EXPORT_JSON) Export2dfxJSON(file);
 		else Export2dfxCSV(file);
 		break;
+	case EXPORT_CARREC:
+		if(format == EXPORT_JSON) ExportCarrecJSON(file);
+		else ExportCarrecCSV(file);
+		break;
 	}
 
 	fclose(file);
+}
+
+static void
+ExportCarrecJSON(FILE *file)
+{
+	fprintf(file, "[\n");
+	int numRecs = Carrec::GetNumRecordings();
+	bool first = true;
+	for(int r = 0; r < numRecs; r++){
+		CarrecRecording *rec = Carrec::GetRecording(r);
+		if(rec == nil)
+			continue;
+
+		if(!first) fprintf(file, ",\n");
+		first = false;
+
+		fprintf(file, "  {\n");
+		fprintf(file, "    \"id\": %d,\n", rec->id);
+		fprintf(file, "    \"numPoints\": %d,\n", (int)rec->points.size());
+		fprintf(file, "    \"points\": [\n");
+
+		for(size_t p = 0; p < rec->points.size(); p++){
+			CarrecPoint &pt = rec->points[p];
+			fprintf(file, "      {\"time\": %d, ", pt.time);
+			fprintf(file, "\"vel\": { \"x\": %.6f, \"y\": %.6f, \"z\": %.6f }, ",
+				pt.velX / 16383.5, pt.velY / 16383.5, pt.velZ / 16383.5);
+			fprintf(file, "\"right\": { \"x\": %.4f, \"y\": %.4f, \"z\": %.4f }, ",
+				pt.rightX / 127.0f, pt.rightY / 127.0f, pt.rightZ / 127.0f);
+			fprintf(file, "\"top\": { \"x\": %.4f, \"y\": %.4f, \"z\": %.4f }, ",
+				pt.topX / 127.0f, pt.topY / 127.0f, pt.topZ / 127.0f);
+			fprintf(file, "\"steering\": %.2f, \"gas\": %.2f, \"brake\": %.2f, \"handbrake\": %d, ",
+				pt.steering / 20.0f, pt.gas / 100.0f, pt.brake / 100.0f, pt.handbrake);
+			fprintf(file, "\"pos\": { \"x\": %.4f, \"y\": %.4f, \"z\": %.4f }}%s\n",
+				pt.posX, pt.posY, pt.posZ,
+				p < rec->points.size() - 1 ? "," : "");
+		}
+
+		fprintf(file, "    ]\n");
+		fprintf(file, "  }");
+	}
+	fprintf(file, "\n]\n");
+}
+
+static void
+ExportCarrecCSV(FILE *file)
+{
+	fprintf(file, "recId,pointIdx,time,velX,velY,velZ,rightX,rightY,rightZ,topX,topY,topZ,steering,gas,brake,handbrake,posX,posY,posZ\n");
+	int numRecs = Carrec::GetNumRecordings();
+	for(int r = 0; r < numRecs; r++){
+		CarrecRecording *rec = Carrec::GetRecording(r);
+		if(rec == nil)
+			continue;
+
+		for(size_t p = 0; p < rec->points.size(); p++){
+			CarrecPoint &pt = rec->points[p];
+			fprintf(file, "%d,%d,%d,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,%d,%.4f,%.4f,%.4f\n",
+				rec->id, (int)p, pt.time,
+				pt.velX / 16383.5, pt.velY / 16383.5, pt.velZ / 16383.5,
+				pt.rightX / 127.0f, pt.rightY / 127.0f, pt.rightZ / 127.0f,
+				pt.topX / 127.0f, pt.topY / 127.0f, pt.topZ / 127.0f,
+				pt.steering / 20.0f, pt.gas / 100.0f, pt.brake / 100.0f, pt.handbrake,
+				pt.posX, pt.posY, pt.posZ);
+		}
+	}
 }
