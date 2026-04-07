@@ -539,6 +539,11 @@ void LoadTxd(int i, const char *path);
 void TxdMakeCurrent(int i);
 void TxdSetParent(const char *child, const char *parent);
 
+extern bool showTextureBrowserWindow;
+void uiTextureBrowserWindow(void);
+rw::Texture* GetSelectedTexture(void);
+const char* GetSelectedTextureName(void);
+
 
 struct ColFileHeader
 {
