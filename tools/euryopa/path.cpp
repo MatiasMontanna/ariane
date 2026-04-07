@@ -265,4 +265,16 @@ RenderCarPaths(void)
 	}
 }
 
+int
+GetNumPedNodes(void)
+{
+	return pedNodes.size();
+}
+
+int
+GetNumCarNodes(void)
+{
+	return carNodes.size();
+}
+
 }

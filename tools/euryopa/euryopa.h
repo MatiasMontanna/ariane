@@ -934,7 +934,20 @@ PathNode *GetDetachedPedNode(int base, int i);
 PathNode *GetDetachedCarNode(int base, int i);
 void RenderPedPaths(void);
 void RenderCarPaths(void);
+int GetNumPedNodes(void);
+int GetNumCarNodes(void);
 }
+
+enum ExportDataType {
+	EXPORT_OBJECTS,
+	EXPORT_PED_PATHS,
+	EXPORT_CAR_PATHS,
+	EXPORT_MAP_ZONES,
+	EXPORT_NAVIG_ZONES,
+	EXPORT_ATTRIB_ZONES,
+	EXPORT_2DFX
+};
+void ExportData(const char *filename, ExportDataType type, int format);
 
 
 // World/sectors

@@ -2352,6 +2352,59 @@ uiMainmenu(void)
 			}
 			ImGui::SetItemTooltip("Import a custom DFF/TXD into the editor as a new placeable object.\nAutomatically registers it in your game files, ready to use in game.");
 			ImGui::Separator();
+			if(ImGui::BeginMenu(ICON_FA_FILE_EXPORT " Export Data...")){
+				if(ImGui::BeginMenu("Objects")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("objects.json", EXPORT_OBJECTS, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("objects.csv", EXPORT_OBJECTS, 1);
+					ImGui::EndMenu();
+				}
+				if(ImGui::BeginMenu("Ped Paths")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("ped_paths.json", EXPORT_PED_PATHS, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("ped_paths.csv", EXPORT_PED_PATHS, 1);
+					ImGui::EndMenu();
+				}
+				if(ImGui::BeginMenu("Car Paths")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("car_paths.json", EXPORT_CAR_PATHS, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("car_paths.csv", EXPORT_CAR_PATHS, 1);
+					ImGui::EndMenu();
+				}
+				if(ImGui::BeginMenu("Map Zones")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("map_zones.json", EXPORT_MAP_ZONES, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("map_zones.csv", EXPORT_MAP_ZONES, 1);
+					ImGui::EndMenu();
+				}
+				if(ImGui::BeginMenu("Navig Zones")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("navig_zones.json", EXPORT_NAVIG_ZONES, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("navig_zones.csv", EXPORT_NAVIG_ZONES, 1);
+					ImGui::EndMenu();
+				}
+				if(ImGui::BeginMenu("Attrib Zones")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("attrib_zones.json", EXPORT_ATTRIB_ZONES, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("attrib_zones.csv", EXPORT_ATTRIB_ZONES, 1);
+					ImGui::EndMenu();
+				}
+				if(ImGui::BeginMenu("2dfx Effects")){
+					if(ImGui::MenuItem("As JSON"))
+						ExportData("2dfx_effects.json", EXPORT_2DFX, 0);
+					if(ImGui::MenuItem("As CSV"))
+						ExportData("2dfx_effects.csv", EXPORT_2DFX, 1);
+					ImGui::EndMenu();
+				}
+				ImGui::EndMenu();
+			}
+			ImGui::Separator();
 			if(ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
 		}
