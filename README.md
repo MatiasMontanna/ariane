@@ -8,7 +8,6 @@ A map editor for GTA III, Vice City and San Andreas, built on [librw](https://gi
 
 Forked from [euryopa](https://github.com/aap/librwgta) by aap.
 
-
 ## Features
 
 - Map viewer and editor for GTA III, Vice City and San Andreas

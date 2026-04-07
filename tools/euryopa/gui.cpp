@@ -1,5 +1,4 @@
 #include "euryopa.h"
-#include "carrec.h"
 #include "autocol.h"
 #include "modloader.h"
 #include "imgui/imgui_internal.h"
@@ -3285,13 +3284,6 @@ uiView(void)
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
 	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);
-	ImGui::SeparatorText("Carrec");
-	ImGui::Checkbox("Draw Carrec Paths", &gRenderCarrec);
-	if(gRenderCarrec && Carrec::GetNumPaths() > 0){
-		ImGui::Indent();
-		ImGui::Text("Loaded %d paths", Carrec::GetNumPaths());
-		ImGui::Unindent();
-	}
 	if(isSA()){
 		ImGui::SeparatorText("San Andreas Streamed Paths");
 		ImGui::Checkbox("Draw SA Car Paths", &gRenderSaCarPaths);
