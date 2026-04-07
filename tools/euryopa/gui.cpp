@@ -3216,7 +3216,7 @@ uiView(void)
 	ImGui::Checkbox("Show Object Area ID", &gRenderAreaIdLabels);
 	ImGui::Checkbox("Show 2dfx Properties", &gRender2dfxLabels);
 	if(gRenderAreaIdLabels || gRender2dfxLabels)
-		ImGui::SliderFloat("Label Distance", &gWorldLabelDrawDist, 50.0f, 1000.0f, "%.0f");
+		ImGui::SliderFloat("Label Distance", &gWorldLabelDrawDist, 0.0f, 1000.0f, "%.0f");
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
 	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);
