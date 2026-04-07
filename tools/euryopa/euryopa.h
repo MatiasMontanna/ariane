@@ -158,6 +158,7 @@ extern float gSaCarPathTrafficSpeedScale;
 extern bool gSaCarPathTrafficFreezeRoutes;
 extern bool gRenderSaCarPathParkedCars;
 extern int gSaCarPathParkedCarCount;
+extern bool gRenderCarrecs;
 
 // World labels
 extern bool gRenderAreaIdLabels;
@@ -941,6 +942,14 @@ void RenderPedPaths(void);
 void RenderCarPaths(void);
 int GetNumPedNodes(void);
 int GetNumCarNodes(void);
+}
+
+namespace Carrec {
+void Init(void);
+void Shutdown(void);
+void Render(void);
+int GetNumPaths(void);
+const char *GetPathName(int idx);
 }
 
 enum ExportDataType {

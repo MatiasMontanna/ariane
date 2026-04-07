@@ -86,6 +86,7 @@ float gSaCarPathTrafficSpeedScale = 1.0f;
 bool gSaCarPathTrafficFreezeRoutes = false;
 bool gRenderSaCarPathParkedCars = false;
 int gSaCarPathParkedCarCount = 8;
+bool gRenderCarrecs;
 
 // World labels
 bool gRenderAreaIdLabels;
@@ -1972,6 +1973,8 @@ Draw(void)
 		SAPaths::RenderPedPaths();
 	if(gRenderSaCarPaths)
 		SAPaths::RenderCarPaths();
+	if(gRenderCarrecs)
+		Carrec::Render();
 	if(gRenderSaAreaGrid)
 		SAPaths::RenderAreaGrid();
 	if(gRenderEffects)
@@ -2000,6 +2003,7 @@ Idle(void)
 	switch(state){
 	case 0:
 		LoadGame();
+		Carrec::Init();
 		state = 1;
 		break;
 	case 1:
