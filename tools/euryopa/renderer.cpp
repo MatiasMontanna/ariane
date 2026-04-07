@@ -663,11 +663,7 @@ RenderCollision(ObjectInst *inst)
 	if(gRenderCollisionFromDff){
 		for(int i = 0; i < obj->m_numAtomics; i++){
 			if(obj->m_atomics[i]){
-				rw::Matrix worldMatrix = inst->m_matrix;
-				if(i > 0 && inst->m_lod[i-1].exists){
-					worldMatrix = inst->m_lod[i-1];
-				}
-				RenderAtomicWireframe(obj->m_atomics[i], &worldMatrix);
+				RenderAtomicWireframe(obj->m_atomics[i], &inst->m_matrix);
 			}
 		}
 		return;
