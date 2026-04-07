@@ -1,6 +1,5 @@
 #include "euryopa.h"
 #include "modloader.h"
-#include "carrec.h"
 #include <limits.h>
 #include <algorithm>
 #include <string.h>
@@ -77,7 +76,6 @@ bool gRenderSaPedPaths;
 bool gRenderSaPedPathWalkers;
 bool gRenderSaCarPaths;
 bool gRenderSaCarPathTraffic;
-bool gRenderCarrec;
 bool gRenderSaAreaGrid;
 bool gRenderLightEffects = true;
 bool gRenderEffects;
@@ -1417,7 +1415,6 @@ LoadGame(void)
 //	SetCurrentDirectory("C:/Users/aap/games/gtasa");
 
 	SAPaths::Reset();
-	Carrec::Load();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -1975,8 +1972,6 @@ Draw(void)
 		SAPaths::RenderPedPaths();
 	if(gRenderSaCarPaths)
 		SAPaths::RenderCarPaths();
-	if(gRenderCarrec)
-		Carrec::Render();
 	if(gRenderSaAreaGrid)
 		SAPaths::RenderAreaGrid();
 	if(gRenderEffects)
