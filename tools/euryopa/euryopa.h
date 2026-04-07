@@ -159,6 +159,9 @@ extern bool gSaCarPathTrafficFreezeRoutes;
 extern bool gRenderSaCarPathParkedCars;
 extern int gSaCarPathParkedCarCount;
 
+// Carrec
+extern bool gRenderCarrec;
+
 // World labels
 extern bool gRenderAreaIdLabels;
 extern bool gRender2dfxLabels;

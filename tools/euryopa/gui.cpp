@@ -3308,6 +3308,13 @@ uiView(void)
 				ImGui::SliderInt("Preview Walker Count", &gSaPedPathWalkerCount, 1, 32);
 			ImGui::Unindent();
 		}
+		ImGui::SeparatorText("Carrec");
+		ImGui::Checkbox("Draw Carrec Paths", &gRenderCarrec);
+		if(gRenderCarrec && Carrec::GetNumPaths() > 0){
+			ImGui::Indent();
+			ImGui::Text("Loaded %d paths", Carrec::GetNumPaths());
+			ImGui::Unindent();
+		}
 		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
 		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
 	}
