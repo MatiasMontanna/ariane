@@ -29,6 +29,15 @@ jobs:
           repository: Southland-FR/librw
           path: librw
 
+      - name: Patch librw rwbase.h include guards
+        shell: pwsh
+        run: |
+          $file = "librw/src/rwbase.h"
+          $content = Get-Content $file -Raw
+          $patched = "#ifndef RWBASE_H`n#define RWBASE_H`n`n" + $content
+          $patched = $patched.TrimEnd() + "`n#endif"
+          Set-Content $file -Value $patched -NoNewline
+
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
