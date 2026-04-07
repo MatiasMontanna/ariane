@@ -308,3 +308,46 @@ RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds)
 				colGreen, xform);
 	}
 }
+
+void
+RenderAtomicWireframe(rw::Atomic *atomic, rw::Matrix *xform)
+{
+	if(atomic == nil || atomic->geometry == nil)
+		return;
+
+	rw::Geometry *geo = atomic->geometry;
+	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
+	rw::RGBA col = { 255, 255, 0, alpha };  // Yellow for DFF wireframe
+
+	int numVertices = geo->numVertices;
+	int numTriangles = geo->numTriangles;
+	if(numVertices == 0 || numTriangles == 0)
+		return;
+
+	rw::V3d *transformedVerts = (rw::V3d*)malloc(numVertices * sizeof(rw::V3d));
+	if(transformedVerts == nil)
+		return;
+
+	// Transform all vertices
+	if(xform){
+		for(int i = 0; i < numVertices; i++){
+			transformedVerts[i] = geo->morphTargets[0].vertices[i];
+		}
+		rw::V3d::transformPoints(transformedVerts, transformedVerts, numVertices, xform);
+	}else{
+		for(int i = 0; i < numVertices; i++){
+			transformedVerts[i] = geo->morphTargets[0].vertices[i];
+		}
+	}
+
+	// Render each triangle as wireframe
+	for(int i = 0; i < numTriangles; i++){
+		rw::Triangle &tri = geo->triangles[i];
+		rw::V3d *v1 = &transformedVerts[tri.v[0]];
+		rw::V3d *v2 = &transformedVerts[tri.v[1]];
+		rw::V3d *v3 = &transformedVerts[tri.v[2]];
+		RenderWireTriangle(v1, v2, v3, col, nil);
+	}
+
+	free(transformedVerts);
+}

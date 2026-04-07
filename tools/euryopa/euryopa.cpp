@@ -60,6 +60,7 @@ static bool gIplVisibilityEntriesDirty = true;
 // non-rendering things
 bool gRenderCollision;
 float gCollisionWireframeAlpha = 1.0f;
+bool gRenderCollisionFromDff;
 bool gRenderZones;
 bool gRenderMapZones;
 bool gRenderNavigZones;

@@ -659,6 +659,20 @@ RenderCollision(ObjectInst *inst)
 {
 	ObjectDef *obj = GetObjectDef(inst->m_objectId);
 	if(obj == nil) return;
+
+	if(gRenderCollisionFromDff){
+		for(int i = 0; i < obj->m_numAtomics; i++){
+			if(obj->m_atomics[i]){
+				rw::Matrix worldMatrix = inst->m_matrix;
+				if(i > 0 && inst->m_lod[i-1].exists){
+					worldMatrix = inst->m_lod[i-1];
+				}
+				RenderAtomicWireframe(obj->m_atomics[i], &worldMatrix);
+			}
+		}
+		return;
+	}
+
 	if(obj->m_colModel)
 		RenderColModelWire(obj->m_colModel, &inst->m_matrix, obj->m_isBigBuilding);
 	else
