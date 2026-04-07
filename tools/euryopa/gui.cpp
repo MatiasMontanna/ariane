@@ -30,7 +30,6 @@ static bool showRenderingWindow;
 static bool showBrowserWindow;
 static bool showDiffWindow;
 static bool showToolsWindow = true;
-static bool showCarrecWindow = true;
 static bool gSaNodeJustSelected;
 static bool gBrowserIdeListDirty = true;
 static char gIplFilterSearch[128];
@@ -2403,13 +2402,6 @@ uiMainmenu(void)
 						ExportData("2dfx_effects.csv", EXPORT_2DFX, 1);
 					ImGui::EndMenu();
 				}
-				if(ImGui::BeginMenu("Carrec Paths")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("carrec.json", EXPORT_CARREC, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("carrec.csv", EXPORT_CARREC, 1);
-					ImGui::EndMenu();
-				}
 				ImGui::EndMenu();
 			}
 			ImGui::Separator();
@@ -2421,7 +2413,6 @@ uiMainmenu(void)
 			if(ImGui::MenuItem(ICON_FA_EYE " View", "V", showViewWindow)) { showViewWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_PAINTBRUSH " Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_WRENCH " Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
-			if(ImGui::MenuItem("Carrec Paths", nil, showCarrecWindow)) { showCarrecWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_CIRCLE_INFO " Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_PEN " Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_MAGNIFYING_GLASS " Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
@@ -3320,6 +3311,7 @@ uiView(void)
 		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
 		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
 	}
+
 
 	ImGui::Checkbox("Draw Water", &gRenderWater);
 	if(params.water == GAME_SA){
@@ -4289,27 +4281,6 @@ uiEditorWindow(void)
 		}
 		ImGui::TreePop();
 	}
-
-	ImGui::End();
-}
-
-static void
-uiCarrecWindow(void)
-{
-	ImGui::Begin("Carrec Paths", &showCarrecWindow);
-
-	ImGui::Checkbox("Draw Carrec Paths", &gRenderCarrec);
-	if(gRenderCarrec){
-		ImGui::SliderFloat("Distance", &gCarrecDrawDist, 50.0f, 2000.0f, "%.0f");
-	}
-	ImGui::Separator();
-	ImGui::Checkbox("Animate", &gCarrecAnimate);
-	if(gCarrecAnimate){
-		ImGui::SliderInt("Time (ms)", &gCarrecAnimationTime, 0, 60000);
-		ImGui::InputInt("Recording ID", &gSelectedCarrec);
-	}
-	ImGui::Separator();
-	ImGui::Text("Loaded: %d recordings", Carrec::GetNumRecordings());
 
 	ImGui::End();
 }
@@ -5380,9 +5351,6 @@ gui(void)
 
 	if(CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
 	if(showToolsWindow) uiToolsWindow();
-
-	if(!CPad::IsCtrlDown() && !CPad::IsShiftDown() && CPad::IsKeyJustDown('C')) showCarrecWindow ^= 1;
-	if(showCarrecWindow) uiCarrecWindow();
 
 	{
 		static SAPaths::Node *prevSaNode = nil;

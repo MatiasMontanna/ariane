@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  LIBRW: ${{ github.workspace }}/ariane/librw
+  LIBRW: ${{ github.workspace }}/librw
 
 jobs:
   build-windows:
@@ -22,39 +22,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: ariane
-          submodules: true
 
-      - name: Patch librw header include guards
-        shell: pwsh
-        working-directory: ariane
-        run: |
-          Get-ChildItem -Path librw -Recurse -Filter "*.h" | ForEach-Object {
-            $file = $_.FullName
-            $guard = ($_.Name -replace '\.h$', '' -replace '[\\/]', '_').ToUpper() + "_H"
-            $content = Get-Content $file -Raw
-            if ($content -and $content -notmatch "^#ifndef $guard") {
-              $patched = "#ifndef $guard`n#define $guard`n`n" + $content
-              $patched = $patched.TrimEnd() + "`n#endif"
-              Set-Content $file -Value $patched -NoNewline
-              Write-Host "Patched librw: $($_.Name)"
-            }
-          }
-
-      - name: Patch ariane header include guards
-        shell: pwsh
-        working-directory: ariane
-        run: |
-          Get-ChildItem -Path tools/euryopa -Recurse -Filter "*.h" | ForEach-Object {
-            $file = $_.FullName
-            $guard = ($_.Name -replace '\.h$', '' -replace '[\\/]', '_').ToUpper() + "_H"
-            $content = Get-Content $file -Raw
-            if ($content -and $content -notmatch "^#ifndef $guard") {
-              $patched = "#ifndef $guard`n#define $guard`n`n" + $content
-              $patched = $patched.TrimEnd() + "`n#endif"
-              Set-Content $file -Value $patched -NoNewline
-              Write-Host "Patched ariane: $($_.Name)"
-            }
-          }
+      - name: Checkout librw
+        uses: actions/checkout@v4
+        with:
+          repository: Southland-FR/librw
+          path: librw
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -85,18 +58,18 @@ jobs:
 
       - name: Generate librw project files
         shell: cmd
-        working-directory: ariane/librw
+        working-directory: librw
         run: premake5 vs2019
 
       - name: Build librw
         shell: cmd
-        working-directory: ariane/librw/build
+        working-directory: librw/build
         run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librw /m
 
       - name: Patch librw imgui missing d3d9 declarations
         shell: pwsh
         run: |
-          $file = "ariane/librw/skeleton/imgui/imgui_impl_rw.cpp"
+          $file = "librw/skeleton/imgui/imgui_impl_rw.cpp"
           $patch = @"
           #include <rw.h>
           #ifdef RW_D3D9

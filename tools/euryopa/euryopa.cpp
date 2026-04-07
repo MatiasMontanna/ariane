@@ -1,6 +1,5 @@
 #include "euryopa.h"
 #include "modloader.h"
-#include "carrec.h"
 #include <limits.h>
 #include <algorithm>
 #include <string.h>
@@ -1528,8 +1527,6 @@ LoadGame(void)
 		obj = GetObjectDef("IslandLODbeach", nil);
 		if(obj) obj->m_isHidden = true;
 	}
-
-	Carrec::Init(params.datpath);
 }
 
 static void
@@ -1977,8 +1974,6 @@ Draw(void)
 		SAPaths::RenderCarPaths();
 	if(gRenderSaAreaGrid)
 		SAPaths::RenderAreaGrid();
-	if(gRenderCarrec)
-		Carrec::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)

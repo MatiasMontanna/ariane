@@ -159,13 +159,6 @@ extern bool gSaCarPathTrafficFreezeRoutes;
 extern bool gRenderSaCarPathParkedCars;
 extern int gSaCarPathParkedCarCount;
 
-// Carrec
-extern bool gRenderCarrec;
-extern float gCarrecDrawDist;
-extern int gSelectedCarrec;
-extern int gCarrecAnimationTime;
-extern bool gCarrecAnimate;
-
 // World labels
 extern bool gRenderAreaIdLabels;
 extern bool gRender2dfxLabels;
@@ -957,8 +950,7 @@ enum ExportDataType {
 	EXPORT_MAP_ZONES,
 	EXPORT_NAVIG_ZONES,
 	EXPORT_ATTRIB_ZONES,
-	EXPORT_2DFX,
-	EXPORT_CARREC
+	EXPORT_2DFX
 };
 void ExportData(const char *filename, ExportDataType type, int format);
 
@@ -1196,15 +1188,7 @@ namespace Clouds
 	void RenderSkyPolys(void);
 }
 
-namespace Carrec {
-void Init(const char *dataPath);
-void Shutdown(void);
-int GetNumRecordings(void);
-void Render(void);
-}
 
-//
-// GUI
 //
 // GUI
 //
