@@ -2,6 +2,8 @@
 #define CARREC_H
 
 #include "euryopa.h"
+#include <string>
+#include <vector>
 
 struct CarrecPoint {
 	int32 time;

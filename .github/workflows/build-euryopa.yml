@@ -56,6 +56,17 @@ jobs:
         working-directory: ariane/librw
         run: premake5 vs2019
 
+      - name: Add include guards to librw headers
+        shell: pwsh
+        run: |
+          $file = "ariane/librw/src/rwbase.h"
+          $content = Get-Content $file -Raw
+          if ($content -notmatch '#ifndef _RWBASE_H') {
+            $content = $content -replace '(#ifndef RW_PS2)', "`$1`n#define _RWBASE_H`n"
+            $content = $content -replace '(\nint32 findPointer\(void)', "`n#endif`n`n$1"
+            Set-Content -Path $file -Value $content -NoNewline
+          }
+
       - name: Build librw
         shell: cmd
         working-directory: ariane/librw/build
