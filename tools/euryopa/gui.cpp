@@ -2416,7 +2416,6 @@ uiMainmenu(void)
 			if(ImGui::MenuItem(ICON_FA_CIRCLE_INFO " Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_PEN " Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_MAGNIFYING_GLASS " Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
-			if(ImGui::MenuItem(ICON_FA_IMAGE " Texture Browser", "Ctrl+T", showTextureBrowserWindow)) { showTextureBrowserWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_CODE_COMPARE " Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_LIST " Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
 			if(ImGui::MenuItem("Demo ", nil, showDemoWindow)) { showDemoWindow ^= 1; }
@@ -5375,10 +5374,6 @@ gui(void)
 		// ImGui X button can set showBrowserWindow to false
 		if(!showBrowserWindow && gPlaceMode)
 			SpawnExitPlaceMode();
-	}
-
-	if(showTextureBrowserWindow){
-		uiTextureBrowserWindow();
 	}
 
 	// Escape: cancel creation, exit water mode, or exit place mode
