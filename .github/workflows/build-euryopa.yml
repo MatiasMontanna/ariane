@@ -35,17 +35,21 @@ jobs:
           $headers = @(
             "rwanim.h", "rwbase.h", "rwcharset.h", "rwengine.h", 
             "rwerror.h", "rwobjects.h", "rwpipeline.h", "rwplg.h", 
-            "rwplugins.h", "rwrender.h", "rwuserdata.h"
+            "rwplugins.h", "rwrender.h", "rwuserdata.h",
+            "ps2/rwps2.h", "d3d/rwd3d.h", "d3d/rwxbox.h", "d3d/rwgl3.h",
+            "gl/rwgl3.h"
           )
           foreach ($h in $headers) {
             $file = "librw/src/$h"
-            $guard = ($h -replace '\.h$', '').ToUpper() + "_H"
-            $content = Get-Content $file -Raw
-            if ($content -notmatch "^#ifndef $guard") {
-              $patched = "#ifndef $guard`n#define $guard`n`n" + $content
-              $patched = $patched.TrimEnd() + "`n#endif"
-              Set-Content $file -Value $patched -NoNewline
-              Write-Host "Patched $h with guard $guard"
+            if (Test-Path $file) {
+              $guard = ($h -replace '\.h$', '' -replace '/', '_').ToUpper() + "_H"
+              $content = Get-Content $file -Raw
+              if ($content -notmatch "^#ifndef $guard") {
+                $patched = "#ifndef $guard`n#define $guard`n`n" + $content
+                $patched = $patched.TrimEnd() + "`n#endif"
+                Set-Content $file -Value $patched -NoNewline
+                Write-Host "Patched $h with guard $guard"
+              }
             }
           }
 
