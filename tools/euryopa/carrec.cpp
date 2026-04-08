@@ -59,10 +59,14 @@ Init(void)
 	uint8 *ptr = buf + 8;
 	for(int i = 0; i < numFiles; i++){
 		char name[24];
-		uint32 offset = *(uint32*)(ptr + 0);
-		uint16 sizeInArchive = *(uint16*)(ptr + 6);
+		uint32 offsetSectors = *(uint32*)(ptr + 0);
+		uint16 streamingSizeSectors = *(uint16*)(ptr + 4);
+		uint16 sizeInArchiveSectors = *(uint16*)(ptr + 6);
 		memcpy(name, ptr + 8, 24);
 		name[23] = '\0';
+
+		uint32 offset = offsetSectors * 2048;
+		uint32 size = (streamingSizeSectors > 0 ? streamingSizeSectors : sizeInArchiveSectors) * 2048;
 
 		size_t namelen = strlen(name);
 		if(namelen < 4 || strcmp(name + namelen - 4, ".rrr") != 0){
@@ -70,10 +74,11 @@ Init(void)
 			continue;
 		}
 
-		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offset=%d size=%d", name, offset, sizeInArchive);
+		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offsetSectors=%d offsetBytes=%d sizeSectors=%d sizeBytes=%d", 
+			name, offsetSectors, offset, sizeInArchiveSectors, size);
 		CarrecLog(tmp);
 
-		if(sizeInArchive < 32){
+		if(size < 32){
 			snprintf(tmp, sizeof(tmp), "Carrec: %s too small, skipping", name);
 			CarrecLog(tmp);
 			ptr += 32;
@@ -81,7 +86,7 @@ Init(void)
 		}
 
 		uint8 *fileData = buf + offset;
-		int numNodes = sizeInArchive / 32;
+		int numNodes = size / 32;
 
 		snprintf(tmp, sizeof(tmp), "Carrec: %s has %d nodes", name, numNodes);
 		CarrecLog(tmp);
