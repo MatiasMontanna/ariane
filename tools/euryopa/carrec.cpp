@@ -158,9 +158,9 @@ Render(void)
 
 	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
 	rw::RGBA col = { 255, 165, 0, alpha };
+	rw::RGBA rightCol = { 255, 0, 0, alpha };
+	rw::RGBA topCol = { 0, 255, 0, alpha };
 	rw::RGBA velCol = { 255, 0, 255, alpha };
-	rw::RGBA timeCol = { 0, 255, 255, alpha };
-	rw::RGBA steerCol = { 255, 255, 0, alpha };
 
 	for(size_t i = 0; i < carrecPaths.size(); i++){
 		CarrecPath &path = carrecPaths[i];
@@ -176,6 +176,18 @@ Render(void)
 					rw::V3d v1 = { n1.posX, n1.posY, n1.posZ };
 					rw::V3d v2 = { n2.posX, n2.posY, n2.posZ };
 					RenderLine(v1, v2, col, col);
+
+					float rightX = n1.orientRight[0] / 127.0f;
+					float rightY = n1.orientRight[1] / 127.0f;
+					float rightZ = n1.orientRight[2] / 127.0f;
+					float topX = n1.orientTop[0] / 127.0f;
+					float topY = n1.orientTop[1] / 127.0f;
+					float topZ = n1.orientTop[2] / 127.0f;
+
+					rw::V3d rightEnd = { n1.posX + rightX * 3.0f, n1.posY + rightY * 3.0f, n1.posZ + rightZ * 3.0f };
+					rw::V3d topEnd = { n1.posX + topX * 3.0f, n1.posY + topY * 3.0f, n1.posZ + topZ * 3.0f };
+					RenderLine(v1, rightEnd, rightCol, rightCol);
+					RenderLine(v1, topEnd, topCol, topCol);
 				}
 				if(Carrec::gRenderVelocity){
 					float vx1 = n1.velocityX / 16383.5f;
@@ -217,6 +229,17 @@ Render(void)
 				RenderLine(v[1], v[5], col, col);
 				RenderLine(v[2], v[6], col, col);
 				RenderLine(v[3], v[7], col, col);
+
+				float rightX = path.nodes[j].orientRight[0] / 127.0f;
+				float rightY = path.nodes[j].orientRight[1] / 127.0f;
+				float rightZ = path.nodes[j].orientRight[2] / 127.0f;
+				float topX = path.nodes[j].orientTop[0] / 127.0f;
+				float topY = path.nodes[j].orientTop[1] / 127.0f;
+				float topZ = path.nodes[j].orientTop[2] / 127.0f;
+				rw::V3d rightEnd = { p.x + rightX * 3.0f, p.y + rightY * 3.0f, p.z + rightZ * 3.0f };
+				rw::V3d topEnd = { p.x + topX * 3.0f, p.y + topY * 3.0f, p.z + topZ * 3.0f };
+				RenderLine(p, rightEnd, rightCol, rightCol);
+				RenderLine(p, topEnd, topCol, topCol);
 			}
 		}
 	}

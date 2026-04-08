@@ -3327,7 +3327,7 @@ uiView(void)
 		if(gRenderCarrecs){
 			ImGui::Indent();
 			ImGui::Checkbox("As Lines", &Carrec::gRenderAsLines);
-			ImGui::SetItemTooltip("Render .rrr file positions as orange lines\n\n.rrr file format (32 bytes per node):\n- Offset 0: time (INT32, ms)\n- Offset 4-8: velocity XYZ (INT16)\n- Offset 10-15: orientation (INT8)\n- Offset 16-19: steering, gas, brake, handbrake\n- Offset 20-31: position XYZ (FLOAT)");
+			ImGui::SetItemTooltip("Render .rrr file positions as orange lines\n\n.rrr file format (32 bytes per node):\n- Offset 0: time (INT32, ms)\n- Offset 4-8: velocity XYZ (INT16)\n- Offset 10-12: orient right XYZ (INT8)\n- Offset 13-15: orient top XYZ (INT8)\n- Offset 16-19: steering, gas, brake, handbrake\n- Offset 20-31: position XYZ (FLOAT)\n\nPosition renders:\n- Orange: position path\n- Red: right vector (x127)\n- Green: top vector (x127)");
 			ImGui::Checkbox("As Cubes", &Carrec::gRenderAsCubes);
 			ImGui::SetItemTooltip("Render .rrr file positions as orange cubes");
 			ImGui::SeparatorText("Render Properties");
