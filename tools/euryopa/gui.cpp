@@ -3331,13 +3331,14 @@ uiView(void)
 			ImGui::Checkbox("As Cubes", &Carrec::gRenderAsCubes);
 			ImGui::SetItemTooltip("Render .rrr file positions as orange cubes");
 			if(ImGui::CollapsingHeader("Carrec Paths")){
-				int numPaths = Carrec::GetNumPaths();
-				ImGui::SameLine();
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);
 				ImGui::SameLine();
 				if(ImGui::Button("None"))
 					Carrec::SetAllPaths(false);
+				ImGui::SameLine();
+				ImGui::Text("(%d)", Carrec::GetNumPaths());
+				int numPaths = Carrec::GetNumPaths();
 				for(int i = 0; i < numPaths; i++){
 					CarrecPath *path = Carrec::GetPath(i);
 					if(path)
