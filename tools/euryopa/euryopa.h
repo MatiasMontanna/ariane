@@ -135,6 +135,7 @@ extern float gCollisionWireframeAlpha;
 extern bool gRenderCollisionFromDff;
 extern bool gRenderCollisionBoth;
 extern float gCollisionDffWireframeDist;
+extern bool gRenderCarrecs;
 extern bool gRenderZones;
 extern bool gRenderMapZones;
 extern bool gRenderNavigZones;

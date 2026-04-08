@@ -63,6 +63,7 @@ float gCollisionWireframeAlpha = 1.0f;
 bool gRenderCollisionFromDff;
 bool gRenderCollisionBoth;
 float gCollisionDffWireframeDist = 100.0f;
+bool gRenderCarrecs;
 bool gRenderZones;
 bool gRenderMapZones;
 bool gRenderNavigZones;
@@ -1419,6 +1420,7 @@ LoadGame(void)
 //	SetCurrentDirectory("C:/Users/aap/games/gtasa");
 
 	SAPaths::Reset();
+	CarrecInit();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -1978,6 +1980,8 @@ Draw(void)
 		SAPaths::RenderCarPaths();
 	if(gRenderSaAreaGrid)
 		SAPaths::RenderAreaGrid();
+	if(gRenderCarrecs)
+		CarrecRender();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)

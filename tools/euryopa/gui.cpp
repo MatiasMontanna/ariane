@@ -3322,6 +3322,8 @@ uiView(void)
 		}
 		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
 		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
+		ImGui::SeparatorText("Carrec");
+		ImGui::Checkbox("Draw Carrecs", &gRenderCarrecs);
 	}
 
 
