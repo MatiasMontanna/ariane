@@ -113,22 +113,24 @@ Init(void)
 			node.posX = *(float*)(nodeData + 20);
 			node.posY = *(float*)(nodeData + 24);
 			node.posZ = *(float*)(nodeData + 28);
+
+			if(j == 0){
+				snprintf(tmp, sizeof(tmp), "Carrec: first node raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+					nodeData[0], nodeData[1], nodeData[2], nodeData[3], nodeData[4], nodeData[5], nodeData[6], nodeData[7],
+					nodeData[8], nodeData[9], nodeData[10], nodeData[11], nodeData[12], nodeData[13], nodeData[14], nodeData[15],
+					nodeData[16], nodeData[17], nodeData[18], nodeData[19], nodeData[20], nodeData[21], nodeData[22], nodeData[23],
+					nodeData[24], nodeData[25], nodeData[26], nodeData[27], nodeData[28], nodeData[29], nodeData[30], nodeData[31]);
+				CarrecLog(tmp);
+
+				snprintf(tmp, sizeof(tmp), "Carrec: first node pos (raw float): X=%08X Y=%08X Z=%08X",
+					*(uint32*)(nodeData + 20), *(uint32*)(nodeData + 24), *(uint32*)(nodeData + 28));
+				CarrecLog(tmp);
+
+				snprintf(tmp, sizeof(tmp), "Carrec: first node pos: %.2f %.2f %.2f", 
+					pathData.nodes[0].posX, pathData.nodes[0].posY, pathData.nodes[0].posZ);
+				CarrecLog(tmp);
+			}
 		}
-
-		snprintf(tmp, sizeof(tmp), "Carrec: first node raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-			nodeData[0], nodeData[1], nodeData[2], nodeData[3], nodeData[4], nodeData[5], nodeData[6], nodeData[7],
-			nodeData[8], nodeData[9], nodeData[10], nodeData[11], nodeData[12], nodeData[13], nodeData[14], nodeData[15],
-			nodeData[16], nodeData[17], nodeData[18], nodeData[19], nodeData[20], nodeData[21], nodeData[22], nodeData[23],
-			nodeData[24], nodeData[25], nodeData[26], nodeData[27], nodeData[28], nodeData[29], nodeData[30], nodeData[31]);
-		CarrecLog(tmp);
-
-		snprintf(tmp, sizeof(tmp), "Carrec: first node pos (raw float): X=%08X Y=%08X Z=%08X",
-			*(uint32*)(nodeData + 20), *(uint32*)(nodeData + 24), *(uint32*)(nodeData + 28));
-		CarrecLog(tmp);
-
-		snprintf(tmp, sizeof(tmp), "Carrec: first node pos: %.2f %.2f %.2f", 
-			pathData.nodes[0].posX, pathData.nodes[0].posY, pathData.nodes[0].posZ);
-		CarrecLog(tmp);
 
 		carrecPaths.push_back(pathData);
 		ptr += 32;

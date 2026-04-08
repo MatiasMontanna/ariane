@@ -951,6 +951,8 @@ int GetNumCarNodes(void);
 namespace Carrec {
 void Init(void);
 void Render(void);
+extern bool gRenderAsLines;
+extern bool gRenderAsCubes;
 }
 
 enum ExportDataType {
