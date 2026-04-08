@@ -196,4 +196,11 @@ GetPath(int index)
 	return nil;
 }
 
+void
+SetAllPaths(bool enabled)
+{
+	for(size_t i = 0; i < carrecPaths.size(); i++)
+		carrecPaths[i].enabled = enabled;
+}
+
 }  // namespace Carrec

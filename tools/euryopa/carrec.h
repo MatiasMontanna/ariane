@@ -21,6 +21,7 @@ extern bool gRenderAsLines;
 extern bool gRenderAsCubes;
 int GetNumPaths(void);
 CarrecPath *GetPath(int index);
+void SetAllPaths(bool enabled);
 }
 
 #endif

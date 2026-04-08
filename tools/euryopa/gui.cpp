@@ -3327,9 +3327,17 @@ uiView(void)
 		if(gRenderCarrecs){
 			ImGui::Indent();
 			ImGui::Checkbox("As Lines", &Carrec::gRenderAsLines);
+			ImGui::SetItemTooltip("Render .rrr file positions as orange lines\n\n.rrr file format (32 bytes per node):\n- Offset 0: time (INT32, ms)\n- Offset 4-8: velocity XYZ (INT16)\n- Offset 10-15: orientation (INT8)\n- Offset 16-19: steering, gas, brake, handbrake\n- Offset 20-31: position XYZ (FLOAT)");
 			ImGui::Checkbox("As Cubes", &Carrec::gRenderAsCubes);
+			ImGui::SetItemTooltip("Render .rrr file positions as orange cubes");
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				int numPaths = Carrec::GetNumPaths();
+				ImGui::SameLine();
+				if(ImGui::Button("All"))
+					Carrec::SetAllPaths(true);
+				ImGui::SameLine();
+				if(ImGui::Button("None"))
+					Carrec::SetAllPaths(false);
 				for(int i = 0; i < numPaths; i++){
 					CarrecPath *path = Carrec::GetPath(i);
 					if(path)
