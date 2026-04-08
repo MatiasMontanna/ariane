@@ -30,6 +30,7 @@ extern bool gRenderPosition;
 extern bool gRenderVelocity;
 extern bool gRenderTime;
 extern bool gRenderSteering;
+extern bool gRenderLastNode;
 int GetNumPaths(void);
 CarrecPath *GetPath(int index);
 void SetAllPaths(bool enabled);

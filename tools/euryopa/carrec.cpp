@@ -10,6 +10,7 @@ bool Carrec::gRenderPosition = true;
 bool Carrec::gRenderVelocity = false;
 bool Carrec::gRenderTime = false;
 bool Carrec::gRenderSteering = false;
+bool Carrec::gRenderLastNode = true;
 
 static void
 CarrecLog(const char *msg)
@@ -166,7 +167,8 @@ Render(void)
 			continue;
 
 		if(Carrec::gRenderAsLines && path.nodes.size() >= 2){
-			for(size_t j = 0; j < path.nodes.size() - 1; j++){
+			size_t numLines = Carrec::gRenderLastNode ? path.nodes.size() - 1 : path.nodes.size() - 2;
+			for(size_t j = 0; j < numLines; j++){
 				CarrecNode &n1 = path.nodes[j];
 				CarrecNode &n2 = path.nodes[j+1];
 				
@@ -190,8 +192,9 @@ Render(void)
 		}
 
 		if(Carrec::gRenderAsCubes && Carrec::gRenderPosition){
+			size_t numCubes = Carrec::gRenderLastNode ? path.nodes.size() : path.nodes.size() - 1;
 			float half = 0.5f;
-			for(size_t j = 0; j < path.nodes.size(); j++){
+			for(size_t j = 0; j < numCubes; j++){
 				rw::V3d p = { path.nodes[j].posX, path.nodes[j].posY, path.nodes[j].posZ };
 				rw::V3d v[8] = {
 					{ p.x - half, p.y - half, p.z - half },
