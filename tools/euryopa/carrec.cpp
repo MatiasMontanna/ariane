@@ -1,7 +1,6 @@
 #include "euryopa.h"
 #include "carrec.h"
 #include "modloader.h"
-#include "Sprite.h"
 
 static std::vector<CarrecPath> carrecPaths;
 
@@ -243,30 +242,6 @@ Render(void)
 				RenderLine(v[1], v[5], col, col);
 				RenderLine(v[2], v[6], col, col);
 				RenderLine(v[3], v[7], col, col);
-			}
-		}
-
-		if(Carrec::gRenderLabels && !path.nodes.empty()){
-			CarrecNode &firstNode = path.nodes[0];
-			if(!(firstNode.posX == 0.0f && firstNode.posY == 0.0f && firstNode.posZ == 0.0f)){
-				rw::V3d worldPos = { firstNode.posX, firstNode.posY, firstNode.posZ };
-				rw::V3d screenPos;
-				float w, h;
-				if(Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)){
-					if(screenPos.z > 0.0f && screenPos.z < gTextFarClip){
-						ImU32 labelCol = IM_COL32(col.r, col.g, col.b, 255);
-						char label[32];
-						snprintf(label, sizeof(label), "%s", path.name);
-						ImFont* font = ImGui::GetFont();
-						float fontSize = ImGui::GetFontSize();
-						ImVec2 textSize = ImGui::CalcTextSize(label);
-						float x = screenPos.x - textSize.x * 0.5f;
-						float y = screenPos.y - textSize.y;
-						ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-						drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, label);
-						drawList->AddText(font, fontSize, ImVec2(x, y), labelCol, label);
-					}
-				}
 			}
 		}
 	}
