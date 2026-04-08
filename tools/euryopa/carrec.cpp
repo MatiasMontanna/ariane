@@ -7,9 +7,7 @@ static std::vector<CarrecPath> carrecPaths;
 static void
 CarrecLog(const char *msg)
 {
-	char logpath[256];
-	snprintf(logpath, sizeof(logpath), "carrec_debug.txt");
-	FILE *f = fopen(logpath, "a");
+	FILE *f = fopen("carrec_debug.txt", "a");
 	if(f){
 		fprintf(f, "%s\n", msg);
 		fclose(f);
@@ -95,21 +93,28 @@ Init(void)
 		for(int j = 0; j < numNodes; j++){
 			uint8 *nodeData = fileData + j * 32;
 			CarrecNode &node = pathData.nodes[j];
-			node.time = *(float*)(nodeData + 0);
-			node.velocityX = *(float*)(nodeData + 4);
-			node.velocityY = *(float*)(nodeData + 8);
-			node.velocityZ = *(float*)(nodeData + 12);
-			node.orientW = *(int16*)(nodeData + 16);
-			node.orientX = *(int16*)(nodeData + 18);
-			node.orientY = *(int16*)(nodeData + 20);
-			node.orientZ = *(int16*)(nodeData + 22);
-			node.steering = *(int16*)(nodeData + 24);
-			node.gas = *(uint16*)(nodeData + 26);
-			node.brake = *(uint16*)(nodeData + 28);
-			node.posX = *(float*)(nodeData + 24);
-			node.posY = *(float*)(nodeData + 28);
-			node.posZ = *(float*)(nodeData + 32);
+			node.time = *(int32*)(nodeData + 0);
+			node.velocityX = *(int16*)(nodeData + 4);
+			node.velocityY = *(int16*)(nodeData + 6);
+			node.velocityZ = *(int16*)(nodeData + 8);
+			node.orientRight[0] = *(int8*)(nodeData + 10);
+			node.orientRight[1] = *(int8*)(nodeData + 11);
+			node.orientRight[2] = *(int8*)(nodeData + 12);
+			node.orientTop[0] = *(int8*)(nodeData + 13);
+			node.orientTop[1] = *(int8*)(nodeData + 14);
+			node.orientTop[2] = *(int8*)(nodeData + 15);
+			node.steering = *(int8*)(nodeData + 16);
+			node.gas = *(int8*)(nodeData + 17);
+			node.brake = *(int8*)(nodeData + 18);
+			node.handbrake = *(int8*)(nodeData + 19);
+			node.posX = *(float*)(nodeData + 20);
+			node.posY = *(float*)(nodeData + 24);
+			node.posZ = *(float*)(nodeData + 28);
 		}
+
+		snprintf(tmp, sizeof(tmp), "Carrec: first node pos: %.2f %.2f %.2f", 
+			pathData.nodes[0].posX, pathData.nodes[0].posY, pathData.nodes[0].posZ);
+		CarrecLog(tmp);
 
 		carrecPaths.push_back(pathData);
 		ptr += 32;

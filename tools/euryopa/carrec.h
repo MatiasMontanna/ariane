@@ -4,12 +4,14 @@
 #include <vector>
 
 struct CarrecNode {
-	float time;
-	float velocityX, velocityY, velocityZ;
-	int16 orientW, orientX, orientY, orientZ;
-	int16 steering;
-	uint16 gas;
-	uint16 brake;
+	int32 time;
+	int16 velocityX, velocityY, velocityZ;
+	int8 orientRight[3];
+	int8 orientTop[3];
+	int8 steering;
+	int8 gas;
+	int8 brake;
+	int8 handbrake;
 	float posX, posY, posZ;
 };
 
