@@ -1,6 +1,7 @@
 #include "euryopa.h"
 #include "carrec.h"
 #include "modloader.h"
+#include "Sprite.h"
 
 static std::vector<CarrecPath> carrecPaths;
 
@@ -11,6 +12,8 @@ bool Carrec::gRenderVelocity = false;
 bool Carrec::gRenderTime = false;
 bool Carrec::gRenderSteering = false;
 bool Carrec::gRenderLastNode = true;
+bool Carrec::gRenderUniqueColors = false;
+bool Carrec::gRenderLabels = false;
 
 static void
 CarrecLog(const char *msg)
@@ -158,13 +161,30 @@ Render(void)
 		return;
 
 	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
-	rw::RGBA col = { 255, 165, 0, alpha };
+	rw::RGBA defaultCol = { 255, 165, 0, alpha };
 	rw::RGBA velCol = { 255, 0, 255, alpha };
 
 	for(size_t i = 0; i < carrecPaths.size(); i++){
 		CarrecPath &path = carrecPaths[i];
 		if(path.nodes.empty() || !path.enabled)
 			continue;
+
+		rw::RGBA col = defaultCol;
+		if(Carrec::gRenderUniqueColors){
+			uint hue = (i * 37) % 360;
+			float h = hue / 60.0f;
+			float c = 1.0f;
+			float x = c * (1.0f - fabsf(fmodf(h, 2.0f) - 1.0f));
+			float m = 0.0f;
+			float r, g, b;
+			if(h < 1.0f){ r = c; g = x; b = m; }
+			else if(h < 2.0f){ r = x; g = c; b = m; }
+			else if(h < 3.0f){ r = m; g = c; b = x; }
+			else if(h < 4.0f){ r = m; g = x; b = c; }
+			else if(h < 5.0f){ r = x; g = m; b = c; }
+			else{ r = c; g = m; b = x; }
+			col = { (uint8)(r * 255), (uint8)(g * 255), (uint8)(b * 255), alpha };
+		}
 
 		if(Carrec::gRenderAsLines && path.nodes.size() >= 2){
 			size_t numLines = Carrec::gRenderLastNode ? path.nodes.size() - 1 : path.nodes.size() - 2;
@@ -223,6 +243,30 @@ Render(void)
 				RenderLine(v[1], v[5], col, col);
 				RenderLine(v[2], v[6], col, col);
 				RenderLine(v[3], v[7], col, col);
+			}
+		}
+
+		if(Carrec::gRenderLabels && !path.nodes.empty()){
+			CarrecNode &firstNode = path.nodes[0];
+			if(!(firstNode.posX == 0.0f && firstNode.posY == 0.0f && firstNode.posZ == 0.0f)){
+				rw::V3d worldPos = { firstNode.posX, firstNode.posY, firstNode.posZ };
+				rw::V3d screenPos;
+				float w, h;
+				if(Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)){
+					if(screenPos.z > 0.0f && screenPos.z < gTextFarClip){
+						ImU32 labelCol = IM_COL32(col.r, col.g, col.b, 255);
+						char label[32];
+						snprintf(label, sizeof(label), "%s", path.name);
+						ImFont* font = ImGui::GetFont();
+						float fontSize = ImGui::GetFontSize();
+						ImVec2 textSize = ImGui::CalcTextSize(label);
+						float x = screenPos.x - textSize.x * 0.5f;
+						float y = screenPos.y - textSize.y;
+						ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+						drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, label);
+						drawList->AddText(font, fontSize, ImVec2(x, y), labelCol, label);
+					}
+				}
 			}
 		}
 	}

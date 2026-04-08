@@ -3340,6 +3340,10 @@ uiView(void)
 			ImGui::Checkbox("Steering", &Carrec::gRenderSteering);
 			ImGui::Checkbox("Render Last Node", &Carrec::gRenderLastNode);
 			ImGui::SetItemTooltip("Uncheck to not render the last position/cube\nAlso skips positions at (0,0,0)");
+			ImGui::Checkbox("Unique Colors", &Carrec::gRenderUniqueColors);
+			ImGui::SetItemTooltip("Render each .rrr file with a different color");
+			ImGui::Checkbox("Labels", &Carrec::gRenderLabels);
+			ImGui::SetItemTooltip("Show .rrr filename at first position");
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);

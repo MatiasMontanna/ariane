@@ -31,6 +31,8 @@ extern bool gRenderVelocity;
 extern bool gRenderTime;
 extern bool gRenderSteering;
 extern bool gRenderLastNode;
+extern bool gRenderUniqueColors;
+extern bool gRenderLabels;
 int GetNumPaths(void);
 CarrecPath *GetPath(int index);
 void SetAllPaths(bool enabled);
