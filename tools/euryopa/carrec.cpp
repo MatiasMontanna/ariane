@@ -59,8 +59,7 @@ Init(void)
 	for(int i = 0; i < numFiles; i++){
 		char name[24];
 		uint32 offset = *(uint32*)(ptr + 0);
-		uint16 streamingSize = *(uint16*)(ptr + 4);
-		uint16 sizeInArchive = *(uint16*)(ptr + 6);
+		uint16 size = *(uint16*)(ptr + 6);  // sizeInArchive at offset 6
 		memcpy(name, ptr + 8, 24);
 		name[23] = '\0';
 
@@ -71,12 +70,19 @@ Init(void)
 			continue;
 		}
 
-		uint32 dataSize = streamingSize != 0 ? streamingSize : sizeInArchive;
-		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offset=%d size=%d", name, offset, dataSize);
+		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offset=%d size=%d", name, offset, size);
 		CarrecLog(tmp);
 
+		// Skip files that are too small (less than 32 bytes = 1 node)
+		if(size < 32){
+			snprintf(tmp, sizeof(tmp), "Carrec: %s too small, skipping", name);
+			CarrecLog(tmp);
+			ptr += 32;
+			continue;
+		}
+
 		uint8 *fileData = buf + offset;
-		int numNodes = dataSize / 32;
+		int numNodes = size / 32;
 
 		snprintf(tmp, sizeof(tmp), "Carrec: %s has %d nodes", name, numNodes);
 		CarrecLog(tmp);
@@ -100,9 +106,9 @@ Init(void)
 			node.steering = *(int16*)(nodeData + 24);
 			node.gas = *(uint16*)(nodeData + 26);
 			node.brake = *(uint16*)(nodeData + 28);
-			node.posX = *(float*)(nodeData + 20);
-			node.posY = *(float*)(nodeData + 24);
-			node.posZ = *(float*)(nodeData + 28);
+			node.posX = *(float*)(nodeData + 24);
+			node.posY = *(float*)(nodeData + 28);
+			node.posZ = *(float*)(nodeData + 32);
 		}
 
 		carrecPaths.push_back(pathData);
