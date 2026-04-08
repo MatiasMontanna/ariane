@@ -948,6 +948,11 @@ int GetNumPedNodes(void);
 int GetNumCarNodes(void);
 }
 
+namespace Carrec {
+void Init(void);
+void Render(void);
+}
+
 enum ExportDataType {
 	EXPORT_OBJECTS,
 	EXPORT_PED_PATHS,

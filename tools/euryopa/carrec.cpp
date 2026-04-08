@@ -1,10 +1,13 @@
 #include "euryopa.h"
 #include "carrec.h"
+#include "modloader.h"
 
 static std::vector<CarrecPath> carrecPaths;
 
+namespace Carrec {
+
 void
-CarrecInit(void)
+Init(void)
 {
 	char path[256];
 	snprintf(path, sizeof(path), "data/Paths/carrec.img");
@@ -90,7 +93,7 @@ CarrecInit(void)
 }
 
 void
-CarrecRender(void)
+Render(void)
 {
 	if(carrecPaths.empty())
 		return;
@@ -110,3 +113,5 @@ CarrecRender(void)
 		}
 	}
 }
+
+}  // namespace Carrec

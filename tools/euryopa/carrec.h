@@ -18,7 +18,9 @@ struct CarrecPath {
 	std::vector<CarrecNode> nodes;
 };
 
-void CarrecInit(void);
-void CarrecRender(void);
+namespace Carrec {
+void Init(void);
+void Render(void);
+}
 
 #endif

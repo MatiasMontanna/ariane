@@ -1,4 +1,5 @@
 #include "euryopa.h"
+#include "carrec.h"
 #include "modloader.h"
 #include <limits.h>
 #include <algorithm>
@@ -1420,7 +1421,7 @@ LoadGame(void)
 //	SetCurrentDirectory("C:/Users/aap/games/gtasa");
 
 	SAPaths::Reset();
-	CarrecInit();
+	Carrec::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -1981,7 +1982,7 @@ Draw(void)
 	if(gRenderSaAreaGrid)
 		SAPaths::RenderAreaGrid();
 	if(gRenderCarrecs)
-		CarrecRender();
+		Carrec::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)
