@@ -41,7 +41,7 @@ Init(void)
 	}
 
 	uint32 magic = *(uint32*)buf;
-	if(magic != 0x32524556){  // "VER2"
+	if(magic != 0x32524556){
 		CarrecLog("Carrec: not VER2 format");
 		log("Carrec: carrec.img is not VER2 format\n");
 		free(buf);
@@ -60,22 +60,20 @@ Init(void)
 	for(int i = 0; i < numFiles; i++){
 		char name[24];
 		uint32 offset = *(uint32*)(ptr + 0);
-		uint16 size = *(uint16*)(ptr + 6);  // sizeInArchive at offset 6
+		uint16 sizeInArchive = *(uint16*)(ptr + 6);
 		memcpy(name, ptr + 8, 24);
 		name[23] = '\0';
 
-		// Skip non-.rrr files
 		size_t namelen = strlen(name);
 		if(namelen < 4 || strcmp(name + namelen - 4, ".rrr") != 0){
 			ptr += 32;
 			continue;
 		}
 
-		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offset=%d size=%d", name, offset, size);
+		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offset=%d size=%d", name, offset, sizeInArchive);
 		CarrecLog(tmp);
 
-		// Skip files that are too small (less than 32 bytes = 1 node)
-		if(size < 32){
+		if(sizeInArchive < 32){
 			snprintf(tmp, sizeof(tmp), "Carrec: %s too small, skipping", name);
 			CarrecLog(tmp);
 			ptr += 32;
@@ -83,7 +81,7 @@ Init(void)
 		}
 
 		uint8 *fileData = buf + offset;
-		int numNodes = size / 32;
+		int numNodes = sizeInArchive / 32;
 
 		snprintf(tmp, sizeof(tmp), "Carrec: %s has %d nodes", name, numNodes);
 		CarrecLog(tmp);
@@ -96,38 +94,21 @@ Init(void)
 		for(int j = 0; j < numNodes; j++){
 			uint8 *nodeData = fileData + j * 32;
 			CarrecNode &node = pathData.nodes[j];
+
 			node.time = *(int32*)(nodeData + 0);
-			node.velocityX = *(int16*)(nodeData + 4);
-			node.velocityY = *(int16*)(nodeData + 6);
-			node.velocityZ = *(int16*)(nodeData + 8);
-			node.orientRight[0] = *(int8*)(nodeData + 10);
-			node.orientRight[1] = *(int8*)(nodeData + 11);
-			node.orientRight[2] = *(int8*)(nodeData + 12);
-			node.orientTop[0] = *(int8*)(nodeData + 13);
-			node.orientTop[1] = *(int8*)(nodeData + 14);
-			node.orientTop[2] = *(int8*)(nodeData + 15);
-			node.steering = *(int8*)(nodeData + 16);
-			node.gas = *(int8*)(nodeData + 17);
-			node.brake = *(int8*)(nodeData + 18);
-			node.handbrake = *(int8*)(nodeData + 19);
 			node.posX = *(float*)(nodeData + 20);
 			node.posY = *(float*)(nodeData + 24);
 			node.posZ = *(float*)(nodeData + 28);
 
 			if(j == 0){
-				snprintf(tmp, sizeof(tmp), "Carrec: first node raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-					nodeData[0], nodeData[1], nodeData[2], nodeData[3], nodeData[4], nodeData[5], nodeData[6], nodeData[7],
-					nodeData[8], nodeData[9], nodeData[10], nodeData[11], nodeData[12], nodeData[13], nodeData[14], nodeData[15],
-					nodeData[16], nodeData[17], nodeData[18], nodeData[19], nodeData[20], nodeData[21], nodeData[22], nodeData[23],
-					nodeData[24], nodeData[25], nodeData[26], nodeData[27], nodeData[28], nodeData[29], nodeData[30], nodeData[31]);
+				snprintf(tmp, sizeof(tmp), "Carrec: first node time=%d pos=(%.2f, %.2f, %.2f)",
+					node.time, node.posX, node.posY, node.posZ);
 				CarrecLog(tmp);
 
-				snprintf(tmp, sizeof(tmp), "Carrec: first node pos (raw float): X=%08X Y=%08X Z=%08X",
-					*(uint32*)(nodeData + 20), *(uint32*)(nodeData + 24), *(uint32*)(nodeData + 28));
-				CarrecLog(tmp);
-
-				snprintf(tmp, sizeof(tmp), "Carrec: first node pos: %.2f %.2f %.2f", 
-					pathData.nodes[0].posX, pathData.nodes[0].posY, pathData.nodes[0].posZ);
+				snprintf(tmp, sizeof(tmp), "Carrec: raw bytes at 20-31: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+					nodeData[20], nodeData[21], nodeData[22], nodeData[23],
+					nodeData[24], nodeData[25], nodeData[26], nodeData[27],
+					nodeData[28], nodeData[29], nodeData[30], nodeData[31]);
 				CarrecLog(tmp);
 			}
 		}
