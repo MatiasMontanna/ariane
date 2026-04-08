@@ -33,29 +33,27 @@ Init(void)
 	}
 
 	int numFiles = *(int*)(buf + 4);
-	log("Carrec: found %d files in carrec.img\n", numFiles);
+		log("Carrec: found %d files in carrec.img\n", numFiles);
+	log("Carrec: trying to load .rrr files\n");
 
 	uint8 *ptr = buf + 8;
 	for(int i = 0; i < numFiles; i++){
 		char name[24];
 		uint32 offset = *(uint32*)(ptr + 0);
-		uint32 sizeInArchive = *(uint32*)(ptr + 4);
-		uint32 streamingSize = *(uint32*)(ptr + 8);
-		memcpy(name, ptr + 12, 24);
+		uint16 streamingSize = *(uint16*)(ptr + 4);
+		uint16 sizeInArchive = *(uint16*)(ptr + 6);
+		memcpy(name, ptr + 8, 24);
 		name[23] = '\0';
 
 		// Skip .rrr files
 		size_t namelen = strlen(name);
 		if(namelen < 4 || strcmp(name + namelen - 4, ".rrr") != 0){
-			ptr += 24;
+			ptr += 32;
 			continue;
 		}
 
 		uint32 dataSize = streamingSize != 0 ? streamingSize : sizeInArchive;
-		if(offset + dataSize > (uint32)size){
-			ptr += 24;
-			continue;
-		}
+		log("Carrec: found .rrr file: %s, offset=%d, size=%d\n", name, offset, dataSize);
 
 		uint8 *fileData = buf + offset;
 		int numNodes = dataSize / 32;
@@ -85,7 +83,7 @@ Init(void)
 		}
 
 		carrecPaths.push_back(pathData);
-		ptr += 24;
+		ptr += 32;
 	}
 
 	free(buf);
