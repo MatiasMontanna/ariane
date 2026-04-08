@@ -4,6 +4,18 @@
 
 static std::vector<CarrecPath> carrecPaths;
 
+static void
+CarrecLog(const char *msg)
+{
+	char logpath[256];
+	snprintf(logpath, sizeof(logpath), "carrec_debug.txt");
+	FILE *f = fopen(logpath, "a");
+	if(f){
+		fprintf(f, "%s\n", msg);
+		fclose(f);
+	}
+}
+
 namespace Carrec {
 
 void
@@ -11,29 +23,36 @@ Init(void)
 {
 	char path[256];
 	snprintf(path, sizeof(path), "data/Paths/carrec.img");
+	CarrecLog("Carrec: Starting...");
 
 	int size;
 	uint8 *buf = ReadLooseFile(path, &size);
 	if(buf == nil){
+		CarrecLog("Carrec: carrec.img not found");
 		log("Carrec: carrec.img not found at %s\n", path);
 		return;
 	}
 
 	if(size < 8){
-		log("Carrec: carrec.img too small\n");
+		CarrecLog("Carrec: carrec.img too small");
 		free(buf);
 		return;
 	}
 
 	uint32 magic = *(uint32*)buf;
 	if(magic != 0x32524556){  // "VER2"
+		CarrecLog("Carrec: not VER2 format");
 		log("Carrec: carrec.img is not VER2 format\n");
 		free(buf);
 		return;
 	}
 
 	int numFiles = *(int*)(buf + 4);
-		log("Carrec: found %d files in carrec.img\n", numFiles);
+	char tmp[256];
+	snprintf(tmp, sizeof(tmp), "Carrec: found %d files", numFiles);
+	CarrecLog(tmp);
+	log("Carrec: found %d files in carrec.img\n", numFiles);
+
 	log("Carrec: trying to load .rrr files\n");
 
 	uint8 *ptr = buf + 8;
@@ -45,7 +64,7 @@ Init(void)
 		memcpy(name, ptr + 8, 24);
 		name[23] = '\0';
 
-		// Skip .rrr files
+		// Skip non-.rrr files
 		size_t namelen = strlen(name);
 		if(namelen < 4 || strcmp(name + namelen - 4, ".rrr") != 0){
 			ptr += 32;
@@ -53,10 +72,14 @@ Init(void)
 		}
 
 		uint32 dataSize = streamingSize != 0 ? streamingSize : sizeInArchive;
-		log("Carrec: found .rrr file: %s, offset=%d, size=%d\n", name, offset, dataSize);
+		snprintf(tmp, sizeof(tmp), "Carrec: .rrr file: %s offset=%d size=%d", name, offset, dataSize);
+		CarrecLog(tmp);
 
 		uint8 *fileData = buf + offset;
 		int numNodes = dataSize / 32;
+
+		snprintf(tmp, sizeof(tmp), "Carrec: %s has %d nodes", name, numNodes);
+		CarrecLog(tmp);
 
 		CarrecPath pathData;
 		strncpy(pathData.name, name, sizeof(pathData.name) - 1);
@@ -87,6 +110,8 @@ Init(void)
 	}
 
 	free(buf);
+	snprintf(tmp, sizeof(tmp), "Carrec: loaded %d paths", (int)carrecPaths.size());
+	CarrecLog(tmp);
 	log("Carrec: loaded %d paths\n", carrecPaths.size());
 }
 
