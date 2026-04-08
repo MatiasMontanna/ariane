@@ -173,6 +173,9 @@ Render(void)
 				CarrecNode &n2 = path.nodes[j+1];
 				
 				if(Carrec::gRenderPosition){
+					if((n1.posX == 0.0f && n1.posY == 0.0f && n1.posZ == 0.0f) ||
+					   (n2.posX == 0.0f && n2.posY == 0.0f && n2.posZ == 0.0f))
+						continue;
 					rw::V3d v1 = { n1.posX, n1.posY, n1.posZ };
 					rw::V3d v2 = { n2.posX, n2.posY, n2.posZ };
 					RenderLine(v1, v2, col, col);
@@ -195,6 +198,8 @@ Render(void)
 			size_t numCubes = Carrec::gRenderLastNode ? path.nodes.size() : path.nodes.size() - 1;
 			float half = 0.5f;
 			for(size_t j = 0; j < numCubes; j++){
+				if(path.nodes[j].posX == 0.0f && path.nodes[j].posY == 0.0f && path.nodes[j].posZ == 0.0f)
+					continue;
 				rw::V3d p = { path.nodes[j].posX, path.nodes[j].posY, path.nodes[j].posZ };
 				rw::V3d v[8] = {
 					{ p.x - half, p.y - half, p.z - half },

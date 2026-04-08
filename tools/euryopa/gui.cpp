@@ -3339,7 +3339,7 @@ uiView(void)
 			ImGui::SameLine();
 			ImGui::Checkbox("Steering", &Carrec::gRenderSteering);
 			ImGui::Checkbox("Render Last Node", &Carrec::gRenderLastNode);
-			ImGui::SetItemTooltip("Uncheck to not render the last position/cube");
+			ImGui::SetItemTooltip("Uncheck to not render the last position/cube\nAlso skips positions at (0,0,0)");
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);
