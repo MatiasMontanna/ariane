@@ -95,6 +95,7 @@ Init(void)
 		strncpy(pathData.name, name, sizeof(pathData.name) - 1);
 		pathData.name[sizeof(pathData.name) - 1] = '\0';
 		pathData.nodes.resize(numNodes);
+		pathData.enabled = true;
 
 		for(int j = 0; j < numNodes; j++){
 			uint8 *nodeData = fileData + j * 32;
@@ -139,7 +140,7 @@ Render(void)
 
 	for(size_t i = 0; i < carrecPaths.size(); i++){
 		CarrecPath &path = carrecPaths[i];
-		if(path.nodes.empty())
+		if(path.nodes.empty() || !path.enabled)
 			continue;
 
 		if(Carrec::gRenderAsLines && path.nodes.size() >= 2){
@@ -179,6 +180,20 @@ Render(void)
 			}
 		}
 	}
+}
+
+int
+GetNumPaths(void)
+{
+	return (int)carrecPaths.size();
+}
+
+CarrecPath *
+GetPath(int index)
+{
+	if(index >= 0 && index < (int)carrecPaths.size())
+		return &carrecPaths[index];
+	return nil;
 }
 
 }  // namespace Carrec

@@ -3328,6 +3328,14 @@ uiView(void)
 			ImGui::Indent();
 			ImGui::Checkbox("As Lines", &Carrec::gRenderAsLines);
 			ImGui::Checkbox("As Cubes", &Carrec::gRenderAsCubes);
+			if(ImGui::CollapsingHeader("Carrec Paths")){
+				int numPaths = Carrec::GetNumPaths();
+				for(int i = 0; i < numPaths; i++){
+					CarrecPath *path = Carrec::GetPath(i);
+					if(path)
+						ImGui::Checkbox(path->name, &path->enabled);
+				}
+			}
 			ImGui::Unindent();
 		}
 	}

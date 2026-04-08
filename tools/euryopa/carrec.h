@@ -11,6 +11,7 @@ struct CarrecNode {
 struct CarrecPath {
 	char name[24];
 	std::vector<CarrecNode> nodes;
+	bool enabled;
 };
 
 namespace Carrec {
@@ -18,6 +19,8 @@ void Init(void);
 void Render(void);
 extern bool gRenderAsLines;
 extern bool gRenderAsCubes;
+int GetNumPaths(void);
+CarrecPath *GetPath(int index);
 }
 
 #endif

@@ -29,6 +29,7 @@ typedef unsigned int uint;
 struct ObjectInst;
 
 #include "sapaths.h"
+#include "carrec.h"
 
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
