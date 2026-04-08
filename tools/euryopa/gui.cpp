@@ -3324,6 +3324,12 @@ uiView(void)
 		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
 		ImGui::SeparatorText("Carrec");
 		ImGui::Checkbox("Draw Carrecs", &gRenderCarrecs);
+		if(gRenderCarrecs){
+			ImGui::Indent();
+			ImGui::Checkbox("As Lines", &Carrec::gRenderAsLines);
+			ImGui::Checkbox("As Cubes", &Carrec::gRenderAsCubes);
+			ImGui::Unindent();
+		}
 	}
 
 

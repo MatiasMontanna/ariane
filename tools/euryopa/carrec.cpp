@@ -4,6 +4,9 @@
 
 static std::vector<CarrecPath> carrecPaths;
 
+bool Carrec::gRenderAsLines = true;
+bool Carrec::gRenderAsCubes = false;
+
 static void
 CarrecLog(const char *msg)
 {
@@ -112,6 +115,17 @@ Init(void)
 			node.posZ = *(float*)(nodeData + 28);
 		}
 
+		snprintf(tmp, sizeof(tmp), "Carrec: first node raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+			nodeData[0], nodeData[1], nodeData[2], nodeData[3], nodeData[4], nodeData[5], nodeData[6], nodeData[7],
+			nodeData[8], nodeData[9], nodeData[10], nodeData[11], nodeData[12], nodeData[13], nodeData[14], nodeData[15],
+			nodeData[16], nodeData[17], nodeData[18], nodeData[19], nodeData[20], nodeData[21], nodeData[22], nodeData[23],
+			nodeData[24], nodeData[25], nodeData[26], nodeData[27], nodeData[28], nodeData[29], nodeData[30], nodeData[31]);
+		CarrecLog(tmp);
+
+		snprintf(tmp, sizeof(tmp), "Carrec: first node pos (raw float): X=%08X Y=%08X Z=%08X",
+			*(uint32*)(nodeData + 20), *(uint32*)(nodeData + 24), *(uint32*)(nodeData + 28));
+		CarrecLog(tmp);
+
 		snprintf(tmp, sizeof(tmp), "Carrec: first node pos: %.2f %.2f %.2f", 
 			pathData.nodes[0].posX, pathData.nodes[0].posY, pathData.nodes[0].posZ);
 		CarrecLog(tmp);
@@ -133,17 +147,48 @@ Render(void)
 		return;
 
 	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
-	rw::RGBA col = { 255, 165, 0, alpha };  // Orange
+	rw::RGBA col = { 255, 165, 0, alpha };
 
 	for(size_t i = 0; i < carrecPaths.size(); i++){
 		CarrecPath &path = carrecPaths[i];
-		if(path.nodes.size() < 2)
+		if(path.nodes.empty())
 			continue;
 
-		for(size_t j = 0; j < path.nodes.size() - 1; j++){
-			rw::V3d v1 = { path.nodes[j].posX, path.nodes[j].posY, path.nodes[j].posZ };
-			rw::V3d v2 = { path.nodes[j+1].posX, path.nodes[j+1].posY, path.nodes[j+1].posZ };
-			RenderLine(v1, v2, col, col);
+		if(Carrec::gRenderAsLines && path.nodes.size() >= 2){
+			for(size_t j = 0; j < path.nodes.size() - 1; j++){
+				rw::V3d v1 = { path.nodes[j].posX, path.nodes[j].posY, path.nodes[j].posZ };
+				rw::V3d v2 = { path.nodes[j+1].posX, path.nodes[j+1].posY, path.nodes[j+1].posZ };
+				RenderLine(v1, v2, col, col);
+			}
+		}
+
+		if(Carrec::gRenderAsCubes){
+			float half = 0.5f;
+			for(size_t j = 0; j < path.nodes.size(); j++){
+				rw::V3d p = { path.nodes[j].posX, path.nodes[j].posY, path.nodes[j].posZ };
+				rw::V3d v[8] = {
+					{ p.x - half, p.y - half, p.z - half },
+					{ p.x + half, p.y - half, p.z - half },
+					{ p.x - half, p.y + half, p.z - half },
+					{ p.x + half, p.y + half, p.z - half },
+					{ p.x - half, p.y - half, p.z + half },
+					{ p.x + half, p.y - half, p.z + half },
+					{ p.x - half, p.y + half, p.z + half },
+					{ p.x + half, p.y + half, p.z + half }
+				};
+				RenderLine(v[0], v[1], col, col);
+				RenderLine(v[2], v[3], col, col);
+				RenderLine(v[4], v[5], col, col);
+				RenderLine(v[6], v[7], col, col);
+				RenderLine(v[0], v[2], col, col);
+				RenderLine(v[1], v[3], col, col);
+				RenderLine(v[4], v[6], col, col);
+				RenderLine(v[5], v[7], col, col);
+				RenderLine(v[0], v[4], col, col);
+				RenderLine(v[1], v[5], col, col);
+				RenderLine(v[2], v[6], col, col);
+				RenderLine(v[3], v[7], col, col);
+			}
 		}
 	}
 }

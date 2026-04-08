@@ -23,6 +23,8 @@ struct CarrecPath {
 namespace Carrec {
 void Init(void);
 void Render(void);
+extern bool gRenderAsLines;
+extern bool gRenderAsCubes;
 }
 
 #endif
