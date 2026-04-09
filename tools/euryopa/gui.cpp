@@ -3345,17 +3345,17 @@ uiView(void)
 			ImGui::Checkbox("Labels", &Carrec::gRenderLabels);
 			ImGui::SetItemTooltip("Show .rrr filename at first position");
 			ImGui::SeparatorText("Text Info");
-			ImGui::Checkbox("Velocity", &Carrec::gRenderTextVelocity);
+			ImGui::Checkbox("Velocity##carrecvel", &Carrec::gRenderTextVelocity);
 			ImGui::SameLine();
-			ImGui::Checkbox("Time", &Carrec::gRenderTextTime);
+			ImGui::Checkbox("Time##carrectime", &Carrec::gRenderTextTime);
 			ImGui::SameLine();
-			ImGui::Checkbox("Steering", &Carrec::gRenderTextSteering);
+			ImGui::Checkbox("Steering##carrecsteer", &Carrec::gRenderTextSteering);
 			ImGui::SameLine();
-			ImGui::Checkbox("Gas", &Carrec::gRenderTextGas);
+			ImGui::Checkbox("Gas##carrecgas", &Carrec::gRenderTextGas);
 			ImGui::SameLine();
-			ImGui::Checkbox("Brake", &Carrec::gRenderTextBrake);
+			ImGui::Checkbox("Brake##carrecbrake", &Carrec::gRenderTextBrake);
 			ImGui::SameLine();
-			ImGui::Checkbox("Handbrake", &Carrec::gRenderTextHandbrake);
+			ImGui::Checkbox("Handbrake##carreachb", &Carrec::gRenderTextHandbrake);
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);
