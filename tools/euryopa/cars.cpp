@@ -1,6 +1,7 @@
 #include "euryopa.h"
 #include "cars.h"
 #include <stdio.h>
+#include <stdarg.h>
 
 static std::vector<CarSpawnPath> carSpawnPaths;
 
@@ -44,21 +45,32 @@ LoadCarsData(void)
 	int bnryCount = 0;
 	int hasCars = 0;
 
+	CarsLog("Cars: NUMIPLS = %d\n", NUMIPLS);
+
 	for(int i = 0; i < NUMIPLS; i++){
 		IplDef *ipl = GetIplDef(i);
-		if(ipl == nil)
+		CarsLog("Cars: checking ipl %d, ptr=%p\n", i, ipl);
+		if(ipl == nil){
+			CarsLog("Cars: ipl %d is nil\n", i);
 			continue;
+		}
 		iplCount++;
+		CarsLog("Cars: ipl %d name='%.24s' imageIndex=%d\n", i, ipl->name, ipl->imageIndex);
+
 		if(ipl->imageIndex < 0)
 			continue;
 		withImageIndex++;
 
+		CarsLog("Cars: calling ReadFileFromImage for ipl %d\n", i);
 		int size;
 		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
+		CarsLog("Cars: ReadFileFromImage returned buffer=%p, size=%d\n", buffer, size);
 		if(buffer == nil)
 			continue;
 
+		CarsLog("Cars: buffer[0-3] = %02X %02X %02X %02X\n", buffer[0], buffer[1], buffer[2], buffer[3]);
 		if(*(uint32*)buffer != 0x79726E62){
+			CarsLog("Cars: IPL %s not 'bnry' format\n", ipl->name);
 			free(buffer);
 			continue;
 		}
@@ -72,6 +84,7 @@ LoadCarsData(void)
 			ipl->name, numInsts, numCars, carsOffset, expectedCarsOffset, size);
 
 		if(numCars <= 0){
+			CarsLog("Cars: IPL %s has no cars (numCars=%d)\n", ipl->name, numCars);
 			free(buffer);
 			continue;
 		}
