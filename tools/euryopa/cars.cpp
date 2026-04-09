@@ -29,13 +29,13 @@ Init(void)
 		if(*(uint32*)buffer != 0x79726E62)
 			continue;
 
-		int32 numCars = *(int32*)(buffer + 0x10);
+		int32 numCars = *(int32*)(buffer + 0x14);
 		if(numCars <= 0){
 			free(buffer);
 			continue;
 		}
 
-		int32 carsOffset = *(int32*)(buffer + 0x38);
+		int32 carsOffset = *(int32*)(buffer + 0x3C);
 		if(carsOffset <= 0){
 			free(buffer);
 			continue;
