@@ -65,8 +65,15 @@ LoadCarsData(void)
 		int size;
 		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
 		CarsLog("Cars: ReadFileFromImage returned buffer=%p, size=%d\n", buffer, size);
-		if(buffer == nil)
+		if(buffer == nil){
+			CarsLog("Cars: buffer is nil, skipping ipl %d\n", i);
 			continue;
+		}
+		if(size < 64){
+			CarsLog("Cars: buffer too small (%d bytes), skipping ipl %d\n", size, i);
+			free(buffer);
+			continue;
+		}
 
 		CarsLog("Cars: buffer[0-3] = %02X %02X %02X %02X\n", buffer[0], buffer[1], buffer[2], buffer[3]);
 		if(*(uint32*)buffer != 0x79726E62){
