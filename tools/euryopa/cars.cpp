@@ -11,11 +11,6 @@ float Cars::gDrawDist = 300.0f;
 
 namespace Cars {
 
-extern int gameversion;
-#define GAME_III 1
-#define GAME_VC 2
-#define GAME_SA 3
-
 void
 Init(void)
 {
