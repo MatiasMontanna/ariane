@@ -46,15 +46,18 @@ Init(void)
 		}
 		bnryCount++;
 
+		int32 numInsts = *(int32*)(buffer + 0x04);
 		int32 numCars = *(int32*)(buffer + 0x14);
-		log("Cars: IPL %s has %d cars (offset 0x14 = %d), size=%d\n", ipl->name, numCars, *(int32*)(buffer+0x14), size);
+		int32 carsOffset = *(int32*)(buffer + 0x3C);
+		int32 expectedCarsOffset = 0x40 + (numInsts * 40);
+		log("Cars: IPL %s: numInsts=%d, numCars=%d, carsOffset=0x%X, expected=0x%X, fileSize=%d\n", 
+			ipl->name, numInsts, numCars, carsOffset, expectedCarsOffset, size);
 
 		if(numCars <= 0){
 			free(buffer);
 			continue;
 		}
 
-		int32 carsOffset = *(int32*)(buffer + 0x3C);
 		log("Cars: IPL %s cars offset = 0x%X (%d), total file size = %d\n", ipl->name, carsOffset, carsOffset, size);
 
 		if(carsOffset <= 0 || carsOffset + numCars * 48 > size){
