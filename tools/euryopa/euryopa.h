@@ -30,6 +30,7 @@ struct ObjectInst;
 
 #include "sapaths.h"
 #include "carrec.h"
+#include "cars.h"
 
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)

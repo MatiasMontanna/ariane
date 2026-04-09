@@ -1,5 +1,6 @@
 #include "euryopa.h"
 #include "carrec.h"
+#include "cars.h"
 #include "modloader.h"
 #include <limits.h>
 #include <algorithm>
@@ -1422,6 +1423,7 @@ LoadGame(void)
 
 	SAPaths::Reset();
 	Carrec::Init();
+	Cars::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -1983,6 +1985,8 @@ Draw(void)
 		SAPaths::RenderAreaGrid();
 	if(gRenderCarrecs)
 		Carrec::Render();
+	if(Cars::gRenderCars)
+		Cars::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)

@@ -3374,6 +3374,32 @@ uiView(void)
 			}
 			ImGui::Unindent();
 		}
+		ImGui::SeparatorText("Cars");
+		ImGui::Checkbox("Draw Car Spawns", &Cars::gRenderCars);
+		if(Cars::gRenderCars){
+			ImGui::Indent();
+			ImGui::Checkbox("As Lines", &Cars::gRenderAsLines);
+			ImGui::SameLine();
+			ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
+			ImGui::Checkbox("Unique Colors", &Cars::gRenderUniqueColors);
+			ImGui::SliderFloat("Draw Dist", &Cars::gDrawDist, 50.0f, 1000.0f, "%.0f");
+			if(ImGui::CollapsingHeader("Car Spawn Paths")){
+				if(ImGui::Button("All##cars"))
+					Cars::SetAllPaths(true);
+				ImGui::SameLine();
+				if(ImGui::Button("None##cars"))
+					Cars::SetAllPaths(false);
+				ImGui::SameLine();
+				ImGui::Text("(%d)", Cars::GetNumPaths());
+				int numPaths = Cars::GetNumPaths();
+				for(int i = 0; i < numPaths; i++){
+					CarSpawnPath *path = Cars::GetPath(i);
+					if(path)
+						ImGui::Checkbox(path->iplName, &path->enabled);
+				}
+			}
+			ImGui::Unindent();
+		}
 	}
 
 
