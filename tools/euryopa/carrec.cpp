@@ -133,6 +133,10 @@ Init(void)
 			node.posY = *(float*)(nodeData + 24);
 			node.posZ = *(float*)(nodeData + 28);
 
+			pathData.pathCenter.x += node.posX;
+			pathData.pathCenter.y += node.posY;
+			pathData.pathCenter.z += node.posZ;
+
 			if(j == 0){
 				snprintf(tmp, sizeof(tmp), "Carrec: first node time=%d pos=(%.2f, %.2f, %.2f)",
 					node.time, node.posX, node.posY, node.posZ);
@@ -145,6 +149,9 @@ Init(void)
 				CarrecLog(tmp);
 			}
 		}
+		pathData.pathCenter.x /= numNodes;
+		pathData.pathCenter.y /= numNodes;
+		pathData.pathCenter.z /= numNodes;
 
 		carrecPaths.push_back(pathData);
 		ptr += 32;
@@ -280,17 +287,7 @@ Render(void)
 		                  Carrec::gRenderTextSteering || Carrec::gRenderTextGas || 
 		                  Carrec::gRenderTextBrake || Carrec::gRenderTextHandbrake;
 		if(renderText && !path.nodes.empty()){
-			rw::V3d pathCenter = { 0.0f, 0.0f, 0.0f };
-			for(size_t j = 0; j < path.nodes.size(); j++){
-				pathCenter.x += path.nodes[j].posX;
-				pathCenter.y += path.nodes[j].posY;
-				pathCenter.z += path.nodes[j].posZ;
-			}
-			pathCenter.x /= path.nodes.size();
-			pathCenter.y /= path.nodes.size();
-			pathCenter.z /= path.nodes.size();
-
-			float dist = TheCamera.distanceTo(pathCenter);
+			float dist = TheCamera.distanceTo(path.pathCenter);
 			if(dist < Carrec::gTextDist){
 				for(size_t j = 0; j < path.nodes.size(); j++){
 					CarrecNode &node = path.nodes[j];
@@ -310,25 +307,20 @@ Render(void)
 							char text[256];
 							int offset = 0;
 							if(Carrec::gRenderTextVelocity){
-								snprintf(text + offset, sizeof(text) - offset, "Vel:(%d,%d,%d) ", 
+								offset += snprintf(text + offset, sizeof(text) - offset, "Vel:(%d,%d,%d) ", 
 									node.velocityX, node.velocityY, node.velocityZ);
-								offset = strlen(text);
 							}
 							if(Carrec::gRenderTextTime){
-								snprintf(text + offset, sizeof(text) - offset, "T:%d ", node.time);
-								offset = strlen(text);
+								offset += snprintf(text + offset, sizeof(text) - offset, "T:%d ", node.time);
 							}
 							if(Carrec::gRenderTextSteering){
-								snprintf(text + offset, sizeof(text) - offset, "Steer:%d ", (int)node.steering);
-								offset = strlen(text);
+								offset += snprintf(text + offset, sizeof(text) - offset, "Steer:%d ", (int)node.steering);
 							}
 							if(Carrec::gRenderTextGas){
-								snprintf(text + offset, sizeof(text) - offset, "Gas:%d ", (int)node.gas);
-								offset = strlen(text);
+								offset += snprintf(text + offset, sizeof(text) - offset, "Gas:%d ", (int)node.gas);
 							}
 							if(Carrec::gRenderTextBrake){
-								snprintf(text + offset, sizeof(text) - offset, "Brake:%d ", (int)node.brake);
-								offset = strlen(text);
+								offset += snprintf(text + offset, sizeof(text) - offset, "Brake:%d ", (int)node.brake);
 							}
 							if(Carrec::gRenderTextHandbrake){
 								snprintf(text + offset, sizeof(text) - offset, "HB:%d", (int)node.handbrake);

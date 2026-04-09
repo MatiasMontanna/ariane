@@ -19,6 +19,7 @@ struct CarrecPath {
 	char name[24];
 	std::vector<CarrecNode> nodes;
 	bool enabled;
+	rw::V3d pathCenter;
 };
 
 namespace Carrec {
