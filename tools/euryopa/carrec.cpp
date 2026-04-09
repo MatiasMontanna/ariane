@@ -297,11 +297,12 @@ Render(void)
 					if(node.posX == 0.0f && node.posY == 0.0f && node.posZ == 0.0f)
 						continue;
 
-					float nodeDist = TheCamera.distanceTo(node.posX, node.posY, node.posZ);
+					rw::V3d nodePos = { node.posX, node.posY, node.posZ };
+					float nodeDist = TheCamera.distanceTo(nodePos);
 					if(nodeDist > Carrec::gTextDist)
 						continue;
 
-					rw::V3d worldPos = { node.posX, node.posY, node.posZ };
+					rw::V3d worldPos = nodePos;
 					rw::V3d screenPos;
 					float w, h;
 					if(Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)){
