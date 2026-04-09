@@ -1423,7 +1423,6 @@ LoadGame(void)
 
 	SAPaths::Reset();
 	Carrec::Init();
-	Cars::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -1516,8 +1515,6 @@ LoadGame(void)
 		InsertInstIntoSectors(inst);
 		instCount++;
 	}
-
-	Cars::LoadCarsData();
 
 	// hide the islands
 	ObjectDef *obj;

@@ -122,11 +122,14 @@ LoadCarsData(void)
 void
 Render(void)
 {
-	if(carSpawnPaths.empty())
-		return;
-
 	if(!Cars::gRenderCars)
 		return;
+
+	if(carSpawnPaths.empty()){
+		LoadCarsData();
+		if(carSpawnPaths.empty())
+			return;
+	}
 
 	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
 	rw::RGBA defaultCol = { 255, 165, 0, alpha };
