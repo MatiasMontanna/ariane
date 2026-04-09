@@ -1423,6 +1423,7 @@ LoadGame(void)
 
 	SAPaths::Reset();
 	Carrec::Init();
+	Cars::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){

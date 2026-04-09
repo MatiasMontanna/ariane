@@ -30,6 +30,11 @@ float Cars::gDrawDist = 300.0f;
 namespace Cars {
 
 void
+Init(void)
+{
+}
+
+void
 LoadCarsData(void)
 {
 	CarsLog("Cars: Loading car spawn data (game version: %d)\n", gameversion);
@@ -112,12 +117,6 @@ LoadCarsData(void)
 	}
 
 	CarsLog("Cars: loaded %d IPLs with car spawns (total ipl=%d, imgidx=%d, bnry=%d)\n", hasCars, iplCount, withImageIndex, bnryCount);
-}
-
-void
-Init(void)
-{
-	LoadCarsData();
 }
 
 void
