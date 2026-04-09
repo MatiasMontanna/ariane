@@ -3356,6 +3356,7 @@ uiView(void)
 			ImGui::Checkbox("Brake##carrecbrake", &Carrec::gRenderTextBrake);
 			ImGui::SameLine();
 			ImGui::Checkbox("Handbrake##carreachb", &Carrec::gRenderTextHandbrake);
+			ImGui::SliderFloat("Text Dist", &Carrec::gTextDist, 10.0f, 500.0f, "%.0f");
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);

@@ -39,6 +39,7 @@ extern bool gRenderTextSteering;
 extern bool gRenderTextGas;
 extern bool gRenderTextBrake;
 extern bool gRenderTextHandbrake;
+extern float gTextDist;
 int GetNumPaths(void);
 CarrecPath *GetPath(int index);
 void SetAllPaths(bool enabled);
