@@ -3344,6 +3344,18 @@ uiView(void)
 			ImGui::SetItemTooltip("Render each .rrr file with a different color");
 			ImGui::Checkbox("Labels", &Carrec::gRenderLabels);
 			ImGui::SetItemTooltip("Show .rrr filename at first position");
+			ImGui::SeparatorText("Text Info");
+			ImGui::Checkbox("Velocity", &Carrec::gRenderTextVelocity);
+			ImGui::SameLine();
+			ImGui::Checkbox("Time", &Carrec::gRenderTextTime);
+			ImGui::SameLine();
+			ImGui::Checkbox("Steering", &Carrec::gRenderTextSteering);
+			ImGui::SameLine();
+			ImGui::Checkbox("Gas", &Carrec::gRenderTextGas);
+			ImGui::SameLine();
+			ImGui::Checkbox("Brake", &Carrec::gRenderTextBrake);
+			ImGui::SameLine();
+			ImGui::Checkbox("Handbrake", &Carrec::gRenderTextHandbrake);
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);

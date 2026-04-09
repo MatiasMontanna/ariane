@@ -13,6 +13,12 @@ bool Carrec::gRenderSteering = false;
 bool Carrec::gRenderLastNode = true;
 bool Carrec::gRenderUniqueColors = false;
 bool Carrec::gRenderLabels = false;
+bool Carrec::gRenderTextVelocity = false;
+bool Carrec::gRenderTextTime = false;
+bool Carrec::gRenderTextSteering = false;
+bool Carrec::gRenderTextGas = false;
+bool Carrec::gRenderTextBrake = false;
+bool Carrec::gRenderTextHandbrake = false;
 
 static void
 CarrecLog(const char *msg)
@@ -264,6 +270,61 @@ Render(void)
 						ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 						drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, label);
 						drawList->AddText(font, fontSize, ImVec2(x, y), labelCol, label);
+					}
+				}
+			}
+		}
+
+		bool renderText = Carrec::gRenderTextVelocity || Carrec::gRenderTextTime || 
+		                  Carrec::gRenderTextSteering || Carrec::gRenderTextGas || 
+		                  Carrec::gRenderTextBrake || Carrec::gRenderTextHandbrake;
+		if(renderText && !path.nodes.empty()){
+			for(size_t j = 0; j < path.nodes.size(); j++){
+				CarrecNode &node = path.nodes[j];
+				if(node.posX == 0.0f && node.posY == 0.0f && node.posZ == 0.0f)
+					continue;
+
+				rw::V3d worldPos = { node.posX, node.posY, node.posZ };
+				rw::V3d screenPos;
+				float w, h;
+				if(Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)){
+					if(screenPos.z > 0.0f && screenPos.z < gTextFarClip){
+						char text[256];
+						int offset = 0;
+						if(Carrec::gRenderTextVelocity){
+							snprintf(text + offset, sizeof(text) - offset, "Vel:(%d,%d,%d) ", 
+								node.velocityX, node.velocityY, node.velocityY);
+							offset = strlen(text);
+						}
+						if(Carrec::gRenderTextTime){
+							snprintf(text + offset, sizeof(text) - offset, "T:%d ", node.time);
+							offset = strlen(text);
+						}
+						if(Carrec::gRenderTextSteering){
+							snprintf(text + offset, sizeof(text) - offset, "Steer:%d ", node.steering);
+							offset = strlen(text);
+						}
+						if(Carrec::gRenderTextGas){
+							snprintf(text + offset, sizeof(text) - offset, "Gas:%d ", node.gas);
+							offset = strlen(text);
+						}
+						if(Carrec::gRenderTextBrake){
+							snprintf(text + offset, sizeof(text) - offset, "Brake:%d ", node.brake);
+							offset = strlen(text);
+						}
+						if(Carrec::gRenderTextHandbrake){
+							snprintf(text + offset, sizeof(text) - offset, "HB:%d", node.handbrake);
+						}
+
+						ImFont* font = ImGui::GetFont();
+						float fontSize = ImGui::GetFontSize();
+						ImVec2 textSize = ImGui::CalcTextSize(text);
+						float x = screenPos.x - textSize.x * 0.5f;
+						float y = screenPos.y + 10.0f;
+						ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+						ImU32 textCol = IM_COL32(255, 255, 255, 255);
+						drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, text);
+						drawList->AddText(font, fontSize, ImVec2(x, y), textCol, text);
 					}
 				}
 			}
