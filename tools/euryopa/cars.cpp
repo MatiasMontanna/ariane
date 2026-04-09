@@ -1,20 +1,32 @@
 #include "euryopa.h"
 #include "cars.h"
+#include <stdio.h>
 
 static std::vector<CarSpawnPath> carSpawnPaths;
 
-bool Cars::gRenderCars = false;
-bool Cars::gRenderAsLines = false;
-bool Cars::gRenderAsCubes = true;
-bool Cars::gRenderUniqueColors = false;
-float Cars::gDrawDist = 300.0f;
+static FILE *carsLogFile = nil;
+
+static void
+CarsLog(const char *fmt, ...)
+{
+	if(carsLogFile == nil){
+		carsLogFile = fopen("cars_debug.txt", "w");
+		if(carsLogFile == nil)
+			return;
+	}
+	va_list ap;
+	va_start(ap, fmt);
+	vfprintf(carsLogFile, fmt, ap);
+	fflush(carsLogFile);
+	va_end(ap);
+}
 
 namespace Cars {
 
 void
 Init(void)
 {
-	log("Cars: Initializing car spawn point viewer (game version: %d)\n", gameversion);
+	CarsLog("Cars: Initializing car spawn point viewer (game version: %d)\n", gameversion);
 
 	int iplCount = 0;
 	int withImageIndex = 0;
@@ -45,7 +57,7 @@ Init(void)
 		int32 numCars = *(int32*)(buffer + 0x14);
 		int32 carsOffset = *(int32*)(buffer + 0x3C);
 		int32 expectedCarsOffset = 0x40 + (numInsts * 40);
-		log("Cars: IPL %s: numInsts=%d, numCars=%d, carsOffset=0x%X, expected=0x%X, fileSize=%d\n", 
+		CarsLog("Cars: IPL %s: numInsts=%d, numCars=%d, carsOffset=0x%X, expected=0x%X, fileSize=%d\n", 
 			ipl->name, numInsts, numCars, carsOffset, expectedCarsOffset, size);
 
 		if(numCars <= 0){
@@ -53,10 +65,10 @@ Init(void)
 			continue;
 		}
 
-		log("Cars: IPL %s cars offset = 0x%X (%d), total file size = %d\n", ipl->name, carsOffset, carsOffset, size);
+		CarsLog("Cars: IPL %s cars offset = 0x%X (%d), total file size = %d\n", ipl->name, carsOffset, carsOffset, size);
 
 		if(carsOffset <= 0 || carsOffset + numCars * 48 > size){
-			log("Cars: IPL %s - invalid cars data (offset %d + %d bytes > size %d)\n", 
+			CarsLog("Cars: IPL %s - invalid cars data (offset %d + %d bytes > size %d)\n", 
 				ipl->name, carsOffset, numCars * 48, size);
 			free(buffer);
 			continue;
@@ -89,11 +101,11 @@ Init(void)
 		}
 
 		carSpawnPaths.push_back(path);
-		log("Cars: loaded %d car spawns from %s\n", numCars, ipl->name);
+		CarsLog("Cars: loaded %d car spawns from %s\n", numCars, ipl->name);
 		free(buffer);
 	}
 
-	log("Cars: loaded %d IPLs with car spawns (total ipl=%d, imgidx=%d, bnry=%d)\n", hasCars, iplCount, withImageIndex, bnryCount);
+	CarsLog("Cars: loaded %d IPLs with car spawns (total ipl=%d, imgidx=%d, bnry=%d)\n", hasCars, iplCount, withImageIndex, bnryCount);
 }
 
 void
