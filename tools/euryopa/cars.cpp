@@ -11,35 +11,59 @@ float Cars::gDrawDist = 300.0f;
 
 namespace Cars {
 
+extern int gameversion;
+#define GAME_III 1
+#define GAME_VC 2
+#define GAME_SA 3
+
 void
 Init(void)
 {
-	log("Cars: Initializing car spawn point viewer\n");
+	log("Cars: Initializing car spawn point viewer (game version: %d)\n", gameversion);
+
+	int iplCount = 0;
+	int withImageIndex = 0;
+	int bnryCount = 0;
+	int hasCars = 0;
 
 	for(int i = 0; i < NUMIPLS; i++){
 		IplDef *ipl = GetIplDef(i);
-		if(ipl == nil || ipl->imageIndex < 0)
+		if(ipl == nil)
 			continue;
+		iplCount++;
+		if(ipl->imageIndex < 0)
+			continue;
+		withImageIndex++;
 
 		int size;
 		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
 		if(buffer == nil)
 			continue;
 
-		if(*(uint32*)buffer != 0x79726E62)
+		if(*(uint32*)buffer != 0x79726E62){
+			free(buffer);
 			continue;
+		}
+		bnryCount++;
 
 		int32 numCars = *(int32*)(buffer + 0x14);
+		log("Cars: IPL %s has %d cars (offset 0x14 = %d), size=%d\n", ipl->name, numCars, *(int32*)(buffer+0x14), size);
+
 		if(numCars <= 0){
 			free(buffer);
 			continue;
 		}
 
 		int32 carsOffset = *(int32*)(buffer + 0x3C);
-		if(carsOffset <= 0){
+		log("Cars: IPL %s cars offset = 0x%X (%d), total file size = %d\n", ipl->name, carsOffset, carsOffset, size);
+
+		if(carsOffset <= 0 || carsOffset + numCars * 48 > size){
+			log("Cars: IPL %s - invalid cars data (offset %d + %d bytes > size %d)\n", 
+				ipl->name, carsOffset, numCars * 48, size);
 			free(buffer);
 			continue;
 		}
+		hasCars++;
 
 		CarSpawnPath path;
 		strncpy(path.iplName, ipl->name, sizeof(path.iplName) - 1);
@@ -71,7 +95,7 @@ Init(void)
 		free(buffer);
 	}
 
-	log("Cars: loaded %d IPLs with car spawns\n", (int)carSpawnPaths.size());
+	log("Cars: loaded %d IPLs with car spawns (total ipl=%d, imgidx=%d, bnry=%d)\n", hasCars, iplCount, withImageIndex, bnryCount);
 }
 
 void
