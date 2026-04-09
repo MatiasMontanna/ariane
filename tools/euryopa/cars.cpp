@@ -21,6 +21,12 @@ CarsLog(const char *fmt, ...)
 	va_end(ap);
 }
 
+bool Cars::gRenderCars = false;
+bool Cars::gRenderAsLines = false;
+bool Cars::gRenderAsCubes = true;
+bool Cars::gRenderUniqueColors = false;
+float Cars::gDrawDist = 300.0f;
+
 namespace Cars {
 
 void
