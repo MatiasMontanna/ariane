@@ -47,7 +47,15 @@ LoadCarsData(void)
 
 	CarsLog("Cars: NUMIPLS = %d\n", NUMIPLS);
 
+	int processed = 0;
+	int maxToProcess = 20;
+
 	for(int i = 0; i < NUMIPLS; i++){
+		if(processed >= maxToProcess){
+			CarsLog("Cars: max processed reached (%d), stopping\n", maxToProcess);
+			break;
+		}
+
 		IplDef *ipl = GetIplDef(i);
 		CarsLog("Cars: checking ipl %d, ptr=%p\n", i, ipl);
 		if(ipl == nil){
@@ -55,16 +63,34 @@ LoadCarsData(void)
 			continue;
 		}
 		iplCount++;
+
 		CarsLog("Cars: ipl %d name='%.24s' imageIndex=%d\n", i, ipl->name, ipl->imageIndex);
+		fflush(carsLogFile);
 
 		if(ipl->imageIndex < 0)
 			continue;
+		if(ipl->imageIndex > 2000){
+			CarsLog("Cars: imageIndex too large (%d), skipping ipl %d\n", ipl->imageIndex, i);
+			continue;
+		}
+		if(processed >= maxToProcess){
+			CarsLog("Cars: max processed reached (%d), stopping\n", maxToProcess);
+			break;
+		}
+
+		processed++;
+		CarsLog("Cars: processing IPL %d (processed=%d/%d)\n", i, processed, maxToProcess);
+		fflush(carsLogFile);
 		withImageIndex++;
 
-		CarsLog("Cars: calling ReadFileFromImage for ipl %d\n", i);
-		int size;
-		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
+		CarsLog("Cars: calling ReadFileFromImage for ipl %d (imageIndex=%d)\n", i, ipl->imageIndex);
+		fflush(carsLogFile);
+		int size = 0;
+		uint8 *buffer = nil;
+		buffer = ReadFileFromImage(ipl->imageIndex, &size);
+		fflush(carsLogFile);
 		CarsLog("Cars: ReadFileFromImage returned buffer=%p, size=%d\n", buffer, size);
+		fflush(carsLogFile);
 		if(buffer == nil){
 			CarsLog("Cars: buffer is nil, skipping ipl %d\n", i);
 			continue;
