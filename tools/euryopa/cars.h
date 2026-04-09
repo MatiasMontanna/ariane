@@ -25,6 +25,7 @@ struct CarSpawnPath {
 
 namespace Cars {
 void Init(void);
+void LoadCarsData(void);
 void Render(void);
 extern bool gRenderCars;
 extern bool gRenderAsLines;
