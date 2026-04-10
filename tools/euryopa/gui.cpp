@@ -3367,6 +3367,8 @@ uiView(void)
 			if(gRenderCarSpawns){
 				ImGui::Indent();
 				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
+				ImGui::SameLine();
+				ImGui::Checkbox("Angle", &Cars::gRenderAngle);
 				ImGui::SeparatorText("Properties");
 				ImGui::Checkbox("Vehicle ID", &Cars::gRenderVehicleId);
 				ImGui::SameLine();

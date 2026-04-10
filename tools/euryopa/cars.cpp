@@ -14,6 +14,7 @@ bool Cars::gRenderLockedProb = false;
 bool Cars::gRenderUnknown1 = false;
 bool Cars::gRenderUnknown2 = false;
 bool Cars::gRenderFileName = false;
+bool Cars::gRenderAngle = true;
 
 namespace Cars {
 
@@ -186,6 +187,21 @@ Render(void)
 		RenderLine(v[1], v[5], col, col);
 		RenderLine(v[2], v[6], col, col);
 		RenderLine(v[3], v[7], col, col);
+
+		if(Cars::gRenderAngle){
+			float arrowLength = 3.0f;
+			float arrowSize = 0.8f;
+			float cosA = cosf(car.angle);
+			float sinA = sinf(car.angle);
+			rw::V3d dir = { cosA * arrowLength, sinA * arrowLength, 0.0f };
+			rw::V3d base = { car.x, car.y, car.z + halfZ };
+			rw::V3d tip = { base.x + dir.x, base.y + dir.y, base.z + dir.z };
+			rw::V3d left = { base.x + cosA * arrowSize - sinA * arrowSize, base.y + sinA * arrowSize + cosA * arrowSize, base.z };
+			rw::V3d right = { base.x + cosA * arrowSize + sinA * arrowSize, base.y + sinA * arrowSize - cosA * arrowSize, base.z };
+			RenderLine(base, tip, col, col);
+			RenderLine(tip, left, col, col);
+			RenderLine(tip, right, col, col);
+		}
 
 		if(!Cars::gRenderVehicleId && !Cars::gRenderPrimaryColor && !Cars::gRenderSecondaryColor &&
 		   !Cars::gRenderForceSpawn && !Cars::gRenderAlarmProb && !Cars::gRenderLockedProb &&
