@@ -1,6 +1,5 @@
 #include "euryopa.h"
 #include "carrec.h"
-#include "cars.h"
 #include "modloader.h"
 #include <limits.h>
 #include <algorithm>
