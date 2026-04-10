@@ -4,6 +4,7 @@
 #include <vector>
 
 struct CarSpawn {
+	char iplName[32];
 	float x, y, z;
 	float angle;
 	int32 vehicleId;
@@ -19,6 +20,7 @@ struct CarSpawn {
 namespace Cars {
 void Init(void);
 void Render(void);
+void ExportCSV(void);
 extern bool gRenderAsCubes;
 extern bool gRenderVehicleId;
 extern bool gRenderPrimaryColor;
@@ -28,6 +30,7 @@ extern bool gRenderAlarmProb;
 extern bool gRenderLockedProb;
 extern bool gRenderUnknown1;
 extern bool gRenderUnknown2;
+extern bool gRenderFileName;
 bool HasCarSpawns(void);
 }
 

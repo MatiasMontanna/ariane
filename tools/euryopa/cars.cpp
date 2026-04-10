@@ -13,6 +13,7 @@ bool Cars::gRenderAlarmProb = false;
 bool Cars::gRenderLockedProb = false;
 bool Cars::gRenderUnknown1 = false;
 bool Cars::gRenderUnknown2 = false;
+bool Cars::gRenderFileName = false;
 
 namespace Cars {
 
@@ -96,6 +97,8 @@ Init(void)
 			spawn.lockedProb = *(int32*)(carEntry + 36);
 			spawn.unknown1 = *(int32*)(carEntry + 40);
 			spawn.unknown2 = *(int32*)(carEntry + 44);
+			strncpy(spawn.iplName, filename, sizeof(spawn.iplName) - 1);
+			spawn.iplName[sizeof(spawn.iplName) - 1] = '\0';
 
 			carSpawns.push_back(spawn);
 		}
@@ -112,6 +115,33 @@ bool
 HasCarSpawns(void)
 {
 	return !carSpawns.empty();
+}
+
+void
+ExportCSV(void)
+{
+	if(carSpawns.empty())
+		return;
+
+	FILE *f = fopen("car_spawns_export.csv", "w");
+	if(f == nil){
+		log("Cars: failed to create export file\n");
+		return;
+	}
+
+	fprintf(f, "X,Y,Z,Angle,Object ID,Primary colour,Secondary colour,Force spawn,Alarm probability,Locked probability,Unknown1,Unknown2,File name\n");
+
+	for(size_t i = 0; i < carSpawns.size(); i++){
+		CarSpawn &car = carSpawns[i];
+		fprintf(f, "%.6f,%.6f,%.6f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%s\n",
+			car.x, car.y, car.z, car.angle,
+			car.vehicleId, car.primaryColor, car.secondaryColor,
+			car.forceSpawn, car.alarmProb, car.lockedProb,
+			car.unknown1, car.unknown2, car.iplName);
+	}
+
+	fclose(f);
+	log("Cars: exported %d spawns to car_spawns_export.csv\n", (int)carSpawns.size());
 }
 
 void
@@ -159,7 +189,7 @@ Render(void)
 
 		if(!Cars::gRenderVehicleId && !Cars::gRenderPrimaryColor && !Cars::gRenderSecondaryColor &&
 		   !Cars::gRenderForceSpawn && !Cars::gRenderAlarmProb && !Cars::gRenderLockedProb &&
-		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2)
+		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2 && !Cars::gRenderFileName)
 			continue;
 
 		rw::V3d worldPos = { car.x, car.y, car.z + halfZ * 2.5f };
@@ -216,6 +246,10 @@ Render(void)
 					char tmp[32];
 					snprintf(tmp, sizeof(tmp), "%d ", car.unknown2);
 					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderFileName){
+					strncat(label, "F:", sizeof(label) - strlen(label) - 1);
+					strncat(label, car.iplName, sizeof(label) - strlen(label) - 1);
 				}
 
 				if(label[0] != '\0'){

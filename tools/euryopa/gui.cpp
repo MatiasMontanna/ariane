@@ -3381,6 +3381,10 @@ uiView(void)
 				ImGui::Checkbox("Unknown 1", &Cars::gRenderUnknown1);
 				ImGui::SameLine();
 				ImGui::Checkbox("Unknown 2", &Cars::gRenderUnknown2);
+				ImGui::Checkbox("File Name", &Cars::gRenderFileName);
+				if(ImGui::Button("Export CSV")){
+					Cars::ExportCSV();
+				}
 				ImGui::Unindent();
 			}
 		}
