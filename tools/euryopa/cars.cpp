@@ -14,7 +14,7 @@ Init(void)
 	carSpawns.clear();
 
 	char path[256];
-	snprintf(path, sizeof(path), "data/binary/ipl");
+	snprintf(path, sizeof(path), "data/binary/ipl/*");
 
 	log("Cars: searching for .ipl files in %s\n", path);
 
