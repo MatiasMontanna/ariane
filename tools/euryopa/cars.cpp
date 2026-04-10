@@ -1,5 +1,6 @@
 #include "euryopa.h"
 #include "cars.h"
+#include "modloader.h"
 
 static std::vector<CarSpawn> carSpawns;
 
