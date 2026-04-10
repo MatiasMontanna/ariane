@@ -1984,8 +1984,6 @@ Draw(void)
 		SAPaths::RenderAreaGrid();
 	if(gRenderCarrecs)
 		Carrec::Render();
-	if(Cars::gRenderCars)
-		Cars::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)
