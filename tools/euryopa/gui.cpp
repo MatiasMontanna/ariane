@@ -3361,6 +3361,15 @@ uiView(void)
 			}
 			ImGui::Unindent();
 		}
+		if(Cars::HasCarSpawns()){
+			ImGui::SeparatorText("Car Spawns");
+			ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
+			if(gRenderCarSpawns){
+				ImGui::Indent();
+				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
+				ImGui::Unindent();
+			}
+		}
 	}
 
 
