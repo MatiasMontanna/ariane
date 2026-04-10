@@ -1,20 +1,5 @@
 #include "euryopa.h"
 #include "cars.h"
-#include "cdimage.h"
-
-struct CarSpawn {
-	char iplName[32];
-	float x, y, z;
-	float angle;
-	int32 vehicleId;
-	int32 primaryColor;
-	int32 secondaryColor;
-	int32 forceSpawn;
-	int32 alarmProb;
-	int32 lockedProb;
-	int32 unknown1;
-	int32 unknown2;
-};
 
 static std::vector<CarSpawn> carSpawns;
 
@@ -27,26 +12,15 @@ Init(void)
 {
 	log("Cars: Starting...\n");
 
-	if(!cdImages){
-		log("Cars: cdImages not initialized\n");
-		return;
-	}
+	carSpawns.clear();
 
-	CdImage *gta3img = &cdImages[0];
-	if(!gta3img || !gta3img->directory){
-		log("Cars: gta3.img not loaded\n");
-		return;
-	}
-
-	log("Cars: scanning gta3.img (%d entries)\n", gta3img->directorySize);
-
-	for(int i = 0; i < gta3img->directorySize; i++){
-		DirEntry *de = &gta3img->directory[i];
-		if(de->filetype != FILE_IPL)
+	for(int slot = 0; slot < NUMIPLS; slot++){
+		IplDef *ipl = GetIplDef(slot);
+		if(ipl->imageIndex < 0)
 			continue;
 
 		int size = 0;
-		uint8 *buffer = ReadFileFromImage(i, &size);
+		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
 		if(!buffer || size < 0x4C){
 			if(buffer) free(buffer);
 			continue;
@@ -70,11 +44,11 @@ Init(void)
 			continue;
 		}
 
-		log("Cars: %s has %d cars\n", de->name, numCars);
+		log("Cars: %s has %d cars\n", ipl->name, numCars);
 
 		uint8 *carsData = buffer + carsOffset;
-		for(int j = 0; j < numCars; j++){
-			uint8 *carEntry = carsData + j * 48;
+		for(int i = 0; i < numCars; i++){
+			uint8 *carEntry = carsData + i * 48;
 
 			CarSpawn spawn;
 			spawn.x = *(float*)(carEntry + 0);
@@ -89,7 +63,7 @@ Init(void)
 			spawn.lockedProb = *(int32*)(carEntry + 36);
 			spawn.unknown1 = *(int32*)(carEntry + 40);
 			spawn.unknown2 = *(int32*)(carEntry + 44);
-			strncpy(spawn.iplName, de->name, sizeof(spawn.iplName) - 1);
+			strncpy(spawn.iplName, ipl->name, sizeof(spawn.iplName) - 1);
 			spawn.iplName[sizeof(spawn.iplName) - 1] = '\0';
 
 			carSpawns.push_back(spawn);

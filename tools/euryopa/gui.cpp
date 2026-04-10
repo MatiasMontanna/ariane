@@ -464,8 +464,6 @@ uiNotificationSettings(void)
 			ImGui::Checkbox(toastCategoryNames[i], &toastCategoryEnabled[i]);
 			ImGui::Unindent();
 		}
-		ImGui::SeparatorText("Cars");
-		ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
 	}
 	if(gameversion == GAME_SA)
 		ImGui::Checkbox("Play Animations", &gPlayAnimations);
