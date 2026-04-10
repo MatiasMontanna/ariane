@@ -462,8 +462,7 @@ uiNotificationSettings(void)
 		ImGui::Indent();
 		for(int i = 0; i < TOAST_NUM_CATEGORIES; i++)
 			ImGui::Checkbox(toastCategoryNames[i], &toastCategoryEnabled[i]);
-			ImGui::Unindent();
-		}
+		ImGui::Unindent();
 	}
 	if(gameversion == GAME_SA)
 		ImGui::Checkbox("Play Animations", &gPlayAnimations);
