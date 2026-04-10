@@ -94,16 +94,6 @@ log(const char *fmt, ...)
 	vfprintf(stdout, fmt, ap);
 	addToLogWindow(fmt, ap);
 	fflush(stdout);
-
-	static FILE *logfile = nil;
-	if(logfile == nil){
-		logfile = fopen("ariane.log", "w");
-	}
-	if(logfile){
-		vfprintf(logfile, fmt, ap);
-		fflush(logfile);
-	}
-
 	va_end(ap);
 }
 

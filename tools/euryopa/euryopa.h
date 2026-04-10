@@ -30,7 +30,6 @@ struct ObjectInst;
 
 #include "sapaths.h"
 #include "carrec.h"
-#include "cars.h"
 
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
@@ -138,7 +137,6 @@ extern bool gRenderCollisionFromDff;
 extern bool gRenderCollisionBoth;
 extern float gCollisionDffWireframeDist;
 extern bool gRenderCarrecs;
-extern bool gRenderCarSpawns;
 extern bool gRenderZones;
 extern bool gRenderMapZones;
 extern bool gRenderNavigZones;
@@ -524,7 +522,6 @@ uint8 *ReadFileFromImage(int i, int *size);
 GameFile *GetGameFileFromImage(int i);
 const char *GetCdImageLogicalName(int i);
 const char *GetCdImageSourcePath(int i);
-void GetCdImageInfo(int i, void *info);
 bool WriteFileToImage(int i, uint8 *data, int size);
 bool BuildModloaderImageEntryExportPath(int i, char *dst, size_t size);
 void RequestObject(int id);

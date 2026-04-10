@@ -3376,13 +3376,6 @@ uiView(void)
 			}
 		}
 	}
-	ImGui::SeparatorText("Cars");
-	ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
-	if(gRenderCarSpawns){
-		ImGui::Indent();
-		ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
-		ImGui::Unindent();
-	}
 	if(gameversion == GAME_SA)
 		ImGui::Checkbox("Play Animations", &gPlayAnimations);
 

@@ -65,7 +65,6 @@ bool gRenderCollisionFromDff;
 bool gRenderCollisionBoth;
 float gCollisionDffWireframeDist = 100.0f;
 bool gRenderCarrecs;
-bool gRenderCarSpawns;
 bool gRenderZones;
 bool gRenderMapZones;
 bool gRenderNavigZones;
@@ -1506,7 +1505,6 @@ LoadGame(void)
 	LoadFavourites();
 	// InitPreviewRenderer called lazily on first use
 	InitSectors();
-	Cars::Init();
 
 	CPtrNode *p;
 	ObjectInst *inst;
@@ -1985,8 +1983,6 @@ Draw(void)
 		SAPaths::RenderAreaGrid();
 	if(gRenderCarrecs)
 		Carrec::Render();
-	if(gRenderCarSpawns)
-		Cars::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)
