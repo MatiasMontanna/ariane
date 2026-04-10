@@ -69,8 +69,8 @@ LoadCarsData(void)
 
 		if(ipl->imageIndex < 0)
 			continue;
-		if(ipl->imageIndex > 2000){
-			CarsLog("Cars: imageIndex too large (%d), skipping ipl %d\n", ipl->imageIndex, i);
+		if(ipl->imageIndex > 500){
+			CarsLog("Cars: imageIndex %d too high, skipping ipl %d\n", ipl->imageIndex, i);
 			continue;
 		}
 		if(processed >= maxToProcess){
@@ -85,9 +85,14 @@ LoadCarsData(void)
 
 		CarsLog("Cars: calling ReadFileFromImage for ipl %d (imageIndex=%d)\n", i, ipl->imageIndex);
 		fflush(carsLogFile);
+		CarsLog("Cars: about to call ReadFileFromImage...\n");
+		fflush(carsLogFile);
 		int size = 0;
 		uint8 *buffer = nil;
+		CarsLog("Cars: before ReadFileFromImage call - ipl=%d, imageIndex=%d\n", i, ipl->imageIndex);
+		fflush(carsLogFile);
 		buffer = ReadFileFromImage(ipl->imageIndex, &size);
+		CarsLog("Cars: after ReadFileFromImage call\n");
 		fflush(carsLogFile);
 		CarsLog("Cars: ReadFileFromImage returned buffer=%p, size=%d\n", buffer, size);
 		fflush(carsLogFile);
