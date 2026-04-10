@@ -11,10 +11,18 @@ void
 Init(void)
 {
 	log("Cars: Starting...\n");
+	fflush(stdout);
 
 	carSpawns.clear();
+	log("Cars: cleared vector\n");
+	fflush(stdout);
+
+	log("Cars: iterating IPLs (NUMIPLS=%d)\n", NUMIPLS);
+	fflush(stdout);
 
 	for(int slot = 0; slot < NUMIPLS; slot++){
+		log("Cars: checking slot %d\n", slot);
+		fflush(stdout);
 		IplDef *ipl = GetIplDef(slot);
 		if(ipl->imageIndex < 0)
 			continue;
