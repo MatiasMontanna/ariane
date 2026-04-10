@@ -15,6 +15,7 @@ bool Cars::gRenderUnknown1 = false;
 bool Cars::gRenderUnknown2 = false;
 bool Cars::gRenderFileName = false;
 bool Cars::gRenderAngle = true;
+bool Cars::gConvertAngleToRH = false;
 
 namespace Cars {
 
@@ -191,8 +192,9 @@ Render(void)
 		if(Cars::gRenderAngle){
 			float arrowLength = 3.0f;
 			float arrowSize = 0.8f;
-			float cosA = cosf(car.angle);
-			float sinA = sinf(car.angle);
+			float angle = Cars::gConvertAngleToRH ? -car.angle : car.angle;
+			float cosA = cosf(angle);
+			float sinA = sinf(angle);
 			rw::V3d dir = { cosA * arrowLength, sinA * arrowLength, 0.0f };
 			rw::V3d base = { car.x, car.y, car.z + halfZ };
 			rw::V3d tip = { base.x + dir.x, base.y + dir.y, base.z + dir.z };
