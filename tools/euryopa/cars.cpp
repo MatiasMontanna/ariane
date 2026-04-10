@@ -35,9 +35,17 @@ Init(void)
 {
 }
 
+static bool carsDataLoaded = false;
+
 void
 LoadCarsData(void)
 {
+	if(carsDataLoaded){
+		CarsLog("Cars: data already loaded, skipping\n");
+		return;
+	}
+	carsDataLoaded = true;
+
 	CarsLog("Cars: Loading car spawn data (game version: %d)\n", gameversion);
 
 	int iplCount = 0;
@@ -48,13 +56,13 @@ LoadCarsData(void)
 	CarsLog("Cars: NUMIPLS = %d\n", NUMIPLS);
 
 	int processed = 0;
-	int maxToProcess = 20;
+	//int maxToProcess = 20;
 
 	for(int i = 0; i < NUMIPLS; i++){
-		if(processed >= maxToProcess){
-			CarsLog("Cars: max processed reached (%d), stopping\n", maxToProcess);
-			break;
-		}
+		//if(processed >= maxToProcess){
+		//	CarsLog("Cars: max processed reached (%d), stopping\n", maxToProcess);
+		//	break;
+		//}
 
 		IplDef *ipl = GetIplDef(i);
 		CarsLog("Cars: checking ipl %d, ptr=%p\n", i, ipl);
@@ -69,17 +77,13 @@ LoadCarsData(void)
 
 		if(ipl->imageIndex < 0)
 			continue;
-		if(ipl->imageIndex > 500){
+		if(ipl->imageIndex > 20000){
 			CarsLog("Cars: imageIndex %d too high, skipping ipl %d\n", ipl->imageIndex, i);
 			continue;
 		}
-		if(processed >= maxToProcess){
-			CarsLog("Cars: max processed reached (%d), stopping\n", maxToProcess);
-			break;
-		}
 
 		processed++;
-		CarsLog("Cars: processing IPL %d (processed=%d/%d)\n", i, processed, maxToProcess);
+		CarsLog("Cars: processing IPL %d (processed=%d)\n", i, processed);
 		fflush(carsLogFile);
 		withImageIndex++;
 
