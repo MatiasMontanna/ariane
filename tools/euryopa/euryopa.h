@@ -30,7 +30,6 @@ struct ObjectInst;
 
 #include "sapaths.h"
 #include "carrec.h"
-#include "cars.h"
 
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
@@ -138,7 +137,6 @@ extern bool gRenderCollisionFromDff;
 extern bool gRenderCollisionBoth;
 extern float gCollisionDffWireframeDist;
 extern bool gRenderCarrecs;
-extern bool gRenderCarSpawns;
 extern bool gRenderZones;
 extern bool gRenderMapZones;
 extern bool gRenderNavigZones;

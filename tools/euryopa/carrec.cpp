@@ -13,13 +13,6 @@ bool Carrec::gRenderSteering = false;
 bool Carrec::gRenderLastNode = true;
 bool Carrec::gRenderUniqueColors = false;
 bool Carrec::gRenderLabels = false;
-bool Carrec::gRenderTextVelocity = false;
-bool Carrec::gRenderTextTime = false;
-bool Carrec::gRenderTextSteering = false;
-bool Carrec::gRenderTextGas = false;
-bool Carrec::gRenderTextBrake = false;
-bool Carrec::gRenderTextHandbrake = false;
-float Carrec::gTextDist = 100.0f;
 
 static void
 CarrecLog(const char *msg)
@@ -133,10 +126,6 @@ Init(void)
 			node.posY = *(float*)(nodeData + 24);
 			node.posZ = *(float*)(nodeData + 28);
 
-			pathData.pathCenter.x += node.posX;
-			pathData.pathCenter.y += node.posY;
-			pathData.pathCenter.z += node.posZ;
-
 			if(j == 0){
 				snprintf(tmp, sizeof(tmp), "Carrec: first node time=%d pos=(%.2f, %.2f, %.2f)",
 					node.time, node.posX, node.posY, node.posZ);
@@ -149,9 +138,6 @@ Init(void)
 				CarrecLog(tmp);
 			}
 		}
-		pathData.pathCenter.x /= numNodes;
-		pathData.pathCenter.y /= numNodes;
-		pathData.pathCenter.z /= numNodes;
 
 		carrecPaths.push_back(pathData);
 		ptr += 32;
@@ -278,64 +264,6 @@ Render(void)
 						ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 						drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, label);
 						drawList->AddText(font, fontSize, ImVec2(x, y), labelCol, label);
-					}
-				}
-			}
-		}
-
-		bool renderText = Carrec::gRenderTextVelocity || Carrec::gRenderTextTime || 
-		                  Carrec::gRenderTextSteering || Carrec::gRenderTextGas || 
-		                  Carrec::gRenderTextBrake || Carrec::gRenderTextHandbrake;
-		if(renderText && !path.nodes.empty()){
-			float dist = TheCamera.distanceTo(path.pathCenter);
-			if(dist < Carrec::gTextDist){
-				for(size_t j = 0; j < path.nodes.size(); j++){
-					CarrecNode &node = path.nodes[j];
-					if(node.posX == 0.0f && node.posY == 0.0f && node.posZ == 0.0f)
-						continue;
-
-					rw::V3d nodePos = { node.posX, node.posY, node.posZ };
-					float nodeDist = TheCamera.distanceTo(nodePos);
-					if(nodeDist > Carrec::gTextDist)
-						continue;
-
-					rw::V3d worldPos = nodePos;
-					rw::V3d screenPos;
-					float w, h;
-					if(Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)){
-						if(screenPos.z > 0.0f && screenPos.z < gTextFarClip){
-							char text[256];
-							int offset = 0;
-							if(Carrec::gRenderTextVelocity){
-								offset += snprintf(text + offset, sizeof(text) - offset, "Vel:(%d,%d,%d) ", 
-									node.velocityX, node.velocityY, node.velocityZ);
-							}
-							if(Carrec::gRenderTextTime){
-								offset += snprintf(text + offset, sizeof(text) - offset, "T:%d ", node.time);
-							}
-							if(Carrec::gRenderTextSteering){
-								offset += snprintf(text + offset, sizeof(text) - offset, "Steer:%d ", (int)node.steering);
-							}
-							if(Carrec::gRenderTextGas){
-								offset += snprintf(text + offset, sizeof(text) - offset, "Gas:%d ", (int)node.gas);
-							}
-							if(Carrec::gRenderTextBrake){
-								offset += snprintf(text + offset, sizeof(text) - offset, "Brake:%d ", (int)node.brake);
-							}
-							if(Carrec::gRenderTextHandbrake){
-								snprintf(text + offset, sizeof(text) - offset, "HB:%d", (int)node.handbrake);
-							}
-
-							ImFont* font = ImGui::GetFont();
-							float fontSize = ImGui::GetFontSize();
-							ImVec2 textSize = ImGui::CalcTextSize(text);
-							float x = screenPos.x - textSize.x * 0.5f;
-							float y = screenPos.y + 10.0f;
-							ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-							ImU32 textCol = IM_COL32(255, 255, 255, 255);
-							drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, text);
-							drawList->AddText(font, fontSize, ImVec2(x, y), textCol, text);
-						}
 					}
 				}
 			}

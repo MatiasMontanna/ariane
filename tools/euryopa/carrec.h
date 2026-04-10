@@ -19,7 +19,6 @@ struct CarrecPath {
 	char name[24];
 	std::vector<CarrecNode> nodes;
 	bool enabled;
-	rw::V3d pathCenter;
 };
 
 namespace Carrec {
@@ -34,13 +33,6 @@ extern bool gRenderSteering;
 extern bool gRenderLastNode;
 extern bool gRenderUniqueColors;
 extern bool gRenderLabels;
-extern bool gRenderTextVelocity;
-extern bool gRenderTextTime;
-extern bool gRenderTextSteering;
-extern bool gRenderTextGas;
-extern bool gRenderTextBrake;
-extern bool gRenderTextHandbrake;
-extern float gTextDist;
 int GetNumPaths(void);
 CarrecPath *GetPath(int index);
 void SetAllPaths(bool enabled);

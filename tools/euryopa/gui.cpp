@@ -3344,19 +3344,6 @@ uiView(void)
 			ImGui::SetItemTooltip("Render each .rrr file with a different color");
 			ImGui::Checkbox("Labels", &Carrec::gRenderLabels);
 			ImGui::SetItemTooltip("Show .rrr filename at first position");
-			ImGui::SeparatorText("Text Info");
-			ImGui::Checkbox("Velocity##carrecvel", &Carrec::gRenderTextVelocity);
-			ImGui::SameLine();
-			ImGui::Checkbox("Time##carrectime", &Carrec::gRenderTextTime);
-			ImGui::SameLine();
-			ImGui::Checkbox("Steering##carrecsteer", &Carrec::gRenderTextSteering);
-			ImGui::SameLine();
-			ImGui::Checkbox("Gas##carrecgas", &Carrec::gRenderTextGas);
-			ImGui::SameLine();
-			ImGui::Checkbox("Brake##carrecbrake", &Carrec::gRenderTextBrake);
-			ImGui::SameLine();
-			ImGui::Checkbox("Handbrake##carreachb", &Carrec::gRenderTextHandbrake);
-			ImGui::SliderFloat("Text Dist", &Carrec::gTextDist, 10.0f, 500.0f, "%.0f");
 			if(ImGui::CollapsingHeader("Carrec Paths")){
 				if(ImGui::Button("All"))
 					Carrec::SetAllPaths(true);
@@ -3374,9 +3361,9 @@ uiView(void)
 			}
 			ImGui::Unindent();
 		}
-		ImGui::SeparatorText("Cars");
-		ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
 	}
+
+
 	ImGui::Checkbox("Draw Water", &gRenderWater);
 	if(params.water == GAME_SA){
 		ImGui::SameLine();
