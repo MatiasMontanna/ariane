@@ -1422,7 +1422,6 @@ LoadGame(void)
 //	SetCurrentDirectory("C:/Users/aap/games/gtasa");
 
 	SAPaths::Reset();
-	Cars::Init();
 	Carrec::Init();
 	FindVersion();
 	ModloaderInit();
@@ -1507,6 +1506,7 @@ LoadGame(void)
 	LoadFavourites();
 	// InitPreviewRenderer called lazily on first use
 	InitSectors();
+	Cars::Init();
 
 	CPtrNode *p;
 	ObjectInst *inst;
