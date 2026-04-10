@@ -19,36 +19,60 @@ Init(void)
 
 	for(int slot = 0; slot < NUMIPLS; slot++){
 		IplDef *ipl = GetIplDef(slot);
-		if(ipl == nil){
-			log("Cars: slot %d is nil\n", slot);
+		if(ipl == nil)
 			continue;
-		}
-		if(ipl->imageIndex < 0){
+		if(ipl->imageIndex < 0)
+			continue;
+
+		int img = ipl->imageIndex>>24 & 0xFF;
+		int idx = ipl->imageIndex & 0xFFFFFF;
+		log("Cars: IPL %s imageIndex=%d (img=%d idx=%d)\n", ipl->name, ipl->imageIndex, img, idx);
+		fflush(stdout);
+
+		// bounds check - don't crash on invalid imageIndex
+		extern int numCdImages;
+		if(img < 0 || img >= numCdImages || idx < 0){
+			log("Cars: invalid img=%d (numCdImages=%d) or idx=%d, skipping\n", img, numCdImages, idx);
 			continue;
 		}
 
-		log("Cars: reading IPL %s (imageIndex=%d)\n", ipl->name, ipl->imageIndex);
+		// check directory is valid
+		extern void GetCdImageInfo(int img, void *info);
+		struct CdImageInfo { int dirSize; };
+		CdImageInfo cdi;
+		GetCdImageInfo(img, &cdi);
+		if(cdi.dirSize == 0 || idx >= cdi.dirSize){
+			log("Cars: invalid dirSize=%d or idx=%d >= dirSize, skipping\n", cdi.dirSize, idx);
+			continue;
+		}
+
+		log("Cars: calling ReadFileFromImage\n");
+		fflush(stdout);
 
 		int size = 0;
 		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
-		if(!buffer){
-			log("Cars: failed to read IPL %s\n", ipl->name);
-			continue;
-		}
 
-		if(size < 0x4C){
-			log("Cars: IPL %s too small (%d bytes)\n", ipl->name, size);
-			free(buffer);
+		log("Cars: ReadFileFromImage returned buffer=%p size=%d\n", buffer, size);
+		fflush(stdout);
+
+		if(!buffer || size < 0x4C){
+			if(buffer) free(buffer);
 			continue;
 		}
 
 		uint32 magic = *(uint32*)buffer;
+		log("Cars: magic=0x%X\n", magic);
+		fflush(stdout);
+
 		if(magic != 0x79726E62){
 			free(buffer);
 			continue;
 		}
 
 		int32 numCars = *(int32*)(buffer + 0x10);
+		log("Cars: %s has %d cars\n", ipl->name, numCars);
+		fflush(stdout);
+
 		if(numCars <= 0){
 			free(buffer);
 			continue;
@@ -60,7 +84,8 @@ Init(void)
 			continue;
 		}
 
-		log("Cars: %s has %d cars\n", ipl->name, numCars);
+		log("Cars: parsing %d cars from %s\n", numCars, ipl->name);
+		fflush(stdout);
 
 		uint8 *carsData = buffer + carsOffset;
 		for(int i = 0; i < numCars; i++){
@@ -87,6 +112,7 @@ Init(void)
 	}
 
 	log("Cars: loaded %d spawns\n", (int)carSpawns.size());
+	fflush(stdout);
 }
 
 void

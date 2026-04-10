@@ -792,6 +792,21 @@ GetCdImageSourcePath(int i)
 	return cdImages[img].sourcePath;
 }
 
+void
+GetCdImageInfo(int i, void *info)
+{
+	struct Out { int dirSize; int dirLimit; };
+	Out *out = (Out*)info;
+	int img = i>>24 & 0xFF;
+	if(img >= 0 && img < numCdImages){
+		out->dirSize = cdImages[img].directorySize;
+		out->dirLimit = cdImages[img].directoryLimit;
+	}else{
+		out->dirSize = 0;
+		out->dirLimit = 0;
+	}
+}
+
 uint8*
 ReadFileFromImage(int i, int *size)
 {
