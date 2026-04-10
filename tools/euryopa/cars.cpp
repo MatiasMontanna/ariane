@@ -61,8 +61,6 @@ Init(void)
 			spawn.forceSpawn = *(int32*)(carEntry + 28);
 			spawn.alarmProb = *(int32*)(carEntry + 32);
 			spawn.lockedProb = *(int32*)(carEntry + 36);
-			spawn.unknown1 = *(int32*)(carEntry + 40);
-			spawn.unknown2 = *(int32*)(carEntry + 44);
 			strncpy(spawn.iplName, ipl->name, sizeof(spawn.iplName) - 1);
 			spawn.iplName[sizeof(spawn.iplName) - 1] = '\0';
 

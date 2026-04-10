@@ -13,8 +13,6 @@ struct CarSpawn {
 	int32 forceSpawn;
 	int32 alarmProb;
 	int32 lockedProb;
-	int32 unknown1;
-	int32 unknown2;
 };
 
 namespace Cars {
