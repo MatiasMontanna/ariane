@@ -21,8 +21,14 @@ Init(void)
 
 		int size = 0;
 		uint8 *buffer = ReadFileFromImage(ipl->imageIndex, &size);
-		if(!buffer || size < 0x4C){
-			if(buffer) free(buffer);
+		if(!buffer){
+			log("Cars: failed to read IPL %s\n", ipl->name);
+			continue;
+		}
+
+		if(size < 0x4C){
+			log("Cars: IPL %s too small (%d bytes)\n", ipl->name, size);
+			free(buffer);
 			continue;
 		}
 
