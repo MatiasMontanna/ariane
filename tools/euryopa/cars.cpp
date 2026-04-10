@@ -5,6 +5,14 @@
 static std::vector<CarSpawn> carSpawns;
 
 bool Cars::gRenderAsCubes = true;
+bool Cars::gRenderVehicleId = false;
+bool Cars::gRenderPrimaryColor = false;
+bool Cars::gRenderSecondaryColor = false;
+bool Cars::gRenderForceSpawn = false;
+bool Cars::gRenderAlarmProb = false;
+bool Cars::gRenderLockedProb = false;
+bool Cars::gRenderUnknown1 = false;
+bool Cars::gRenderUnknown2 = false;
 
 namespace Cars {
 
@@ -86,6 +94,8 @@ Init(void)
 			spawn.forceSpawn = *(int32*)(carEntry + 28);
 			spawn.alarmProb = *(int32*)(carEntry + 32);
 			spawn.lockedProb = *(int32*)(carEntry + 36);
+			spawn.unknown1 = *(int32*)(carEntry + 40);
+			spawn.unknown2 = *(int32*)(carEntry + 44);
 
 			carSpawns.push_back(spawn);
 		}
@@ -146,6 +156,81 @@ Render(void)
 		RenderLine(v[1], v[5], col, col);
 		RenderLine(v[2], v[6], col, col);
 		RenderLine(v[3], v[7], col, col);
+
+		if(!Cars::gRenderVehicleId && !Cars::gRenderPrimaryColor && !Cars::gRenderSecondaryColor &&
+		   !Cars::gRenderForceSpawn && !Cars::gRenderAlarmProb && !Cars::gRenderLockedProb &&
+		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2)
+			continue;
+
+		rw::V3d worldPos = { car.x, car.y, car.z + halfZ * 2.5f };
+		rw::V3d screenPos;
+		float w, h;
+		if(Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)){
+			if(screenPos.z > 0.0f && screenPos.z < gTextFarClip){
+				char label[256];
+				label[0] = '\0';
+				if(Cars::gRenderVehicleId){
+					strncat(label, "ID:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.vehicleId);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderPrimaryColor){
+					strncat(label, "P:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.primaryColor);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderSecondaryColor){
+					strncat(label, "S:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.secondaryColor);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderForceSpawn){
+					strncat(label, "FS:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.forceSpawn);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderAlarmProb){
+					strncat(label, "AP:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.alarmProb);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderLockedProb){
+					strncat(label, "LP:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.lockedProb);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderUnknown1){
+					strncat(label, "U1:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.unknown1);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderUnknown2){
+					strncat(label, "U2:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d ", car.unknown2);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+				}
+
+				if(label[0] != '\0'){
+					ImU32 labelCol = IM_COL32(255, 255, 0, 255);
+					ImFont* font = ImGui::GetFont();
+					float fontSize = ImGui::GetFontSize();
+					ImVec2 textSize = ImGui::CalcTextSize(label);
+					float x = screenPos.x - textSize.x * 0.5f;
+					float y = screenPos.y - textSize.y;
+					ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+					drawList->AddText(font, fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32_BLACK, label);
+					drawList->AddText(font, fontSize, ImVec2(x, y), labelCol, label);
+				}
+			}
+		}
 	}
 }
 

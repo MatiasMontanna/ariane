@@ -12,12 +12,22 @@ struct CarSpawn {
 	int32 forceSpawn;
 	int32 alarmProb;
 	int32 lockedProb;
+	int32 unknown1;
+	int32 unknown2;
 };
 
 namespace Cars {
 void Init(void);
 void Render(void);
 extern bool gRenderAsCubes;
+extern bool gRenderVehicleId;
+extern bool gRenderPrimaryColor;
+extern bool gRenderSecondaryColor;
+extern bool gRenderForceSpawn;
+extern bool gRenderAlarmProb;
+extern bool gRenderLockedProb;
+extern bool gRenderUnknown1;
+extern bool gRenderUnknown2;
 bool HasCarSpawns(void);
 }
 

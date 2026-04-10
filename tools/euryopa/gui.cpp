@@ -3367,6 +3367,20 @@ uiView(void)
 			if(gRenderCarSpawns){
 				ImGui::Indent();
 				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
+				ImGui::SeparatorText("Properties");
+				ImGui::Checkbox("Vehicle ID", &Cars::gRenderVehicleId);
+				ImGui::SameLine();
+				ImGui::Checkbox("Primary Color", &Cars::gRenderPrimaryColor);
+				ImGui::SameLine();
+				ImGui::Checkbox("Secondary Color", &Cars::gRenderSecondaryColor);
+				ImGui::Checkbox("Force Spawn", &Cars::gRenderForceSpawn);
+				ImGui::SameLine();
+				ImGui::Checkbox("Alarm Prob", &Cars::gRenderAlarmProb);
+				ImGui::SameLine();
+				ImGui::Checkbox("Locked Prob", &Cars::gRenderLockedProb);
+				ImGui::Checkbox("Unknown 1", &Cars::gRenderUnknown1);
+				ImGui::SameLine();
+				ImGui::Checkbox("Unknown 2", &Cars::gRenderUnknown2);
 				ImGui::Unindent();
 			}
 		}
