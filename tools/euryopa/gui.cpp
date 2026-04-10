@@ -3374,8 +3374,9 @@ uiView(void)
 			}
 			ImGui::Unindent();
 		}
+		ImGui::SeparatorText("Cars");
+		ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
 	}
-
 	ImGui::Checkbox("Draw Water", &gRenderWater);
 	if(params.water == GAME_SA){
 		ImGui::SameLine();
