@@ -189,15 +189,28 @@ Render(void)
 		RenderLine(v[2], v[6], col, col);
 		RenderLine(v[3], v[7], col, col);
 
+		static bool lastConvertAngleToRH = false;
 		if(Cars::gRenderAngle){
-			float arrowLength = 3.0f;
-			float arrowSize = 0.8f;
-			float cosA = cosf(car.angle);
-			float sinA = sinf(car.angle);
-			if(Cars::gConvertAngleToRH){
-				sinA = -sinA;
+			if(lastConvertAngleToRH != Cars::gConvertAngleToRH){
+				log("Cars: gConvertAngleToRH changed to %d\n", Cars::gConvertAngleToRH);
+				fflush(stdout);
+				lastConvertAngleToRH = Cars::gConvertAngleToRH;
 			}
-			rw::V3d dir = { cosA * arrowLength, sinA * arrowLength, 0.0f };
+			float arrowLength = 3.0f;
+			float angle = car.angle;
+			log("Cars: angle=%.4f convert=%d\n", angle, Cars::gConvertAngleToRH);
+			fflush(stdout);
+			float cosA = cosf(angle);
+			float sinA = sinf(angle);
+			float dirX = cosA * arrowLength;
+			float dirY = sinA * arrowLength;
+			if(Cars::gConvertAngleToRH){
+				dirY = -dirY;
+				log("Cars: flipped Y: dirX=%.4f dirY=%.4f\n", dirX, dirY);
+				fflush(stdout);
+			}
+			float arrowSize = 0.8f;
+			rw::V3d dir = { dirX, dirY, 0.0f };
 			rw::V3d base = { car.x, car.y, car.z + halfZ };
 			rw::V3d tip = { base.x + dir.x, base.y + dir.y, base.z + dir.z };
 			rw::V3d left = { base.x + cosA * arrowSize - sinA * arrowSize, base.y + sinA * arrowSize + cosA * arrowSize, base.z };
