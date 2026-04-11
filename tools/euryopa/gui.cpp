@@ -4003,9 +4003,9 @@ uiView(void)
 	gRenderOnlyLod = !!(render&2);
 	ImGui::Checkbox("Auto LOD Transition", &gAutoAnimateLOD);
 //=======
-	ImGui::RadioButton("Render Normal", &gRenderMode, 0);
-	ImGui::RadioButton("Render only HD", &gRenderMode, 1);
-	ImGui::RadioButton("Render only LOD", &gRenderMode, 2);
+	//ImGui::RadioButton("Render Normal", &gRenderMode, 0);
+	//ImGui::RadioButton("Render only HD", &gRenderMode, 1);
+	//ImGui::RadioButton("Render only LOD", &gRenderMode, 2);
 	gRenderOnlyHD = gRenderMode == 1;
 	gRenderOnlyLod = gRenderMode == 2;
 //>>>>>>> remotes/upstream/master
