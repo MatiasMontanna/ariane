@@ -737,6 +737,20 @@ DeleteSelectedWaterPolys(void)
 }
 
 void
+ClearAllWater(void)
+{
+	if(numWaterQuads == 0 && numWaterTris == 0 && numWaterVertices == 0)
+		return;
+	WaterUndoPush();
+	CancelCreateMode();
+	numWaterVertices = 0;
+	numWaterQuads = 0;
+	numWaterTris = 0;
+	ClearWaterSelection();
+	gWaterDirty = true;
+}
+
+void
 DuplicateSelectedWaterPolys(void)
 {
 	if(numWaterPolySelected == 0) return;
@@ -1884,6 +1898,15 @@ SaveWater(void)
 		// Original files: write to the base game file
 		strncpy(finalPath, logicalPath, sizeof(finalPath));
 		finalPath[sizeof(finalPath)-1] = '\0';
+	}
+
+	if(gSaveDestination == SAVE_DESTINATION_MODLOADER &&
+	   numWaterQuads == 0 &&
+	   numWaterTris == 0){
+		remove(finalPath);
+		gWaterDirty = false;
+		log("SaveWater: skipped empty modloader water.dat override (SA crashes with zero-poly custom water)\n");
+		return true;
 	}
 
 	if(!EnsureParentDirectoriesForPath(finalPath)){
