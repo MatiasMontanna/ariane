@@ -72,9 +72,6 @@ bool gRenderCollisionBoth;
 bool gRenderColMaterialColors;
 bool gRenderColFilled;
 bool gRenderDffMaterialColors;
-bool gRenderDffFilled;
-float gMaterialColorsAlpha = 0.5f;
-bool gRenderAudioZones;
 float gCollisionDffWireframeDist = 100.0f;
 bool gRenderCarrecs;
 bool gRenderCarSpawns;
@@ -1602,7 +1599,6 @@ LoadGame(void)
 	SAPaths::Reset();
 	Carrec::Init();
 	Cars::Init();
-	AudioZones::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -2169,8 +2165,6 @@ Draw(void)
 		Carrec::Render();
 	if(gRenderCarSpawns)
 		Cars::Render();
-	if(gRenderAudioZones)
-		AudioZones::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)
