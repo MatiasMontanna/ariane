@@ -428,8 +428,8 @@ RenderInst(ObjectInst *inst)
 	static rw::RGBA highlightCols[] = { black, green, red, blue };
 	ObjectDef *obj;
 
-//	if(!inst->m_isUnimportant && !inst->m_isUnderWater && !inst->m_isTunnel && !inst->m_isTunnelTransition)
-//		return;
+	if(gRenderColMaterialColors && gRenderColFilled)
+		return;
 
 	obj = GetObjectDef(inst->m_objectId);
 	if(obj == nil) return;
