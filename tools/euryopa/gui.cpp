@@ -3250,6 +3250,9 @@ uiView(void)
 		ImGui::Checkbox("Material Colors", &gRenderColMaterialColors);
 		ImGui::Checkbox("Filled Triangles", &gRenderColFilled);
 		if(gRenderCollisionFromDff || gRenderCollisionBoth){
+			ImGui::Checkbox("DFF Material Colors", &gRenderDffMaterialColors);
+		}
+		if(gRenderCollisionFromDff || gRenderCollisionBoth){
 			ImGui::Indent();
 			ImGui::SliderFloat("DFF Wireframe Distance", &gCollisionDffWireframeDist, 10.0f, 500.0f, "%.0f");
 			ImGui::Unindent();

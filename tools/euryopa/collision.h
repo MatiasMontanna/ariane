@@ -147,4 +147,4 @@ void ReadColModelVer3(CColModel *colmodel, uint8 *buf, int size);
 void ReadColModelVer4(CColModel *colmodel, uint8 *buf, int size);
 
 void RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds);
-void RenderAtomicWireframe(rw::Atomic *atomic, rw::Matrix *xform);
+void RenderAtomicWireframe(rw::Atomic *atomic, rw::Matrix *xform, CColModel *colModel);

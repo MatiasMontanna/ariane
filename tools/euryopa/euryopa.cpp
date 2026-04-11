@@ -65,6 +65,7 @@ bool gRenderCollisionFromDff;
 bool gRenderCollisionBoth;
 bool gRenderColMaterialColors;
 bool gRenderColFilled;
+bool gRenderDffMaterialColors;
 float gCollisionDffWireframeDist = 100.0f;
 bool gRenderCarrecs;
 bool gRenderCarSpawns;

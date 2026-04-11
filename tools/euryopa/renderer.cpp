@@ -668,7 +668,7 @@ RenderCollision(ObjectInst *inst)
 		if(camdist <= gCollisionDffWireframeDist){
 			for(int i = 0; i < obj->m_numAtomics; i++){
 				if(obj->m_atomics[i]){
-					RenderAtomicWireframe(obj->m_atomics[i], &inst->m_matrix);
+					RenderAtomicWireframe(obj->m_atomics[i], &inst->m_matrix, obj->m_colModel);
 				}
 			}
 		}

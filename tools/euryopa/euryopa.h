@@ -138,6 +138,7 @@ extern bool gRenderCollisionFromDff;
 extern bool gRenderCollisionBoth;
 extern bool gRenderColMaterialColors;
 extern bool gRenderColFilled;
+extern bool gRenderDffMaterialColors;
 extern float gCollisionDffWireframeDist;
 extern bool gRenderCarrecs;
 extern bool gRenderCarSpawns;
