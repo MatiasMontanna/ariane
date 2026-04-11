@@ -1,4 +1,5 @@
 #include "euryopa.h"
+#include "colmaterials.h"
 
 CColModel::CColModel(void)
 {
@@ -297,15 +298,22 @@ RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds)
 		RenderWireSphere(&col->spheres[i].sph, colMagenta, xform);
 	for(i = 0; i < col->numTriangles; i++){
 		tri = &col->triangles[i];
+		rw::RGBA triCol;
+		if(gRenderColMaterialColors && tri->surface < 179){
+			ColRGB matCol = GetColMaterialColor(tri->surface);
+			triCol = { matCol.r, matCol.g, matCol.b, alpha };
+		}else{
+			triCol = colGreen;
+		}
 		if(col->flags & 0x80){
 			rw::V3d v[3];
 			v[0] = col->compVertices[tri->a].Uncompress();
 			v[1] = col->compVertices[tri->b].Uncompress();
 			v[2] = col->compVertices[tri->c].Uncompress();
-			RenderWireTriangle(&v[0], &v[1], &v[2], colGreen, xform);
+			RenderWireTriangle(&v[0], &v[1], &v[2], triCol, xform);
 		}else
 			RenderWireTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
-				colGreen, xform);
+				triCol, xform);
 	}
 }
 
