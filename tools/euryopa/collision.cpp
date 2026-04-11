@@ -354,7 +354,11 @@ RenderAtomicWireframe(rw::Atomic *atomic, rw::Matrix *xform, CColModel *colModel
 		return;
 
 	rw::Geometry *geo = atomic->geometry;
-	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
+	uint8 alpha;
+	if(gRenderDffMaterialColors && gRenderDffFilled)
+		alpha = (uint8)(gMaterialColorsAlpha * 255.0f);
+	else
+		alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
 	rw::RGBA col = { 255, 255, 0, alpha };  // Yellow for DFF wireframe
 
 	int numVertices = geo->numVertices;
@@ -435,7 +439,10 @@ RenderAtomicWireframe(rw::Atomic *atomic, rw::Matrix *xform, CColModel *colModel
 			}
 		}
 
-		RenderWireTriangle(v1, v2, v3, col, nil);
+		if(gRenderDffFilled)
+			RenderFilledTriangle(v1, v2, v3, col, nil);
+		else
+			RenderWireTriangle(v1, v2, v3, col, nil);
 	}
 
 	free(transformedVerts);

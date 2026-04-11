@@ -3251,6 +3251,12 @@ uiView(void)
 		ImGui::Checkbox("Filled Triangles", &gRenderColFilled);
 		if(gRenderCollisionFromDff || gRenderCollisionBoth){
 			ImGui::Checkbox("DFF Material Colors", &gRenderDffMaterialColors);
+			ImGui::Checkbox("DFF Filled Triangles", &gRenderDffFilled);
+			if(gRenderDffMaterialColors && gRenderDffFilled){
+				ImGui::Indent();
+				ImGui::SliderFloat("Material Alpha", &gMaterialColorsAlpha, 0.0f, 1.0f, "%.2f");
+				ImGui::Unindent();
+			}
 		}
 		if(gRenderCollisionFromDff || gRenderCollisionBoth){
 			ImGui::Indent();
