@@ -3976,6 +3976,10 @@ uiView(void)
 				ImGui::Unindent();
 			}
 		}
+		if(AudioZones::HasAudioZones()){
+			ImGui::SeparatorText("Audio Zones");
+			ImGui::Checkbox("Draw Audio Zones", &AudioZones::gRenderAudioZones);
+		}
 	}
 
 

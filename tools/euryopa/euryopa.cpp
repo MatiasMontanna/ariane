@@ -1599,6 +1599,7 @@ LoadGame(void)
 	SAPaths::Reset();
 	Carrec::Init();
 	Cars::Init();
+	AudioZones::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -2165,6 +2166,7 @@ Draw(void)
 		Carrec::Render();
 	if(gRenderCarSpawns)
 		Cars::Render();
+	AudioZones::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)
