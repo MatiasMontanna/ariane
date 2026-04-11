@@ -46,8 +46,7 @@ static const uint8 gColMaterialToGroupSA[179] = {
 	4, 4, 5, 4, 4, 2, 1, 1, 1, 1,
 	1, 2, 4, 4, 5, 1, 4, 3, 3, 3,
 	3, 3, 3, 3, 3, 9, 4, 4, 4, 5,
-	12, 12, 3, 9, 8, 12, 8, 1, 12, 8,
-	8, 12, 12, 8, 7, 7, 7, 6, 12, 12
+	12, 12, 3, 9, 8, 12, 8, 1, 12
 };
 
 static_assert(sizeof(gColMaterialToGroupSA) == 179, "Material array must have 179 elements");
