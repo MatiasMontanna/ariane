@@ -3369,9 +3369,6 @@ uiView(void)
 				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
 				ImGui::SameLine();
 				ImGui::Checkbox("Angle", &Cars::gRenderAngle);
-				ImGui::SameLine();
-				ImGui::Checkbox("To RH", &Cars::gConvertAngleToRH);
-				ImGui::SetItemTooltip("Convert angle from left-handed clockwise to right-handed counterclockwise");
 				ImGui::SeparatorText("Properties");
 				ImGui::Checkbox("Vehicle ID", &Cars::gRenderVehicleId);
 				ImGui::SameLine();

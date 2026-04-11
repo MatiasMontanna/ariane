@@ -32,7 +32,6 @@ extern bool gRenderUnknown1;
 extern bool gRenderUnknown2;
 extern bool gRenderFileName;
 extern bool gRenderAngle;
-extern bool gConvertAngleToRH;
 bool HasCarSpawns(void);
 }
 
