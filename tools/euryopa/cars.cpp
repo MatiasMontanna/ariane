@@ -205,8 +205,9 @@ Render(void)
 			float dirX = cosA * arrowLength;
 			float dirY = sinA * arrowLength;
 			if(Cars::gConvertAngleToRH){
+				dirX = -dirX;
 				dirY = -dirY;
-				log("Cars: flipped Y: dirX=%.4f dirY=%.4f\n", dirX, dirY);
+				log("Cars: flipped: dirX=%.4f dirY=%.4f\n", dirX, dirY);
 				fflush(stdout);
 			}
 			float arrowSize = 0.8f;
