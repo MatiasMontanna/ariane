@@ -1,245 +1,134 @@
 #include "euryopa.h"
 #include "audiozone.h"
-
-namespace AudioZones
-{
+#include "modloader.h"
 
 #define MAXAUDIOZONES 1024
-static AudioZoneEntry gAudioZones[MAXAUDIOZONES];
-static int gNumAudioZones = 0;
+static AudioZoneEntry audioZones[MAXAUDIOZONES];
+static int numAudioZones = 0;
 
-static int
-TokenizeLine(const char *line, char tokens[16][64])
+bool AudioZones::gRenderAudioZones = false;
+
+namespace AudioZones {
+
+void
+Init(void)
 {
-	int numTokens = 0;
-	const char *p = line;
-	int bi = 0;
-	char buf[64];
+	numAudioZones = 0;
 
-	while(*p && numTokens < 16){
-		if(*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'){
-			if(bi > 0){
-				buf[bi] = '\0';
-				strncpy(tokens[numTokens], buf, 63);
-				tokens[numTokens][63] = '\0';
-				numTokens++;
-				bi = 0;
-			}
-		}else if(*p == '#'){
-			break;
-		}else{
-			if(bi < 63) buf[bi++] = *p;
+	log("AudioZones: searching for .ipl files in data/\n");
+
+	WIN32_FIND_DATAA findData;
+	HANDLE hFind = FindFirstFileA("data/*.ipl", &findData);
+	if(hFind == INVALID_HANDLE_VALUE){
+		log("AudioZones: no .ipl files in data/\n");
+		return;
+	}
+
+	do{
+		const char *filename = findData.cFileName;
+		size_t namelen = strlen(filename);
+		if(namelen < 4 || strcmp(filename + namelen - 4, ".ipl") != 0)
+			continue;
+
+		char filepath[256];
+		snprintf(filepath, sizeof(filepath), "data/%s", filename);
+
+		int size;
+		uint8 *buf = ReadLooseFile(filepath, &size);
+		if(buf == nil){
+			log("AudioZones: failed to read %s\n", filepath);
+			continue;
 		}
-		p++;
-	}
-	if(bi > 0 && numTokens < 16){
-		buf[bi] = '\0';
-		strncpy(tokens[numTokens], buf, 63);
-		tokens[numTokens][63] = '\0';
-		numTokens++;
-	}
-	return numTokens;
+
+		char *auzoStart = strstr((char*)buf, "auzo");
+		if(auzoStart == nil){
+			free(buf);
+			continue;
+		}
+
+		char *auzoEnd = strstr(auzoStart + 4, "end");
+		if(auzoEnd == nil){
+			free(buf);
+			continue;
+		}
+
+		*auzoEnd = '\0';
+
+		char *lineStart = auzoStart;
+		char *p = auzoStart;
+		while(*p){
+			if(*p == '\n' || *p == '\r'){
+				if(p > lineStart){
+					*p = '\0';
+					ParseAudioZoneLine(lineStart);
+				}
+				lineStart = p + 1;
+			}
+			p++;
+		}
+		if(p > lineStart){
+			ParseAudioZoneLine(lineStart);
+		}
+
+		free(buf);
+	}while(FindNextFileA(hFind, &findData));
+
+	FindClose(hFind);
+
+	log("AudioZones: loaded %d zones\n", numAudioZones);
 }
 
-static bool
-IsNumber(const char *s)
-{
-	if(*s == '-' || *s == '+') s++;
-	while(*s){
-		if(*s == '.') return true;
-		if(*s < '0' || *s > '9') return false;
-		s++;
-	}
-	return true;
-}
-
-static void
+void
 ParseAudioZoneLine(const char *line)
 {
-	if(gNumAudioZones >= MAXAUDIOZONES)
-		return;
+	if(numAudioZones >= MAXAUDIOZONES) return;
 
-	char tokens[16][64];
-	int numTokens = TokenizeLine(line, tokens);
-
-	if(numTokens < 4)
-		return;
+	while(*line == ' ' || *line == '\t') line++;
+	if(*line == '#' || *line == '\0') return;
 
 	char name[32] = {0};
 	int id = 0;
 	int switchVal = 0;
-	float x1=0, y1=0, z1=0, x2=0, y2=0, z2=0;
-	float x=0, y=0, z=0, r=0;
-	int type = 0;
+	float coords[6] = {0};
+	int numFloats = 0;
+	int numInts = 0;
 
-	for(int i = 0; i < numTokens; i++){
-		if(!IsNumber(tokens[i])){
-			strncpy(name, tokens[i], 31);
-		}
-	}
+	char lineBuf[256];
+	strncpy(lineBuf, line, sizeof(lineBuf)-1);
 
-	for(int i = 0; i < numTokens; i++){
-		if(IsNumber(tokens[i])){
-			float v = atof(tokens[i]);
-
-			if(i == numTokens-6 && numTokens == 9){
-				x1 = v;
-			}else if(i == numTokens-5 && numTokens == 9){
-				y1 = v;
-			}else if(i == numTokens-4 && numTokens == 9){
-				z1 = v;
-			}else if(i == numTokens-3 && numTokens == 9){
-				x2 = v;
-			}else if(i == numTokens-2 && numTokens == 9){
-				y2 = v;
-			}else if(i == numTokens-1 && numTokens == 9){
-				z2 = v;
-			}else if(i == 3 && numTokens >= 7){
-				x = v;
-			}else if(i == 4 && numTokens >= 7){
-				y = v;
-			}else if(i == 5 && numTokens >= 7){
-				z = v;
-			}else if(i == 6 && numTokens >= 7){
-				r = v;
-				type = 2;
+	char *token = strtok(lineBuf, " \t\n\r");
+	while(token){
+		if(!isdigit(token[0]) && !(token[0] == '-' && isdigit(token[1])){
+			strncpy(name, token, 31);
+		}else if(strchr(token, '.')){
+			if(numFloats < 6) coords[numFloats] = atof(token);
+			numFloats++;
+		}else{
+			int v = atoi(token);
+			if(v != 0 || strcmp(token, "0") == 0){
+				if(numInts == 0) id = v;
+				else switchVal = v;
+				numInts++;
 			}
 		}
+		token = strtok(nil, " \t\n\r");
 	}
 
-	for(int i = 0; i < numTokens; i++){
-		if(IsNumber(tokens[i])){
-			int ival = atoi(tokens[i]);
-			if(ival != 0 || (tokens[i][0] == '0' && tokens[i][1] == '\0')){
-				if(id == 0) id = ival;
-				else switchVal = ival;
-			}
-		}
-	}
-
-	if(numTokens == 9 && x2 != 0 && y2 != 0 && z2 != 0){
-		AudioZoneEntry &z = gAudioZones[gNumAudioZones];
+	if(numFloats == 6 && coords[3] != 0 && coords[4] != 0 && coords[5] != 0){
+		AudioZoneEntry &z = audioZones[numAudioZones];
 		z.type = 1;
 		strncpy(z.name, name, 31);
-		z.name[31] = '\0';
 		z.id = id;
 		z.switchVal = switchVal;
-		z.box.min.x = x1;
-		z.box.min.y = y1;
-		z.box.min.z = z1;
-		z.box.max.x = x2;
-		z.box.max.y = y2;
-		z.box.max.z = z2;
+		z.box.min.x = coords[0];
+		z.box.min.y = coords[1];
+		z.box.min.z = coords[2];
+		z.box.max.x = coords[3];
+		z.box.max.y = coords[4];
+		z.box.max.z = coords[5];
 		z.box.FindMinMax();
-		z.center = {0, 0, 0};
-		z.radius = 0;
-		gNumAudioZones++;
-	}else if(type == 2 && r > 0){
-		AudioZoneEntry &z = gAudioZones[gNumAudioZones];
-		z.type = 2;
-		strncpy(z.name, name, 31);
-		z.name[31] = '\0';
-		z.id = id;
-		z.switchVal = switchVal;
-		z.center = { x, y, z };
-		z.radius = r;
-		z.box.min = z.box.max = {0, 0, 0};
-		gNumAudioZones++;
+		numAudioZones++;
 	}
-}
-
-static void
-LoadAudioZonesFromFile(const char *path)
-{
-	FILE *f = fopen(path, "r");
-	if(f == nil)
-		return;
-
-	char line[256];
-	int inAuzo = 0;
-
-	while(fgets(line, sizeof(line), f)){
-		char *p = line;
-		while(*p == ' ' || *p == '\t') p++;
-
-		if(strncmp(p, "auzo", 4) == 0){
-			inAuzo = 1;
-			continue;
-		}
-		if(strncmp(p, "end", 3) == 0){
-			inAuzo = 0;
-			continue;
-		}
-
-		if(inAuzo){
-			ParseAudioZoneLine(p);
-		}
-	}
-
-	fclose(f);
-}
-
-void
-LoadAllAudioZones(void)
-{
-	gNumAudioZones = 0;
-
-	char exePath[MAXPATH];
-	GetModuleFileNameA(nil, exePath, sizeof(exePath));
-	char *lastSlash = strrchr(exePath, '\\');
-	if(lastSlash) *lastSlash = '\0';
-
-	char searchPath[MAXPATH];
-	char iplPath[MAXPATH];
-	WIN32_FIND_DATAA findData;
-	HANDLE findHandle;
-
-	snprintf(searchPath, sizeof(searchPath), "%s\\data", exePath);
-	SetCurrentDirectoryA(searchPath);
-	findHandle = FindFirstFileA("*.ipl", &findData);
-	if(findHandle != INVALID_HANDLE_VALUE){
-		do{
-			snprintf(iplPath, sizeof(iplPath), "%s\\data\\%s", exePath, findData.cFileName);
-			LoadAudioZonesFromFile(iplPath);
-		}while(FindNextFileA(findHandle, &findData));
-		FindClose(findHandle);
-	}
-
-	snprintf(searchPath, sizeof(searchPath), "%s\\maps", exePath);
-	if(SetCurrentDirectoryA(searchPath)){
-		findHandle = FindFirstFileA("*.ipl", &findData);
-		if(findHandle != INVALID_HANDLE_VALUE){
-			do{
-				snprintf(iplPath, sizeof(iplPath), "%s\\maps\\%s", exePath, findData.cFileName);
-				LoadAudioZonesFromFile(iplPath);
-			}while(FindNextFileA(findHandle, &findData));
-			FindClose(findHandle);
-		}
-
-		findHandle = FindFirstFileA("*", &findData);
-		if(findHandle != INVALID_HANDLE_VALUE){
-			do{
-				if(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY){
-					if(findData.cFileName[0] != '.'){
-						snprintf(searchPath, sizeof(searchPath), "%s\\maps\\%s", exePath, findData.cFileName);
-						if(SetCurrentDirectoryA(searchPath)){
-							HANDLE subHandle = FindFirstFileA("*.ipl", &findData);
-							if(subHandle != INVALID_HANDLE_VALUE){
-								do{
-									snprintf(iplPath, sizeof(iplPath), "%s\\maps\\%s\\%s", exePath, findData.cFileName, findData.cFileName);
-									LoadAudioZonesFromFile(iplPath);
-								}while(FindNextFileA(subHandle, &findData));
-								FindClose(subHandle);
-							}
-						}
-					}
-				}
-			}while(FindNextFileA(findHandle, &findData));
-			FindClose(findHandle);
-		}
-	}
-
-	log("AudioZones: loaded %d zones\n", gNumAudioZones);
 }
 
 void
@@ -249,24 +138,20 @@ Render(void)
 		return;
 
 	uint8 alpha = 180;
-	static const rw::RGBA zoneCols[] = {
-		{ 255, 0, 255, alpha },
-		{ 0, 255, 255, alpha },
-	};
+	static const rw::RGBA boxCol = { 255, 0, 255, alpha };
 
-	for(int i = 0; i < gNumAudioZones; i++){
-		AudioZoneEntry &z = gAudioZones[i];
-		rw::RGBA col = zoneCols[z.type - 1];
-
+	for(int i = 0; i < numAudioZones; i++){
+		AudioZoneEntry &z = audioZones[i];
 		if(z.type == 1){
-			RenderWireBox(&z.box, col, nil);
-		}else if(z.type == 2){
-			CSphere sph;
-			sph.center = z.center;
-			sph.radius = z.radius;
-			RenderSphereAsWireBox(&sph, col, nil);
+			RenderWireBox(&z.box, boxCol, nil);
 		}
 	}
+}
+
+bool
+HasAudioZones(void)
+{
+	return numAudioZones > 0;
 }
 
 }

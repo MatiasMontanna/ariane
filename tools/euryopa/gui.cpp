@@ -4220,9 +4220,13 @@ uiCarPathNode(PathNode *nd, int i, ObjectInst *inst)
 		if(isSA()){
 			ImGui::TableSetColumnIndex(c++);
 			ImGui::Text("%d", nd->special);
+}
+		}
+		if(AudioZones::HasAudioZones()){
+			ImGui::SeparatorText("Audio Zones");
+			ImGui::Checkbox("Draw Audio Zones", &AudioZones::gRenderAudioZones);
 		}
 	}
-}
 
 void
 uiPedPathHeader(void)
