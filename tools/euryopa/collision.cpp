@@ -310,10 +310,18 @@ RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds)
 			v[0] = col->compVertices[tri->a].Uncompress();
 			v[1] = col->compVertices[tri->b].Uncompress();
 			v[2] = col->compVertices[tri->c].Uncompress();
-			RenderWireTriangle(&v[0], &v[1], &v[2], triCol, xform);
-		}else
-			RenderWireTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
-				triCol, xform);
+			if(gRenderColFilled)
+				RenderFilledTriangle(&v[0], &v[1], &v[2], triCol, xform);
+			else
+				RenderWireTriangle(&v[0], &v[1], &v[2], triCol, xform);
+		}else{
+			if(gRenderColFilled)
+				RenderFilledTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
+					triCol, xform);
+			else
+				RenderWireTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
+					triCol, xform);
+		}
 	}
 }
 

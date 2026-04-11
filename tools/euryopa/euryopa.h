@@ -137,6 +137,7 @@ extern float gCollisionWireframeAlpha;
 extern bool gRenderCollisionFromDff;
 extern bool gRenderCollisionBoth;
 extern bool gRenderColMaterialColors;
+extern bool gRenderColFilled;
 extern float gCollisionDffWireframeDist;
 extern bool gRenderCarrecs;
 extern bool gRenderCarSpawns;
@@ -1110,6 +1111,7 @@ void RenderSphereAsWireBox(CSphere *sphere, rw::RGBA col, rw::Matrix *xform);
 void RenderSphereAsCross(CSphere *sphere, rw::RGBA col, rw::Matrix *xform);
 void RenderWireSphere(CSphere *sphere, rw::RGBA col, rw::Matrix *xform);
 void RenderWireTriangle(rw::V3d *v1, rw::V3d *v2, rw::V3d *v3, rw::RGBA col, rw::Matrix *xform);
+void RenderFilledTriangle(rw::V3d *v1, rw::V3d *v2, rw::V3d *v3, rw::RGBA col, rw::Matrix *xform);
 void RenderAxesWidget(rw::V3d pos, rw::V3d x, rw::V3d y, rw::V3d z);
 
 void RenderEverythingCollisions(void);

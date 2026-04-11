@@ -50,6 +50,11 @@ static int TempBufferVerticesStored;
 static rw::RWDEVICE::Im3DVertex TempVertexBuffer[TEMPBUFFERVERTSIZE];
 static uint16 TempIndexBuffer[TEMPBUFFERINDEXSIZE];
 
+static int TempTriIndicesStored;
+static int TempTriVerticesStored;
+static rw::RWDEVICE::Im3DVertex TempTriVertexBuffer[TEMPBUFFERVERTSIZE];
+static uint16 TempTriIndexBuffer[TEMPBUFFERINDEXSIZE];
+
 static void
 RenderAndEmptyRenderBuffer(void)
 {
@@ -62,6 +67,20 @@ RenderAndEmptyRenderBuffer(void)
 	}
 	TempBufferVerticesStored = 0;
 	TempBufferIndicesStored = 0;
+}
+
+static void
+RenderAndEmptyTriBuffer(void)
+{
+	assert(TempTriVerticesStored <= TEMPBUFFERVERTSIZE);
+	assert(TempTriIndicesStored <= TEMPBUFFERINDEXSIZE);
+	if(TempTriVerticesStored){
+		rw::im3d::Transform(TempTriVertexBuffer, TempTriVerticesStored, nil, rw::im3d::EVERYTHING);
+		rw::im3d::RenderIndexedPrimitive(rw::PRIMTYPETRILIST, TempTriIndexBuffer, TempTriIndicesStored);
+		rw::im3d::End();
+	}
+	TempTriVerticesStored = 0;
+	TempTriIndicesStored = 0;
 }
 
 static void
@@ -102,6 +121,7 @@ RenderDebugLines(void)
 			debugLines[i].v2.x, debugLines[i].v2.y, debugLines[i].v2.z,
 			debugLines[i].col1, debugLines[i].col2);
 	RenderAndEmptyRenderBuffer();
+	RenderAndEmptyTriBuffer();
 	numDebugLines = 0;
 }
 
@@ -241,6 +261,41 @@ RenderWireTriangle(rw::V3d *v1, rw::V3d *v2, rw::V3d *v3, rw::RGBA col, rw::Matr
 	RenderLine(verts[0], verts[1], col, col);
 	RenderLine(verts[1], verts[2], col, col);
 	RenderLine(verts[2], verts[0], col, col);
+}
+
+void
+RenderFilledTriangle(rw::V3d *v1, rw::V3d *v2, rw::V3d *v3, rw::RGBA col, rw::Matrix *xform)
+{
+	int i;
+	if(TempTriVerticesStored+3 >= TEMPBUFFERVERTSIZE ||
+	   TempTriIndicesStored+3 >= TEMPBUFFERINDEXSIZE)
+		RenderAndEmptyTriBuffer();
+
+	rw::V3d verts[3];
+	verts[0] = *v1;
+	verts[1] = *v2;
+	verts[2] = *v3;
+	if(xform)
+		rw::V3d::transformPoints(verts, verts, 3, xform);
+
+	i = TempTriVerticesStored;
+	TempTriVertexBuffer[i].setX(verts[0].x);
+	TempTriVertexBuffer[i].setY(verts[0].y);
+	TempTriVertexBuffer[i].setZ(verts[0].z);
+	TempTriVertexBuffer[i].setColor(col.red, col.green, col.blue, col.alpha);
+	TempTriVertexBuffer[i+1].setX(verts[1].x);
+	TempTriVertexBuffer[i+1].setY(verts[1].y);
+	TempTriVertexBuffer[i+1].setZ(verts[1].z);
+	TempTriVertexBuffer[i+1].setColor(col.red, col.green, col.blue, col.alpha);
+	TempTriVertexBuffer[i+2].setX(verts[2].x);
+	TempTriVertexBuffer[i+2].setY(verts[2].y);
+	TempTriVertexBuffer[i+2].setZ(verts[2].z);
+	TempTriVertexBuffer[i+2].setColor(col.red, col.green, col.blue, col.alpha);
+	TempTriVerticesStored += 3;
+
+	TempTriIndexBuffer[TempTriIndicesStored++] = i;
+	TempTriIndexBuffer[TempTriIndicesStored++] = i+1;
+	TempTriIndexBuffer[TempTriIndicesStored++] = i+2;
 }
 
 void
