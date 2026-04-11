@@ -3840,8 +3840,10 @@ uiView(void)
 		}
 		ImGui::Unindent();
 	}
-	if(params.timecycle == GAME_SA)
+	if(params.timecycle == GAME_SA){
 		ImGui::Checkbox("Draw TimeCycle boxes", &gRenderTimecycleBoxes);
+		ImGui::Checkbox("Audio Zones", &gRenderAudioZones);
+	}
 	ImGui::Checkbox("Draw Zones", &gRenderZones);
 	if(gRenderZones){
 		ImGui::Indent();
