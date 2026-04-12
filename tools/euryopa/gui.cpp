@@ -873,7 +873,7 @@ uiNotificationSettings(void)
 		for(int i = 0; i < TOAST_NUM_CATEGORIES; i++)
 			ImGui::Checkbox(toastCategoryNames[i], &toastCategoryEnabled[i]);
 ImGui::Unindent();
-		}
+	}
 	}
 	if(AudioZones::HasAudioZones()){
 		ImGui::SeparatorText("Audio Zones");
