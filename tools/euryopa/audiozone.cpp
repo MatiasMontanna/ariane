@@ -147,17 +147,17 @@ Init(void)
 {
 	audioZones.clear();
 
-	char exePath[MAXPATH];
+	char exePath[260];
 	GetModuleFileNameA(nil, exePath, sizeof(exePath));
 	char *lastSlash = strrchr(exePath, '\\');
 	if(lastSlash) *lastSlash = '\0';
 
 	ScanDirectory(exePath);
-	char dataPath[MAXPATH];
+	char dataPath[260];
 	snprintf(dataPath, sizeof(dataPath), "%s\\data", exePath);
 	ScanDirectory(dataPath);
 
-	char mapsPath[MAXPATH];
+	char mapsPath[260];
 	snprintf(mapsPath, sizeof(mapsPath), "%s\\maps", exePath);
 	ScanDirectory(mapsPath);
 	ScanSubdirectories(mapsPath);
