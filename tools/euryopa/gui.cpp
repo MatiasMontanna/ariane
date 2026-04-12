@@ -6,7 +6,6 @@
 #include "telemetry.h"
 #include "updater.h"
 #include "icons.h"
-#include "auzozones.h"
 #include <string>
 #include <vector>
 
@@ -3861,8 +3860,6 @@ uiView(void)
 			break;
 		}
 		ImGui::Checkbox("Attrib Zones", &gRenderAttribZones);
-		if(gameversion == GAME_SA)
-			ImGui::Checkbox("Audio Zones (auzo)", &AuzoZones::gRenderAuzoZones);
 		ImGui::Unindent();
 	}
 	ImGui::Checkbox("Render 2dfx Lights", &gRenderLightEffects);
