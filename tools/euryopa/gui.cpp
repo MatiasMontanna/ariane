@@ -3930,24 +3930,22 @@ uiView(void)
 			ImGui::SetItemTooltip("Render each .rrr file with a different color");
 			ImGui::Checkbox("Labels", &Carrec::gRenderLabels);
 			ImGui::SetItemTooltip("Show .rrr filename at first position");
-			if(ImGui::CollapsingHeader("Carrec Paths")){
-				if(ImGui::Button("All"))
-					Carrec::SetAllPaths(true);
-				ImGui::SameLine();
-				if(ImGui::Button("None"))
-					Carrec::SetAllPaths(false);
-				ImGui::SameLine();
-				ImGui::Text("(%d)", Carrec::GetNumPaths());
-				int numPaths = Carrec::GetNumPaths();
-				for(int i = 0; i < numPaths; i++){
-					CarrecPath *path = Carrec::GetPath(i);
-					if(path)
-						ImGui::Checkbox(path->name, &path->enabled);
-				}
-			}
+if(ImGui::CollapsingHeader("Carrec Paths")){
+			if(ImGui::Button("All"))
+				Carrec::SelectAll();
+			ImGui::SameLine();
+			if(ImGui::Button("None"))
+				Carrec::SelectNone();
+			ImGui::SameLine();
+			ImGui::Text("%d selected", Carrec::SelectionCount());
 			ImGui::Unindent();
 		}
-		if(Cars::HasCarSpawns()){
+	}
+	if(AudioZones::HasAudioZones()){
+		ImGui::SeparatorText("Audio Zones");
+		ImGui::Checkbox("Draw Audio Zones", &AudioZones::gRenderAudioZones);
+	}
+	if(Cars::HasCarSpawns()){
 			ImGui::SeparatorText("Car Spawns");
 			ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
 			if(gRenderCarSpawns){
