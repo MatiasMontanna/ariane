@@ -32,23 +32,6 @@ struct ObjectInst;
 #include "carrec.h"
 #include "cars.h"
 
-struct AudioZoneEntry {
-	char name[32];
-	int id;
-	int switchVal;
-	CBox box;
-	rw::V3d center;
-	float radius;
-	int type;
-};
-
-namespace AudioZones {
-void Init(void);
-void Render(void);
-bool HasAudioZones(void);
-extern bool gRenderAudioZones;
-}
-
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
 #else
