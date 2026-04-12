@@ -1,6 +1,7 @@
 #include "euryopa.h"
 #include "carrec.h"
 #include "modloader.h"
+#include "auzozones.h"
 #include <limits.h>
 #include <algorithm>
 #include <string.h>
@@ -2144,6 +2145,8 @@ Draw(void)
 		Timecycle::RenderBoxes();
 	if(gRenderZones)
 		Zones::Render();
+	if(gRenderAuzoZones)
+		AuzoZones::Render();
 	if(gRenderCullZones)
 		Zones::RenderCullZones();
 	if(gRenderAttribZones)
