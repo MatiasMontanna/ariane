@@ -875,10 +875,6 @@ uiNotificationSettings(void)
 ImGui::Unindent();
 		}
 	}
-	if(AudioZones::HasAudioZones()){
-		ImGui::SeparatorText("Audio Zones");
-		ImGui::Checkbox("Draw Audio Zones", &AudioZones::gRenderAudioZones);
-	}
 	if(Cars::HasCarSpawns()){
 			ImGui::SeparatorText("Car Spawns");
 			ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
