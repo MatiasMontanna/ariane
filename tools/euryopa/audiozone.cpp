@@ -50,13 +50,12 @@ ParseAudioZoneLine(const char *line)
 		strncpy(z.name, name, 31);
 		z.id = id;
 		z.switchVal = switchVal;
-		z.box.min.x = coords[0];
-		z.box.min.y = coords[1];
-		z.box.min.z = coords[2];
-		z.box.max.x = coords[3];
-		z.box.max.y = coords[4];
-		z.box.max.z = coords[5];
-		z.box.FindMinMax();
+		z.boxMinX = coords[0];
+		z.boxMinY = coords[1];
+		z.boxMinZ = coords[2];
+		z.boxMaxX = coords[3];
+		z.boxMaxY = coords[4];
+		z.boxMaxZ = coords[5];
 		z.center = {0, 0, 0};
 		z.radius = 0;
 		gNumAudioZones++;
@@ -68,7 +67,9 @@ ParseAudioZoneLine(const char *line)
 		z.switchVal = switchVal;
 		z.center = { coords[0], coords[1], coords[2] };
 		z.radius = coords[3];
-		z.box.min = z.box.max = {0, 0, 0};
+		z.boxMinX = z.boxMaxX = 0;
+		z.boxMinY = z.boxMaxY = 0;
+		z.boxMinZ = z.boxMaxZ = 0;
 		gNumAudioZones++;
 	}
 }
@@ -191,14 +192,14 @@ AudioZones::Render(void)
 
 		if(z.type == 1){
 			rw::V3d verts[8];
-			verts[0] = { z.box.min.x, z.box.min.y, z.box.min.z };
-			verts[1] = { z.box.max.x, z.box.min.y, z.box.min.z };
-			verts[2] = { z.box.max.x, z.box.max.y, z.box.min.z };
-			verts[3] = { z.box.min.x, z.box.max.y, z.box.min.z };
-			verts[4] = { z.box.min.x, z.box.min.y, z.box.max.z };
-			verts[5] = { z.box.max.x, z.box.min.y, z.box.max.z };
-			verts[6] = { z.box.max.x, z.box.max.y, z.box.max.z };
-			verts[7] = { z.box.min.x, z.box.max.y, z.box.max.z };
+			verts[0] = { z.boxMinX, z.boxMinY, z.boxMinZ };
+			verts[1] = { z.boxMaxX, z.boxMinY, z.boxMinZ };
+			verts[2] = { z.boxMaxX, z.boxMaxY, z.boxMinZ };
+			verts[3] = { z.boxMinX, z.boxMaxY, z.boxMinZ };
+			verts[4] = { z.boxMinX, z.boxMinY, z.boxMaxZ };
+			verts[5] = { z.boxMaxX, z.boxMinY, z.boxMaxZ };
+			verts[6] = { z.boxMaxX, z.boxMaxY, z.boxMaxZ };
+			verts[7] = { z.boxMinX, z.boxMaxY, z.boxMaxZ };
 
 			RenderWireBoxVerts(verts, col);
 		}else if(z.type == 2){

@@ -5,11 +5,8 @@ struct AudioZoneEntry {
 	char name[32];
 	int id;
 	int switchVal;
-	struct CBox {
-		rw::V3d min;
-		rw::V3d max;
-		void FindMinMax(void);
-	} box;
+	float boxMinX, boxMinY, boxMinZ;
+	float boxMaxX, boxMaxY, boxMaxZ;
 	rw::V3d center;
 	float radius;
 	int type;
