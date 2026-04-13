@@ -103,9 +103,6 @@ public:
 	static bool IsMButtonJustUp(int btn);
 	static bool IsMButtonClicked(int btn);
 	static bool IsMButtonDown(int btn);
-	static bool IsLeftButtonJustDown(void);
-	static bool IsLeftButtonJustUp(void);
-	static bool IsLeftButtonDown(void);
 };
 
 #define IsButtonJustDown(pad, btn) \

@@ -98,24 +98,6 @@ CPad::IsMButtonDown(int btn)
 	return 0;
 }
 
-bool
-CPad::IsLeftButtonJustDown(void)
-{
-	return (oldMouseState.btns & 1) == 0 && (newMouseState.btns & 1);
-}
-
-bool
-CPad::IsLeftButtonJustUp(void)
-{
-	return (oldMouseState.btns & 1) && (newMouseState.btns & 1) == 0;
-}
-
-bool
-CPad::IsLeftButtonDown(void)
-{
-	return newMouseState.btns & 1;
-}
-
 
 void
 CControllerState::Clear(void)

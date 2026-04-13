@@ -1810,14 +1810,6 @@ dogizmo(void)
 				if(isUsing){
 					Cars::MoveSelectedCarSpawn(gizobj.pos.x, gizobj.pos.y, gizobj.pos.z);
 					Cars::RotateSelectedCarSpawn(rotation[2]);
-				}else if(wasDraggingCarSpawn){
-					CarSpawn *c = Cars::GetSelectedCarSpawn();
-					if(c && (fabs(c->x - dragStartCarSpawnX) > 0.0001f ||
-					         fabs(c->y - dragStartCarSpawnY) > 0.0001f ||
-					         fabs(c->z - dragStartCarSpawnZ) > 0.0001f ||
-					         fabs(c->angle - dragStartCarSpawnAngle) > 0.0001f)){
-						// Car spawn moved - mark as dirty
-					}
 				}
 
 				wasDraggingCarSpawn = isUsing;
