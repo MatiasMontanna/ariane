@@ -1786,21 +1786,6 @@ dogizmo(void)
 					snapRotPtr = snapRotate;
 				}
 
-				float snapTranslate[3];
-				float snapRotate[3];
-				float *snapTransPtr = nil;
-				float *snapRotPtr = nil;
-				if(gGizmoSnap){
-					snapTranslate[0] = gGizmoSnapTranslate;
-					snapTranslate[1] = gGizmoSnapTranslate;
-					snapTranslate[2] = gGizmoSnapTranslate;
-					snapTransPtr = snapTranslate;
-					snapRotate[0] = 0.0f;
-					snapRotate[1] = 0.0f;
-					snapRotate[2] = gGizmoSnapAngle;
-					snapRotPtr = snapRotate;
-				}
-
 				if(gGizmoMode == GIZMO_TRANSLATE){
 					ImGuizmo::Manipulate(fview, fproj, ImGuizmo::TRANSLATE, ImGuizmo::LOCAL, fobj, nil, snapTransPtr);
 				}else if(gGizmoMode == GIZMO_ROTATE){
