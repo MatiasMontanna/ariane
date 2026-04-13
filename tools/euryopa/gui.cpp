@@ -5733,7 +5733,9 @@ uiInstWindow(void)
 			if(ImGui::CollapsingHeader("Legacy Paths"))
 				uiPathInfo(inst);
 	}else{
-		if(Cars::GetSelectedCarSpawnIndex() >= 0){
+		static int lastCarSpawnIndex = -1;
+		int currentCarSpawnIndex = Cars::GetSelectedCarSpawnIndex();
+		if(currentCarSpawnIndex >= 0){
 			if(ImGui::CollapsingHeader("Car Spawn")){
 				CarSpawn *car = Cars::GetSelectedCarSpawn();
 				if(car){
@@ -5750,14 +5752,17 @@ uiInstWindow(void)
 					static int editUnknown1;
 					static int editUnknown2;
 
-					editVehicleId = car->vehicleId;
-					editPrimaryColor = car->primaryColor;
-					editSecondaryColor = car->secondaryColor;
-					editForceSpawn = car->forceSpawn;
-					editAlarmProb = car->alarmProb;
-					editLockedProb = car->lockedProb;
-					editUnknown1 = car->unknown1;
-					editUnknown2 = car->unknown2;
+					if(currentCarSpawnIndex != lastCarSpawnIndex){
+						editVehicleId = car->vehicleId;
+						editPrimaryColor = car->primaryColor;
+						editSecondaryColor = car->secondaryColor;
+						editForceSpawn = car->forceSpawn;
+						editAlarmProb = car->alarmProb;
+						editLockedProb = car->lockedProb;
+						editUnknown1 = car->unknown1;
+						editUnknown2 = car->unknown2;
+						lastCarSpawnIndex = currentCarSpawnIndex;
+					}
 
 					ImGui::InputInt("Vehicle ID", &editVehicleId);
 					ImGui::InputInt("Primary Color", &editPrimaryColor);
