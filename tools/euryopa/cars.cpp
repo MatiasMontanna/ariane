@@ -665,10 +665,26 @@ MergeModCarSpawns(void)
 			}
 		}
 
-		int totalNumCars = gAdditiveMerge ? (oldNumCars + modNumCars) : modNumCars;
+		int newCarsFromMod = 0;
+		if(gAdditiveMerge && modNumCars > 0 && oldNumCars > 0){
+			for(int m = 0; m < modNumCars; m++){
+				int found = 0;
+				for(int o = 0; o < oldNumCars; o++){
+					if(modSpawns[m].vehicleId == oldSpawns[o].vehicleId){
+						found = 1;
+						break;
+					}
+				}
+				if(!found) newCarsFromMod++;
+			}
+		}else if(modNumCars > 0){
+			newCarsFromMod = modNumCars;
+		}
 
-		if(logFile) fprintf(logFile, "old=%d, mod=%d, total=%d, additive=%d\n", 
-			oldNumCars, modNumCars, totalNumCars, gAdditiveMerge ? 1 : 0);
+		int totalNumCars = gAdditiveMerge ? (oldNumCars + newCarsFromMod) : modNumCars;
+
+		if(logFile) fprintf(logFile, "old=%d, mod=%d, newFromMod=%d, total=%d, additive=%d\n", 
+			oldNumCars, modNumCars, newCarsFromMod, totalNumCars, gAdditiveMerge ? 1 : 0);
 
 		int newCarsOffset = 0x40;
 		int newFileSize = newCarsOffset + totalNumCars * 48;
@@ -684,13 +700,13 @@ MergeModCarSpawns(void)
 		*(int32*)(iplBuf + 0x3C) = newCarsOffset;
 
 		*(int32*)(iplBuf + 0x14) = totalNumCars;
-		log("Cars: writing %d cars (old=%d + mod=%d) at offset 0x%X, file size %d", 
-			totalNumCars, oldNumCars, modNumCars, newCarsOffset, iplSize);
-		if(logFile) fprintf(logFile, "writing %d cars (old=%d + mod=%d) at offset 0x%X, file size %d\n", 
-			totalNumCars, oldNumCars, modNumCars, newCarsOffset, iplSize);
+		log("Cars: writing %d cars (old=%d + newMod=%d) at offset 0x%X, file size %d", 
+			totalNumCars, oldNumCars, newCarsFromMod, newCarsOffset, iplSize);
+		if(logFile) fprintf(logFile, "writing %d cars (old=%d + newMod=%d) at offset 0x%X, file size %d\n", 
+			totalNumCars, oldNumCars, newCarsFromMod, newCarsOffset, iplSize);
 
 		uint8 *carsData = iplBuf + newCarsOffset;
-		if(gAdditiveMerge && oldNumCars > 0){
+		if(oldNumCars > 0){
 			for(int i = 0; i < oldNumCars; i++){
 				uint8 *carEntry = carsData + i * 48;
 				*(float*)(carEntry + 0) = oldSpawns[i].x;
@@ -707,10 +723,36 @@ MergeModCarSpawns(void)
 				*(int32*)(carEntry + 44) = oldSpawns[i].unknown2;
 			}
 		}
-		if(modNumCars > 0){
+		if(gAdditiveMerge && modNumCars > 0 && oldNumCars > 0){
+			int dstIdx = oldNumCars;
 			for(int i = 0; i < modNumCars; i++){
-				int dstIdx = gAdditiveMerge ? (oldNumCars + i) : i;
-				uint8 *carEntry = carsData + dstIdx * 48;
+				int found = 0;
+				for(int o = 0; o < oldNumCars; o++){
+					if(modSpawns[i].vehicleId == oldSpawns[o].vehicleId){
+						found = 1;
+						break;
+					}
+				}
+				if(!found){
+					uint8 *carEntry = carsData + dstIdx * 48;
+					*(float*)(carEntry + 0) = modSpawns[i].x;
+					*(float*)(carEntry + 4) = modSpawns[i].y;
+					*(float*)(carEntry + 8) = modSpawns[i].z;
+					*(float*)(carEntry + 12) = modSpawns[i].angle;
+					*(int32*)(carEntry + 16) = modSpawns[i].vehicleId;
+					*(int32*)(carEntry + 20) = modSpawns[i].primaryColor;
+					*(int32*)(carEntry + 24) = modSpawns[i].secondaryColor;
+					*(int32*)(carEntry + 28) = modSpawns[i].forceSpawn;
+					*(int32*)(carEntry + 32) = modSpawns[i].alarmProb;
+					*(int32*)(carEntry + 36) = modSpawns[i].lockedProb;
+					*(int32*)(carEntry + 40) = modSpawns[i].unknown1;
+					*(int32*)(carEntry + 44) = modSpawns[i].unknown2;
+					dstIdx++;
+				}
+			}
+		}else if(modNumCars > 0){
+			for(int i = 0; i < modNumCars; i++){
+				uint8 *carEntry = carsData + i * 48;
 				*(float*)(carEntry + 0) = modSpawns[i].x;
 				*(float*)(carEntry + 4) = modSpawns[i].y;
 				*(float*)(carEntry + 8) = modSpawns[i].z;
