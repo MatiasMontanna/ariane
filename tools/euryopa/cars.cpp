@@ -49,6 +49,7 @@ Init(void)
 
 		char filepath[256];
 		snprintf(filepath, sizeof(filepath), "data/binary/ipl/%s", filename);
+		log("Cars: reading: %s", filepath);
 
 		int size;
 		uint8 *buf = ReadLooseFile(filepath, &size);
