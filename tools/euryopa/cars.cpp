@@ -1,6 +1,7 @@
 #include "euryopa.h"
 #include "cars.h"
 #include "modloader.h"
+#include <algorithm>
 #include <map>
 #include <string>
 
