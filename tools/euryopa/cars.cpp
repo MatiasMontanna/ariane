@@ -18,6 +18,7 @@ bool Cars::gRenderUnknown1 = false;
 bool Cars::gRenderUnknown2 = false;
 bool Cars::gRenderFileName = false;
 bool Cars::gRenderAngle = true;
+bool Cars::gReplaceWithModCars = false;
 
 namespace Cars {
 
@@ -496,6 +497,146 @@ SaveAllCarSpawns(void)
 	}
 
 	Toast(TOAST_SAVE, "Saved %d car spawns to disk", (int)carSpawns.size());
+}
+
+static int
+ReadCarSpawnsFromBuffer(uint8 *buf, int size, CarSpawn *spawns, int maxSpawns)
+{
+	if(size < 0x4C)
+		return 0;
+
+	uint32 magic = *(uint32*)buf;
+	if(magic != 0x79726E62)
+		return 0;
+
+	int32 numCars = *(int32*)(buf + 0x14);
+	if(numCars <= 0 || numCars > maxSpawns)
+		return 0;
+
+	int32 carsOffset = *(int32*)(buf + 0x3C);
+	if(carsOffset <= 0 || carsOffset + numCars * 48 > size)
+		return 0;
+
+	uint8 *carsData = buf + carsOffset;
+	for(int i = 0; i < numCars; i++){
+		uint8 *carEntry = carsData + i * 48;
+		spawns[i].x = *(float*)(carEntry + 0);
+		spawns[i].y = *(float*)(carEntry + 4);
+		spawns[i].z = *(float*)(carEntry + 8);
+		spawns[i].angle = *(float*)(carEntry + 12);
+		spawns[i].vehicleId = *(int32*)(carEntry + 16);
+		spawns[i].primaryColor = *(int32*)(carEntry + 20);
+		spawns[i].secondaryColor = *(int32*)(carEntry + 24);
+		spawns[i].forceSpawn = *(int32*)(carEntry + 28);
+		spawns[i].alarmProb = *(int32*)(carEntry + 32);
+		spawns[i].lockedProb = *(int32*)(carEntry + 36);
+		spawns[i].unknown1 = *(int32*)(carEntry + 40);
+		spawns[i].unknown2 = *(int32*)(carEntry + 44);
+	}
+
+	return numCars;
+}
+
+void
+MergeModCarSpawns(void)
+{
+	char modPath[256];
+	snprintf(modPath, sizeof(modPath), "mod");
+	DWORD modAttr = GetFileAttributesA(modPath);
+	if(modAttr == INVALID_FILE_ATTRIBUTES || !(modAttr & FILE_ATTRIBUTE_DIRECTORY)){
+		Toast(TOAST_SAVE, "mod folder not found");
+		return;
+	}
+
+	char iplPath[256];
+	snprintf(iplPath, sizeof(iplPath), "data/binary/ipl/*");
+
+	WIN32_FIND_DATAA findData;
+	HANDLE hFind = FindFirstFileA(iplPath, &findData);
+	if(hFind == INVALID_HANDLE_VALUE){
+		Toast(TOAST_SAVE, "No IPL files found");
+		return;
+	}
+
+	int mergedCount = 0;
+
+	do{
+		const char *filename = findData.cFileName;
+		size_t namelen = strlen(filename);
+		if(namelen < 4 || strcmp(filename + namelen - 4, ".ipl") != 0)
+			continue;
+
+		char iplFilepath[256];
+		snprintf(iplFilepath, sizeof(iplFilepath), "data/binary/ipl/%s", filename);
+
+		char modFilepath[256];
+		snprintf(modFilepath, sizeof(modFilepath), "mod/%s", filename);
+
+		int modSize;
+		uint8 *modBuf = ReadLooseFile(modFilepath, &modSize);
+		if(modBuf == nil)
+			continue;
+
+		CarSpawn modSpawns[1000];
+		int modNumCars = ReadCarSpawnsFromBuffer(modBuf, modSize, modSpawns, 1000);
+		free(modBuf);
+
+		if(modNumCars <= 0)
+			continue;
+
+		int iplSize;
+		uint8 *iplBuf = ReadLooseFile(iplFilepath, &iplSize);
+		if(iplBuf == nil)
+			continue;
+
+		int iplNumCars = 0;
+		if(iplSize >= 0x4C){
+			iplNumCars = *(int32*)(iplBuf + 0x14);
+			if(iplNumCars < 0) iplNumCars = 0;
+		}
+
+		*(int32*)(iplBuf + 0x14) = modNumCars;
+
+		int32 carsOffset = *(int32*)(iplBuf + 0x3C);
+		if(carsOffset > 0 && carsOffset + modNumCars * 48 <= iplSize){
+			uint8 *carsData = iplBuf + carsOffset;
+			for(int i = 0; i < modNumCars; i++){
+				uint8 *carEntry = carsData + i * 48;
+				*(float*)(carEntry + 0) = modSpawns[i].x;
+				*(float*)(carEntry + 4) = modSpawns[i].y;
+				*(float*)(carEntry + 8) = modSpawns[i].z;
+				*(float*)(carEntry + 12) = modSpawns[i].angle;
+				*(int32*)(carEntry + 16) = modSpawns[i].vehicleId;
+				*(int32*)(carEntry + 20) = modSpawns[i].primaryColor;
+				*(int32*)(carEntry + 24) = modSpawns[i].secondaryColor;
+				*(int32*)(carEntry + 28) = modSpawns[i].forceSpawn;
+				*(int32*)(carEntry + 32) = modSpawns[i].alarmProb;
+				*(int32*)(carEntry + 36) = modSpawns[i].lockedProb;
+				*(int32*)(carEntry + 40) = modSpawns[i].unknown1;
+				*(int32*)(carEntry + 44) = modSpawns[i].unknown2;
+			}
+		}
+
+		FILE *f = fopen(iplFilepath, "r+b");
+		if(f){
+			fwrite(iplBuf, 1, iplSize, f);
+			fclose(f);
+			log("Cars: merged %d cars from mod/%s to %s", modNumCars, filename, filename);
+			mergedCount++;
+		}
+
+		free(iplBuf);
+
+	}while(FindNextFileA(hFind, &findData));
+
+	FindClose(hFind);
+
+	if(mergedCount > 0){
+		Toast(TOAST_SAVE, "Merged car spawns from mod folder to %d IPL file(s)", mergedCount);
+		Init();
+	}else{
+		Toast(TOAST_SAVE, "No matching IPL files found in mod folder");
+	}
 }
 
 }  // namespace Cars
