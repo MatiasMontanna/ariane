@@ -2,6 +2,7 @@
 #include "cars.h"
 #include "modloader.h"
 #include <map>
+#include <string>
 
 static std::vector<CarSpawn> carSpawns;
 static int selectedCarSpawnIndex = -1;

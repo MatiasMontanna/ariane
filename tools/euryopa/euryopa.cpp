@@ -1786,14 +1786,25 @@ dogizmo(void)
 					snapRotPtr = snapRotate;
 				}
 
-				ImGuizmo::MODE mode = ImGuizmo::LOCAL;
-				ImGuizmo::OPERATION translateOp = (ImGuizmo::OPERATION)(ImGuizmo::TRANSLATE & ~ImGuizmo::IMGUIZMO_MODE_LOCAL);
-				ImGuizmo::OPERATION rotateOp = (ImGuizmo::OPERATION)(ImGuizmo::ROTATE & ~ImGuizmo::IMGUIZMO_MODE_LOCAL);
+				float snapTranslate[3];
+				float snapRotate[3];
+				float *snapTransPtr = nil;
+				float *snapRotPtr = nil;
+				if(gGizmoSnap){
+					snapTranslate[0] = gGizmoSnapTranslate;
+					snapTranslate[1] = gGizmoSnapTranslate;
+					snapTranslate[2] = gGizmoSnapTranslate;
+					snapTransPtr = snapTranslate;
+					snapRotate[0] = 0.0f;
+					snapRotate[1] = 0.0f;
+					snapRotate[2] = gGizmoSnapAngle;
+					snapRotPtr = snapRotate;
+				}
 
 				if(gGizmoMode == GIZMO_TRANSLATE){
-					ImGuizmo::Manipulate(fview, fproj, translateOp | mode, mode, fobj, nil, snapTransPtr);
+					ImGuizmo::Manipulate(fview, fproj, ImGuizmo::TRANSLATE, ImGuizmo::LOCAL, fobj, nil, snapTransPtr);
 				}else if(gGizmoMode == GIZMO_ROTATE){
-					ImGuizmo::Manipulate(fview, fproj, rotateOp | mode, mode, fobj, nil, snapRotPtr);
+					ImGuizmo::Manipulate(fview, fproj, ImGuizmo::ROTATE, ImGuizmo::LOCAL, fobj, nil, snapRotPtr);
 				}
 
 				gGizmoHovered = ImGuizmo::IsOver();
