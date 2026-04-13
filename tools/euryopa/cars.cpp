@@ -589,17 +589,30 @@ MergeModCarSpawns(void)
 		if(iplBuf == nil)
 			continue;
 
-		int iplNumCars = 0;
+		int32 oldCarsOffset = *(int32*)(iplBuf + 0x3C);
+		int32 oldNumCars = 0;
 		if(iplSize >= 0x4C){
-			iplNumCars = *(int32*)(iplBuf + 0x14);
-			if(iplNumCars < 0) iplNumCars = 0;
+			oldNumCars = *(int32*)(iplBuf + 0x14);
+			if(oldNumCars < 0) oldNumCars = 0;
+		}
+
+		int newCarsOffset = 0x40;
+		int newFileSize = newCarsOffset + modNumCars * 48;
+		if(newFileSize > iplSize){
+			uint8 *newBuf = (uint8*)realloc(iplBuf, newFileSize);
+			if(newBuf == nil){
+				free(iplBuf);
+				continue;
+			}
+			iplBuf = newBuf;
+			iplSize = newFileSize;
+			*(int32*)(iplBuf + 0x3C) = newCarsOffset;
 		}
 
 		*(int32*)(iplBuf + 0x14) = modNumCars;
 
-		int32 carsOffset = *(int32*)(iplBuf + 0x3C);
-		if(carsOffset > 0 && carsOffset + modNumCars * 48 <= iplSize){
-			uint8 *carsData = iplBuf + carsOffset;
+		if(modNumCars > 0){
+			uint8 *carsData = iplBuf + newCarsOffset;
 			for(int i = 0; i < modNumCars; i++){
 				uint8 *carEntry = carsData + i * 48;
 				*(float*)(carEntry + 0) = modSpawns[i].x;
@@ -617,11 +630,11 @@ MergeModCarSpawns(void)
 			}
 		}
 
-		FILE *f = fopen(iplFilepath, "r+b");
+		FILE *f = fopen(iplFilepath, "wb");
 		if(f){
 			fwrite(iplBuf, 1, iplSize, f);
 			fclose(f);
-			log("Cars: merged %d cars from data/binary/mod/%s to %s", modNumCars, filename, filename);
+			log("Cars: merged %d cars (was %d) from data/binary/mod/%s to %s", modNumCars, oldNumCars, filename, filename);
 			mergedCount++;
 		}
 
