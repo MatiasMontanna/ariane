@@ -79,6 +79,7 @@ Init(void)
 
 		if(size < 0x4C){
 			log("Cars: %s too small (%d bytes)\n", filename, size);
+			if(logFile) fprintf(logFile, "too small: %s (%d bytes)\n", filename, size);
 			free(buf);
 			continue;
 		}
@@ -86,12 +87,15 @@ Init(void)
 		uint32 magic = *(uint32*)buf;
 		if(magic != 0x79726E62){
 			log("Cars: %s not bnry format (magic=0x%X)\n", filename, magic);
+			if(logFile) fprintf(logFile, "not bnry: %s magic=0x%X\n", filename, magic);
 			free(buf);
 			continue;
 		}
 
 		int32 numCars = *(int32*)(buf + 0x14);
-		log("Cars: %s has %d parked cars\n", filename, numCars);
+		int32 carsOffset = *(int32*)(buf + 0x3C);
+		log("Cars: %s has %d parked cars at offset 0x%X\n", filename, numCars, (unsigned int)carsOffset);
+		if(logFile) fprintf(logFile, "%s: %d cars at offset 0x%X, size=%d\n", filename, numCars, (unsigned int)carsOffset, size);
 
 		if(numCars <= 0){
 			free(buf);
@@ -652,11 +656,13 @@ MergeModCarSpawns(void)
 			}
 			iplBuf = newBuf;
 			iplSize = newFileSize;
-			*(int32*)(iplBuf + 0x3C) = newCarsOffset;
 		}
+		*(int32*)(iplBuf + 0x3C) = newCarsOffset;
 
 		*(int32*)(iplBuf + 0x14) = modNumCars;
-		log("Cars: writing %d cars at offset 0x40, file size %d", modNumCars, iplSize);
+		*(int32*)(iplBuf + 0x3C) = newCarsOffset;
+		log("Cars: writing %d cars at offset 0x%X, file size %d", modNumCars, newCarsOffset, iplSize);
+		if(logFile) fprintf(logFile, "writing %d cars at offset 0x%X, file size %d\n", modNumCars, newCarsOffset, iplSize);
 
 		if(modNumCars > 0){
 			uint8 *carsData = iplBuf + newCarsOffset;
