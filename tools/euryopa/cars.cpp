@@ -27,6 +27,8 @@ Init(void)
 {
 	carSpawns.clear();
 
+	log("Cars: Init - searching for .ipl files in data/binary/ipl/");
+
 	char path[256];
 	snprintf(path, sizeof(path), "data/binary/ipl/*");
 
@@ -540,13 +542,29 @@ ReadCarSpawnsFromBuffer(uint8 *buf, int size, CarSpawn *spawns, int maxSpawns)
 void
 MergeModCarSpawns(void)
 {
+	FILE *logFile = fopen("cars_merge.log", "w");
+	if(logFile){
+		fprintf(logFile, "Cars merge log started\n");
+		fflush(logFile);
+	}
+
+	#define LOG(...) if(logFile){ fprintf(logFile, __VA_ARGS__); fflush(logFile); }
+
+	log("Cars: starting merge from data/binary/mod/");
+	if(logFile) fprintf(logFile, "Cars: starting merge from data/binary/mod/\n");
+
 	char modPath[256];
 	snprintf(modPath, sizeof(modPath), "data/binary/mod");
 	DWORD modAttr = GetFileAttributesA(modPath);
 	if(modAttr == INVALID_FILE_ATTRIBUTES || !(modAttr & FILE_ATTRIBUTE_DIRECTORY)){
+		log("Cars: data/binary/mod folder not found");
+		if(logFile) fprintf(logFile, "data/binary/mod folder not found\n");
+		if(logFile) fclose(logFile);
 		Toast(TOAST_SAVE, "data/binary/mod folder not found");
 		return;
 	}
+	log("Cars: mod folder exists");
+	if(logFile) fprintf(logFile, "mod folder exists\n");
 
 	char iplPath[256];
 	snprintf(iplPath, sizeof(iplPath), "data/binary/ipl/*");
@@ -554,6 +572,9 @@ MergeModCarSpawns(void)
 	WIN32_FIND_DATAA findData;
 	HANDLE hFind = FindFirstFileA(iplPath, &findData);
 	if(hFind == INVALID_HANDLE_VALUE){
+		log("Cars: no IPL files found");
+		if(logFile) fprintf(logFile, "no IPL files found\n");
+		if(logFile) fclose(logFile);
 		Toast(TOAST_SAVE, "No IPL files found");
 		return;
 	}
@@ -572,14 +593,23 @@ MergeModCarSpawns(void)
 		char modFilepath[256];
 		snprintf(modFilepath, sizeof(modFilepath), "data/binary/mod/%s", filename);
 
+		log("Cars: checking mod file: %s", modFilepath);
+		if(logFile) fprintf(logFile, "checking mod file: %s\n", modFilepath);
+
 		int modSize;
 		uint8 *modBuf = ReadLooseFile(modFilepath, &modSize);
-		if(modBuf == nil)
+		if(modBuf == nil){
+			log("Cars: could not read mod file: %s", modFilepath);
+			if(logFile) fprintf(logFile, "could not read mod file: %s\n", modFilepath);
 			continue;
+		}
 
 		CarSpawn modSpawns[1000];
 		int modNumCars = ReadCarSpawnsFromBuffer(modBuf, modSize, modSpawns, 1000);
 		free(modBuf);
+
+		log("Cars: mod file has %d cars: %s", modNumCars, filename);
+		if(logFile) fprintf(logFile, "mod file %s has %d cars\n", filename, modNumCars);
 
 		if(modNumCars <= 0)
 			continue;
@@ -610,6 +640,7 @@ MergeModCarSpawns(void)
 		}
 
 		*(int32*)(iplBuf + 0x14) = modNumCars;
+		log("Cars: writing %d cars at offset 0x40, file size %d", modNumCars, iplSize);
 
 		if(modNumCars > 0){
 			uint8 *carsData = iplBuf + newCarsOffset;
@@ -630,12 +661,16 @@ MergeModCarSpawns(void)
 			}
 		}
 
-		FILE *f = fopen(iplFilepath, "wb");
+	FILE *f = fopen(iplFilepath, "wb");
 		if(f){
-			fwrite(iplBuf, 1, iplSize, f);
+			size_t written = fwrite(iplBuf, 1, iplSize, f);
 			fclose(f);
-			log("Cars: merged %d cars (was %d) from data/binary/mod/%s to %s", modNumCars, oldNumCars, filename, filename);
+			log("Cars: merged %d cars (was %d) from data/binary/mod/%s to %s, wrote %d bytes", modNumCars, oldNumCars, filename, filename, (int)written);
+			if(logFile) fprintf(logFile, "merged %d cars to %s, wrote %d bytes\n", modNumCars, filename, (int)written);
 			mergedCount++;
+		}else{
+			log("Cars: failed to open for writing: %s", iplFilepath);
+			if(logFile) fprintf(logFile, "FAILED to open for writing: %s\n", iplFilepath);
 		}
 
 		free(iplBuf);
@@ -643,6 +678,9 @@ MergeModCarSpawns(void)
 	}while(FindNextFileA(hFind, &findData));
 
 	FindClose(hFind);
+
+	if(logFile) fprintf(logFile, "mergedCount = %d\n", mergedCount);
+	if(logFile) fclose(logFile);
 
 	if(mergedCount > 0){
 		Toast(TOAST_SAVE, "Merged car spawns from mod folder to %d IPL file(s)", mergedCount);
