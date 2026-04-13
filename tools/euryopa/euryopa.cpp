@@ -1517,26 +1517,34 @@ handleTool(void)
 			Path::selectedNode = Path::hoveredNode;
 			SAPaths::selectedNode = SAPaths::hoveredNode;
 			Effects::selectedEffect = Effects::hoveredEffect;
+			Cars::SelectCarSpawn(-1);
 		}else{
-			ObjectInst *inst = GetInstanceByID(pick());
-			if(inst && !inst->m_isDeleted){
-				if(CPad::IsShiftDown())
-					inst->Select();
-				else if(CPad::IsAltDown())
-					inst->Deselect();
-				else if(CPad::IsCtrlDown()){
-					if(inst->m_selected) inst->Deselect();
-					else inst->Select();
-				}else{
-					ClearSelection();
-					inst->Select();
-				}
-			}else
+			int carSpawnIdx = Cars::PickCarSpawn();
+			if(carSpawnIdx >= 0){
+				Cars::SelectCarSpawn(carSpawnIdx);
 				ClearSelection();
+			}else{
+				ObjectInst *inst = GetInstanceByID(pick());
+				if(inst && !inst->m_isDeleted){
+					if(CPad::IsShiftDown())
+						inst->Select();
+					else if(CPad::IsAltDown())
+						inst->Deselect();
+					else if(CPad::IsCtrlDown()){
+						if(inst->m_selected) inst->Deselect();
+						else inst->Select();
+					}else{
+						ClearSelection();
+						inst->Select();
+					}
+				}else
+					ClearSelection();
 
-			Path::selectedNode = nil;
-			SAPaths::selectedNode = nil;
-			Effects::selectedEffect = nil;
+				Path::selectedNode = nil;
+				SAPaths::selectedNode = nil;
+				Effects::selectedEffect = nil;
+				Cars::SelectCarSpawn(-1);
+			}
 		}
 	}else if(CPad::IsMButtonClicked(2)){
 		if(CPad::IsCtrlDown()){
@@ -1742,6 +1750,82 @@ dogizmo(void)
 	}
 
 	if(!selection.first){
+		static bool wasDraggingCarSpawn = false;
+		static float dragStartCarSpawnX, dragStartCarSpawnY, dragStartCarSpawnZ, dragStartCarSpawnAngle;
+
+		int selectedCarIdx = Cars::GetSelectedCarSpawnIndex();
+		if(selectedCarIdx >= 0){
+			CarSpawn *car = Cars::GetCarSpawn(selectedCarIdx);
+			if(car){
+				rw::Camera *cam = (rw::Camera*)rw::engine->currentCamera;
+				float *fview = (float*)&cam->devView;
+				float *fproj = (float*)&cam->devProj;
+				rw::RawMatrix gizobj;
+				rw::RawMatrix::setIdentity(&gizobj);
+				gizobj.pos.x = car->x;
+				gizobj.pos.y = car->y;
+				gizobj.pos.z = car->z;
+				float rotation[3] = { 0, 0, car->angle };
+				float *fobj = (float*)&gizobj;
+
+				ImGuiIO &io = ImGui::GetIO();
+				ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+				float snapTranslate[3];
+				float snapRotate[3];
+				float *snapTransPtr = nil;
+				float *snapRotPtr = nil;
+				if(gGizmoSnap){
+					snapTranslate[0] = gGizmoSnapTranslate;
+					snapTranslate[1] = gGizmoSnapTranslate;
+					snapTranslate[2] = gGizmoSnapTranslate;
+					snapTransPtr = snapTranslate;
+					snapRotate[0] = 0.0f;
+					snapRotate[1] = 0.0f;
+					snapRotate[2] = gGizmoSnapAngle;
+					snapRotPtr = snapRotate;
+				}
+
+				ImGuizmo::MODE mode = ImGuizmo::LOCAL;
+				ImGuizmo::OPERATION translateOp = (ImGuizmo::OPERATION)(ImGuizmo::TRANSLATE & ~ImGuizmo::IMGUIZMO_MODE_LOCAL);
+				ImGuizmo::OPERATION rotateOp = (ImGuizmo::OPERATION)(ImGuizmo::ROTATE & ~ImGuizmo::IMGUIZMO_MODE_LOCAL);
+
+				if(gGizmoMode == GIZMO_TRANSLATE){
+					ImGuizmo::Manipulate(fview, fproj, translateOp | mode, mode, fobj, nil, snapTransPtr);
+				}else if(gGizmoMode == GIZMO_ROTATE){
+					ImGuizmo::Manipulate(fview, fproj, rotateOp | mode, mode, fobj, nil, snapRotPtr);
+				}
+
+				gGizmoHovered = ImGuizmo::IsOver();
+				bool isUsing = ImGuizmo::IsUsing();
+				gGizmoUsing = isUsing;
+
+				if(isUsing && !wasDraggingCarSpawn){
+					dragStartCarSpawnX = car->x;
+					dragStartCarSpawnY = car->y;
+					dragStartCarSpawnZ = car->z;
+					dragStartCarSpawnAngle = car->angle;
+				}
+
+				if(isUsing){
+					Cars::MoveSelectedCarSpawn(gizobj.pos.x, gizobj.pos.y, gizobj.pos.z);
+					Cars::RotateSelectedCarSpawn(rotation[2]);
+				}else if(wasDraggingCarSpawn){
+					CarSpawn *c = Cars::GetSelectedCarSpawn();
+					if(c && (fabs(c->x - dragStartCarSpawnX) > 0.0001f ||
+					         fabs(c->y - dragStartCarSpawnY) > 0.0001f ||
+					         fabs(c->z - dragStartCarSpawnZ) > 0.0001f ||
+					         fabs(c->angle - dragStartCarSpawnAngle) > 0.0001f)){
+						// Car spawn moved - mark as dirty
+					}
+				}
+
+				wasDraggingCarSpawn = isUsing;
+				return;
+			}
+		}
+
+		wasDraggingCarSpawn = false;
 		static bool wasDraggingSaNode = false;
 		static rw::V3d dragStartSaNodePos;
 

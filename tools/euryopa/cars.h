@@ -21,6 +21,16 @@ namespace Cars {
 void Init(void);
 void Render(void);
 void ExportCSV(void);
+void RenderPicking(void);
+int PickCarSpawn(void);
+void SelectCarSpawn(int index);
+int GetSelectedCarSpawnIndex(void);
+CarSpawn* GetSelectedCarSpawn(void);
+void MoveSelectedCarSpawn(float x, float y, float z);
+void RotateSelectedCarSpawn(float angle);
+void SetSelectedCarSpawnProperty(int property, int value);
+void SaveAllCarSpawns(void);
+
 extern bool gRenderAsCubes;
 extern bool gRenderVehicleId;
 extern bool gRenderPrimaryColor;
@@ -33,6 +43,8 @@ extern bool gRenderUnknown2;
 extern bool gRenderFileName;
 extern bool gRenderAngle;
 bool HasCarSpawns(void);
+int GetNumCarSpawns(void);
+CarSpawn* GetCarSpawn(int index);
 }
 
 #endif

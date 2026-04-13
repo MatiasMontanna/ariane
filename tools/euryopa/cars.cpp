@@ -1,8 +1,10 @@
 #include "euryopa.h"
 #include "cars.h"
 #include "modloader.h"
+#include <map>
 
 static std::vector<CarSpawn> carSpawns;
+static int selectedCarSpawnIndex = -1;
 
 bool Cars::gRenderAsCubes = true;
 bool Cars::gRenderVehicleId = false;
@@ -282,6 +284,199 @@ Render(void)
 			}
 		}
 	}
+}
+
+void
+RenderPicking(void)
+{
+	if(carSpawns.empty())
+		return;
+
+	rw::RGBA col;
+	for(size_t i = 0; i < carSpawns.size(); i++){
+		CarSpawn &car = carSpawns[i];
+
+		int idx = (int)i + 1;
+		col.red = (idx) & 0xFF;
+		col.green = (idx >> 8) & 0xFF;
+		col.blue = (idx >> 16) & 0xFF;
+		col.alpha = 255;
+
+		float halfX = 1.5f;
+		float halfY = 1.5f;
+		float halfZ = 1.5f;
+
+		rw::V3d v[8] = {
+			{ car.x - halfX, car.y - halfY, car.z },
+			{ car.x + halfX, car.y - halfY, car.z },
+			{ car.x - halfX, car.y + halfY, car.z },
+			{ car.x + halfX, car.y + halfY, car.z },
+			{ car.x - halfX, car.y - halfY, car.z + halfZ * 2.0f },
+			{ car.x + halfX, car.y - halfY, car.z + halfZ * 2.0f },
+			{ car.x - halfX, car.y + halfY, car.z + halfZ * 2.0f },
+			{ car.x + halfX, car.y + halfY, car.z + halfZ * 2.0f }
+		};
+
+		RenderLine(v[0], v[1], col, col);
+		RenderLine(v[2], v[3], col, col);
+		RenderLine(v[4], v[5], col, col);
+		RenderLine(v[6], v[7], col, col);
+		RenderLine(v[0], v[2], col, col);
+		RenderLine(v[1], v[3], col, col);
+		RenderLine(v[4], v[6], col, col);
+		RenderLine(v[5], v[7], col, col);
+		RenderLine(v[0], v[4], col, col);
+		RenderLine(v[1], v[5], col, col);
+		RenderLine(v[2], v[6], col, col);
+		RenderLine(v[3], v[7], col, col);
+	}
+}
+
+static uint32
+EncodeColorCode(int idx)
+{
+	if(idx <= 0)
+		return 0xFF000000;
+	return ((idx & 0xFF) << 0) | ((idx >> 8) & 0xFF) << 8 | ((idx >> 16) & 0xFF) << 16 | 0xFF000000;
+}
+
+int
+PickCarSpawn(void)
+{
+	static rw::RGBA black = { 0, 0, 0, 0xFF };
+	TheCamera.m_rwcam->clear(&black, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
+	RenderPicking();
+	uint32 code = EncodeColorCode(gta::GetColourCode(CPad::newMouseState.x, CPad::newMouseState.y));
+	int idx = (code & 0xFFFFFF) - 1;
+	if(idx >= 0 && idx < (int)carSpawns.size())
+		return idx;
+	return -1;
+}
+
+void
+SelectCarSpawn(int index)
+{
+	selectedCarSpawnIndex = index;
+}
+
+int
+GetSelectedCarSpawnIndex(void)
+{
+	return selectedCarSpawnIndex;
+}
+
+CarSpawn*
+GetSelectedCarSpawn(void)
+{
+	if(selectedCarSpawnIndex >= 0 && selectedCarSpawnIndex < (int)carSpawns.size())
+		return &carSpawns[selectedCarSpawnIndex];
+	return nil;
+}
+
+void
+MoveSelectedCarSpawn(float x, float y, float z)
+{
+	if(selectedCarSpawnIndex >= 0 && selectedCarSpawnIndex < (int)carSpawns.size()){
+		carSpawns[selectedCarSpawnIndex].x = x;
+		carSpawns[selectedCarSpawnIndex].y = y;
+		carSpawns[selectedCarSpawnIndex].z = z;
+	}
+}
+
+void
+RotateSelectedCarSpawn(float angle)
+{
+	if(selectedCarSpawnIndex >= 0 && selectedCarSpawnIndex < (int)carSpawns.size()){
+		carSpawns[selectedCarSpawnIndex].angle = angle;
+	}
+}
+
+void
+SetSelectedCarSpawnProperty(int property, int value)
+{
+	if(selectedCarSpawnIndex < 0 || selectedCarSpawnIndex >= (int)carSpawns.size())
+		return;
+	CarSpawn &car = carSpawns[selectedCarSpawnIndex];
+	switch(property){
+	case 0: car.vehicleId = value; break;
+	case 1: car.primaryColor = value; break;
+	case 2: car.secondaryColor = value; break;
+	case 3: car.forceSpawn = value; break;
+	case 4: car.alarmProb = value; break;
+	case 5: car.lockedProb = value; break;
+	case 6: car.unknown1 = value; break;
+	case 7: car.unknown2 = value; break;
+	}
+}
+
+int
+GetNumCarSpawns(void)
+{
+	return (int)carSpawns.size();
+}
+
+CarSpawn*
+GetCarSpawn(int index)
+{
+	if(index >= 0 && index < (int)carSpawns.size())
+		return &carSpawns[index];
+	return nil;
+}
+
+void
+SaveAllCarSpawns(void)
+{
+	if(carSpawns.empty())
+		return;
+
+	std::map<std::string, std::vector<int>> fileToIndices;
+	for(size_t i = 0; i < carSpawns.size(); i++){
+		fileToIndices[carSpawns[i].iplName].push_back((int)i);
+	}
+
+	for(auto &kv : fileToIndices){
+		const char *filename = kv.first.c_str();
+		const std::vector<int> &indices = kv.second;
+		int numCars = (int)indices.size();
+
+		char filepath[256];
+		snprintf(filepath, sizeof(filepath), "data/binary/ipl/%s", filename);
+
+		FILE *f = fopen(filepath, "r+b");
+		if(f == nil){
+			log("Cars: failed to open %s for writing\n", filepath);
+			continue;
+		}
+
+		fseek(f, 0x14, SEEK_SET);
+		fwrite(&numCars, sizeof(int32), 1, f);
+
+		int32 carsOffset;
+		fseek(f, 0x3C, SEEK_SET);
+		fread(&carsOffset, sizeof(int32), 1, f);
+
+		fseek(f, carsOffset, SEEK_SET);
+		for(size_t i = 0; i < indices.size(); i++){
+			CarSpawn &car = carSpawns[indices[i]];
+			fwrite(&car.x, sizeof(float), 1, f);
+			fwrite(&car.y, sizeof(float), 1, f);
+			fwrite(&car.z, sizeof(float), 1, f);
+			fwrite(&car.angle, sizeof(float), 1, f);
+			fwrite(&car.vehicleId, sizeof(int32), 1, f);
+			fwrite(&car.primaryColor, sizeof(int32), 1, f);
+			fwrite(&car.secondaryColor, sizeof(int32), 1, f);
+			fwrite(&car.forceSpawn, sizeof(int32), 1, f);
+			fwrite(&car.alarmProb, sizeof(int32), 1, f);
+			fwrite(&car.lockedProb, sizeof(int32), 1, f);
+			fwrite(&car.unknown1, sizeof(int32), 1, f);
+			fwrite(&car.unknown2, sizeof(int32), 1, f);
+		}
+
+		fclose(f);
+		log("Cars: saved %d spawns to %s\n", numCars, filename);
+	}
+
+	Toast(TOAST_SAVE, "Saved %d car spawns to disk", (int)carSpawns.size());
 }
 
 }  // namespace Cars

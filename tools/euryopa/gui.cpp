@@ -5733,6 +5733,63 @@ uiInstWindow(void)
 			if(ImGui::CollapsingHeader("Legacy Paths"))
 				uiPathInfo(inst);
 	}else{
+		if(Cars::GetSelectedCarSpawnIndex() >= 0){
+			if(ImGui::CollapsingHeader("Car Spawn")){
+				CarSpawn *car = Cars::GetSelectedCarSpawn();
+				if(car){
+					ImGui::Text("Position: (%.2f, %.2f, %.2f)", car->x, car->y, car->z);
+					ImGui::Text("Angle: %.2f", car->angle);
+					ImGui::Separator();
+
+					static int editVehicleId;
+					static int editPrimaryColor;
+					static int editSecondaryColor;
+					static int editForceSpawn;
+					static int editAlarmProb;
+					static int editLockedProb;
+					static int editUnknown1;
+					static int editUnknown2;
+
+					editVehicleId = car->vehicleId;
+					editPrimaryColor = car->primaryColor;
+					editSecondaryColor = car->secondaryColor;
+					editForceSpawn = car->forceSpawn;
+					editAlarmProb = car->alarmProb;
+					editLockedProb = car->lockedProb;
+					editUnknown1 = car->unknown1;
+					editUnknown2 = car->unknown2;
+
+					ImGui::InputInt("Vehicle ID", &editVehicleId);
+					ImGui::InputInt("Primary Color", &editPrimaryColor);
+					ImGui::InputInt("Secondary Color", &editSecondaryColor);
+					ImGui::InputInt("Force Spawn", &editForceSpawn);
+					ImGui::InputInt("Alarm Prob", &editAlarmProb);
+					ImGui::InputInt("Locked Prob", &editLockedProb);
+					ImGui::InputInt("Unknown 1", &editUnknown1);
+					ImGui::InputInt("Unknown 2", &editUnknown2);
+
+					ImGui::Separator();
+
+					if(ImGui::Button("Apply Changes")){
+						Cars::SetSelectedCarSpawnProperty(0, editVehicleId);
+						Cars::SetSelectedCarSpawnProperty(1, editPrimaryColor);
+						Cars::SetSelectedCarSpawnProperty(2, editSecondaryColor);
+						Cars::SetSelectedCarSpawnProperty(3, editForceSpawn);
+						Cars::SetSelectedCarSpawnProperty(4, editAlarmProb);
+						Cars::SetSelectedCarSpawnProperty(5, editLockedProb);
+						Cars::SetSelectedCarSpawnProperty(6, editUnknown1);
+						Cars::SetSelectedCarSpawnProperty(7, editUnknown2);
+						Toast(TOAST_SAVE, "Car spawn properties updated");
+					}
+					ImGui::SameLine();
+					if(ImGui::Button("Save All")){
+						Cars::SaveAllCarSpawns();
+					}
+					ImGui::TextDisabled("File: %s", car->iplName);
+				}
+			}
+		}
+
 		if(Path::selectedNode)// && Path::selectedNode->isDetached())
 		if(ImGui::CollapsingHeader("Legacy Paths"))
 			uiPathInfo(nil);
