@@ -102,7 +102,6 @@ Init(void)
 			continue;
 		}
 
-		int32 carsOffset = *(int32*)(buf + 0x3C);
 		if(carsOffset <= 0 || carsOffset + numCars * 48 > size){
 			log("Cars: %s invalid offset/size\n", filename);
 			free(buf);
