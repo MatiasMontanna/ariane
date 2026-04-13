@@ -42,7 +42,7 @@ bool Cars::gReplaceWithModCars = false;
 bool Cars::gAdditiveMerge = false;
 bool Cars::gRenderModCarsOrange = false;
 bool Cars::gLoadModCars = false;
-float Cars::gMergeDistanceThreshold = 0.5f;
+float Cars::gMergeDistanceThreshold = 1.0f;
 
 namespace Cars {
 
@@ -879,12 +879,17 @@ MergeModCarSpawns(void)
 void
 MergeCloseCarSpawns(void)
 {
-	if(carSpawns.size() < 2)
+	log("Cars: MergeCloseCarSpawns starting, count=%d, threshold=%.2f", (int)carSpawns.size(), Cars::gMergeDistanceThreshold);
+	
+	if(carSpawns.size() < 2){
+		log("Cars: less than 2 cars, nothing to merge");
 		return;
+	}
 
 	float threshold = Cars::gMergeDistanceThreshold;
-	int originalCount = (int)carSpawns.size();
 	std::vector<int> toRemove;
+
+	log("Cars: checking %d cars for proximity...", (int)carSpawns.size());
 
 	for(size_t i = 0; i < carSpawns.size(); i++){
 		for(size_t j = i + 1; j < carSpawns.size(); j++){
@@ -902,11 +907,16 @@ MergeCloseCarSpawns(void)
 						break;
 					}
 				}
-				if(!alreadyMarked)
+				if(!alreadyMarked){
 					toRemove.push_back((int)j);
+					log("Cars: car[%d](%.2f,%.2f,%.2f) matches car[%d](%.2f,%.2f,%.2f) dist=%.2f", 
+						i, a.x,a.y,a.z, j, b.x,b.y,b.z, dist);
+				}
 			}
 		}
 	}
+
+	log("Cars: found %d duplicates to remove", (int)toRemove.size());
 
 	if(toRemove.empty()){
 		log("Cars: no close cars found within threshold %.2f", threshold);
