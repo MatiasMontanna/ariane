@@ -344,14 +344,32 @@ EncodeColorCode(int idx)
 int
 PickCarSpawn(void)
 {
-	static rw::RGBA black = { 0, 0, 0, 0xFF };
-	TheCamera.m_rwcam->clear(&black, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
-	RenderPicking();
-	uint32 code = EncodeColorCode(gta::GetColourCode(CPad::newMouseState.x, CPad::newMouseState.y));
-	int idx = (code & 0xFFFFFF) - 1;
-	if(idx >= 0 && idx < (int)carSpawns.size())
-		return idx;
-	return -1;
+	if(carSpawns.empty() || !gRenderCarSpawns)
+		return -1;
+
+	rw::V3d origin = TheCamera.m_position;
+	rw::V3d dir = normalize(TheCamera.m_mouseDir);
+	Ray ray;
+	ray.start = origin;
+	ray.dir = dir;
+
+	float bestT = 1e30f;
+	int bestIdx = -1;
+
+	for(size_t i = 0; i < carSpawns.size(); i++){
+		CarSpawn &car = carSpawns[i];
+		CSphere sphere;
+		sphere.center = { car.x, car.y, car.z + 1.5f };
+		sphere.radius = 2.5f;
+
+		float t;
+		if(IntersectRaySphere(ray, sphere, &t) && t > 0.0f && t < bestT){
+			bestT = t;
+			bestIdx = (int)i;
+		}
+	}
+
+	return bestIdx;
 }
 
 void
