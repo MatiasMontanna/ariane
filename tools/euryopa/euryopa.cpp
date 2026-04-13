@@ -102,6 +102,7 @@ float gSaCarPathTrafficSpeedScale = 1.0f;
 bool gSaCarPathTrafficFreezeRoutes = false;
 bool gRenderSaCarPathParkedCars = false;
 int gSaCarPathParkedCarCount = 8;
+uint32 gRequestedAASamples = 1;
 
 // World labels
 bool gRenderAreaIdLabels;
@@ -1841,7 +1842,8 @@ dogizmo(void)
 
 		float snapValues[3];
 		float *snapPtr = nil;
-		if(gGizmoSnap){
+		bool useSnap = gGizmoSnap && CPad::IsShiftDown();
+		if(useSnap){
 			snapValues[0] = gGizmoSnapTranslate;
 			snapValues[1] = gGizmoSnapTranslate;
 			snapValues[2] = gGizmoSnapTranslate;
@@ -1904,7 +1906,8 @@ dogizmo(void)
 	ImGuizmo::OPERATION op = gGizmoMode == GIZMO_ROTATE ? ImGuizmo::ROTATE : ImGuizmo::TRANSLATE;
 	float snapValues[3];
 	float *snapPtr = nil;
-	if(gGizmoSnap){
+	bool useSnap = gGizmoSnap && CPad::IsShiftDown();
+	if(useSnap){
 		if(gGizmoMode == GIZMO_ROTATE){
 			snapValues[0] = gGizmoSnapAngle;
 			snapValues[1] = gGizmoSnapAngle;
