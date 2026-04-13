@@ -4,6 +4,25 @@
 #include <map>
 #include <string>
 
+static FILE *logFile = nil;
+
+static void openLogFile(void){
+	logFile = fopen("cars_merge.log", "w");
+	if(logFile){
+		fprintf(logFile, "Cars merge log started\n");
+		fflush(logFile);
+	}
+}
+
+static void closeLogFile(void){
+	if(logFile){
+		fprintf(logFile, "Cars merge log ended\n");
+		fflush(logFile);
+		fclose(logFile);
+		logFile = nil;
+	}
+}
+
 static std::vector<CarSpawn> carSpawns;
 static int selectedCarSpawnIndex = -1;
 
@@ -117,6 +136,7 @@ Init(void)
 	FindClose(hFind);
 
 	log("Cars: loaded %d spawns\n", (int)carSpawns.size());
+	if(logFile) fprintf(logFile, "Cars: total loaded %d spawns\n", (int)carSpawns.size());
 }
 
 bool
@@ -543,13 +563,8 @@ ReadCarSpawnsFromBuffer(uint8 *buf, int size, CarSpawn *spawns, int maxSpawns)
 void
 MergeModCarSpawns(void)
 {
-	FILE *logFile = fopen("cars_merge.log", "w");
-	if(logFile){
-		fprintf(logFile, "Cars merge log started\n");
-		fflush(logFile);
-	}
-
-	#define LOG(...) if(logFile){ fprintf(logFile, __VA_ARGS__); fflush(logFile); }
+	openLogFile();
+	if(logFile) fprintf(logFile, "Cars merge log started\n");
 
 	log("Cars: starting merge from data/binary/mod/");
 	if(logFile) fprintf(logFile, "Cars: starting merge from data/binary/mod/\n");
@@ -560,7 +575,7 @@ MergeModCarSpawns(void)
 	if(modAttr == INVALID_FILE_ATTRIBUTES || !(modAttr & FILE_ATTRIBUTE_DIRECTORY)){
 		log("Cars: data/binary/mod folder not found");
 		if(logFile) fprintf(logFile, "data/binary/mod folder not found\n");
-		if(logFile) fclose(logFile);
+		closeLogFile();
 		Toast(TOAST_SAVE, "data/binary/mod folder not found");
 		return;
 	}
@@ -684,9 +699,15 @@ MergeModCarSpawns(void)
 	if(logFile) fclose(logFile);
 
 	if(mergedCount > 0){
+		log("Cars: calling Init() after merge");
+		if(logFile) fprintf(logFile, "calling Init() after merge\n");
 		Toast(TOAST_SAVE, "Merged car spawns from mod folder to %d IPL file(s)", mergedCount);
 		Init();
+		log("Cars: Init() completed, total spawns: %d", (int)carSpawns.size());
+		if(logFile) fprintf(logFile, "Init() completed, total spawns: %d\n", (int)carSpawns.size());
+		closeLogFile();
 	}else{
+		closeLogFile();
 		Toast(TOAST_SAVE, "No matching IPL files found in mod folder");
 	}
 }
