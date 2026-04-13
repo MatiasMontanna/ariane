@@ -882,7 +882,7 @@ MergeCloseCarSpawns(void)
 	if(carSpawns.size() < 2)
 		return;
 
-	float threshold = gMergeDistanceThreshold;
+	float threshold = Cars::gMergeDistanceThreshold;
 	int originalCount = (int)carSpawns.size();
 	std::vector<int> toRemove;
 

@@ -48,11 +48,11 @@ extern bool gAdditiveMerge;
 extern bool gRenderModCarsOrange;
 extern bool gLoadModCars;
 extern float gMergeDistanceThreshold;
-void MergeCloseCarSpawns(void);
 bool HasCarSpawns(void);
 int GetNumCarSpawns(void);
 CarSpawn* GetCarSpawn(int index);
 void MergeModCarSpawns(void);
+void MergeCloseCarSpawns(void);
 }
 
 #endif
