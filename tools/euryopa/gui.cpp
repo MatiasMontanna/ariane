@@ -4149,7 +4149,6 @@ uiRendering(void)
 			if(ImGui::Selectable(getAASamplesLabel(samples), selected)){
 				if(gRequestedAASamples != samples){
 					gRequestedAASamples = samples;
-					sk::requestedMultiSamplingLevels = samples;
 					SaveEditorSettingsNow();
 					Toast(TOAST_SAVE, "Anti-aliasing set to %s. Restart Ariane to apply it.",
 						getAASamplesLabel(samples));
@@ -5044,7 +5043,6 @@ loadSaveSettings(void)
 	normalizePersistentSettings();
 	gRequestedAASamples = sanitizeAASamples(gRequestedAASamples,
 		rw::Engine::getMaxMultiSamplingLevels());
-	sk::requestedMultiSamplingLevels = gRequestedAASamples;
 
 	RefreshIplVisibilityEntries();
 	for(size_t i = 0; i < gSavedIplVisibilityStates.size(); i++){
