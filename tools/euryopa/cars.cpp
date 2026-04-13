@@ -38,6 +38,7 @@ bool Cars::gRenderUnknown2 = false;
 bool Cars::gRenderFileName = false;
 bool Cars::gRenderAngle = true;
 bool Cars::gReplaceWithModCars = false;
+bool Cars::gAdditiveMerge = false;
 
 namespace Cars {
 
@@ -640,13 +641,37 @@ MergeModCarSpawns(void)
 
 		int32 oldCarsOffset = *(int32*)(iplBuf + 0x3C);
 		int32 oldNumCars = 0;
+		CarSpawn oldSpawns[1000];
 		if(iplSize >= 0x4C){
 			oldNumCars = *(int32*)(iplBuf + 0x14);
 			if(oldNumCars < 0) oldNumCars = 0;
+			if(oldNumCars > 0 && oldCarsOffset > 0 && oldCarsOffset + oldNumCars * 48 <= iplSize){
+				uint8 *oldCarsData = iplBuf + oldCarsOffset;
+				for(int i = 0; i < oldNumCars && i < 1000; i++){
+					uint8 *carEntry = oldCarsData + i * 48;
+					oldSpawns[i].x = *(float*)(carEntry + 0);
+					oldSpawns[i].y = *(float*)(carEntry + 4);
+					oldSpawns[i].z = *(float*)(carEntry + 8);
+					oldSpawns[i].angle = *(float*)(carEntry + 12);
+					oldSpawns[i].vehicleId = *(int32*)(carEntry + 16);
+					oldSpawns[i].primaryColor = *(int32*)(carEntry + 20);
+					oldSpawns[i].secondaryColor = *(int32*)(carEntry + 24);
+					oldSpawns[i].forceSpawn = *(int32*)(carEntry + 28);
+					oldSpawns[i].alarmProb = *(int32*)(carEntry + 32);
+					oldSpawns[i].lockedProb = *(int32*)(carEntry + 36);
+					oldSpawns[i].unknown1 = *(int32*)(carEntry + 40);
+					oldSpawns[i].unknown2 = *(int32*)(carEntry + 44);
+				}
+			}
 		}
 
+		int totalNumCars = gAdditiveMerge ? (oldNumCars + modNumCars) : modNumCars;
+
+		if(logFile) fprintf(logFile, "old=%d, mod=%d, total=%d, additive=%d\n", 
+			oldNumCars, modNumCars, totalNumCars, gAdditiveMerge ? 1 : 0);
+
 		int newCarsOffset = 0x40;
-		int newFileSize = newCarsOffset + modNumCars * 48;
+		int newFileSize = newCarsOffset + totalNumCars * 48;
 		if(newFileSize > iplSize){
 			uint8 *newBuf = (uint8*)realloc(iplBuf, newFileSize);
 			if(newBuf == nil){
@@ -658,15 +683,34 @@ MergeModCarSpawns(void)
 		}
 		*(int32*)(iplBuf + 0x3C) = newCarsOffset;
 
-		*(int32*)(iplBuf + 0x14) = modNumCars;
-		*(int32*)(iplBuf + 0x3C) = newCarsOffset;
-		log("Cars: writing %d cars at offset 0x%X, file size %d", modNumCars, newCarsOffset, iplSize);
-		if(logFile) fprintf(logFile, "writing %d cars at offset 0x%X, file size %d\n", modNumCars, newCarsOffset, iplSize);
+		*(int32*)(iplBuf + 0x14) = totalNumCars;
+		log("Cars: writing %d cars (old=%d + mod=%d) at offset 0x%X, file size %d", 
+			totalNumCars, oldNumCars, modNumCars, newCarsOffset, iplSize);
+		if(logFile) fprintf(logFile, "writing %d cars (old=%d + mod=%d) at offset 0x%X, file size %d\n", 
+			totalNumCars, oldNumCars, modNumCars, newCarsOffset, iplSize);
 
-		if(modNumCars > 0){
-			uint8 *carsData = iplBuf + newCarsOffset;
-			for(int i = 0; i < modNumCars; i++){
+		uint8 *carsData = iplBuf + newCarsOffset;
+		if(gAdditiveMerge && oldNumCars > 0){
+			for(int i = 0; i < oldNumCars; i++){
 				uint8 *carEntry = carsData + i * 48;
+				*(float*)(carEntry + 0) = oldSpawns[i].x;
+				*(float*)(carEntry + 4) = oldSpawns[i].y;
+				*(float*)(carEntry + 8) = oldSpawns[i].z;
+				*(float*)(carEntry + 12) = oldSpawns[i].angle;
+				*(int32*)(carEntry + 16) = oldSpawns[i].vehicleId;
+				*(int32*)(carEntry + 20) = oldSpawns[i].primaryColor;
+				*(int32*)(carEntry + 24) = oldSpawns[i].secondaryColor;
+				*(int32*)(carEntry + 28) = oldSpawns[i].forceSpawn;
+				*(int32*)(carEntry + 32) = oldSpawns[i].alarmProb;
+				*(int32*)(carEntry + 36) = oldSpawns[i].lockedProb;
+				*(int32*)(carEntry + 40) = oldSpawns[i].unknown1;
+				*(int32*)(carEntry + 44) = oldSpawns[i].unknown2;
+			}
+		}
+		if(modNumCars > 0){
+			for(int i = 0; i < modNumCars; i++){
+				int dstIdx = gAdditiveMerge ? (oldNumCars + i) : i;
+				uint8 *carEntry = carsData + dstIdx * 48;
 				*(float*)(carEntry + 0) = modSpawns[i].x;
 				*(float*)(carEntry + 4) = modSpawns[i].y;
 				*(float*)(carEntry + 8) = modSpawns[i].z;
@@ -686,8 +730,8 @@ MergeModCarSpawns(void)
 		if(f){
 			size_t written = fwrite(iplBuf, 1, iplSize, f);
 			fclose(f);
-			log("Cars: merged %d cars (was %d) from data/binary/mod/%s to %s, wrote %d bytes", modNumCars, oldNumCars, filename, filename, (int)written);
-			if(logFile) fprintf(logFile, "merged %d cars to %s, wrote %d bytes\n", modNumCars, filename, (int)written);
+			log("Cars: merged %d cars (%d old + %d mod) to %s, wrote %d bytes", totalNumCars, oldNumCars, modNumCars, filename, (int)written);
+			if(logFile) fprintf(logFile, "merged %d cars (%d old + %d mod) to %s, wrote %d bytes\n", totalNumCars, oldNumCars, modNumCars, filename, (int)written);
 			mergedCount++;
 		}else{
 			log("Cars: failed to open for writing: %s", iplFilepath);

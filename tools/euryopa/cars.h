@@ -43,6 +43,7 @@ extern bool gRenderUnknown2;
 extern bool gRenderFileName;
 extern bool gRenderAngle;
 extern bool gReplaceWithModCars;
+extern bool gAdditiveMerge;
 bool HasCarSpawns(void);
 int GetNumCarSpawns(void);
 CarSpawn* GetCarSpawn(int index);
