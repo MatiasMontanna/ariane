@@ -4047,10 +4047,10 @@ uiView(void)
 					Cars::ExportCSV();
 				}
 				ImGui::SameLine();
-				if(ImGui::Button("Merge mod/ipl")){
+				if(ImGui::Button("Merge data/binary/mod")){
 					Cars::MergeModCarSpawns();
 				}
-				ImGui::SetItemTooltip("Replace car blocks in data/binary/ipl/ with content from mod/ folder");
+				ImGui::SetItemTooltip("Replace car blocks in data/binary/ipl/ with content from data/binary/mod/ folder");
 				ImGui::Unindent();
 			}
 		}

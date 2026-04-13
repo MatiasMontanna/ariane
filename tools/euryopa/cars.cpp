@@ -541,10 +541,10 @@ void
 MergeModCarSpawns(void)
 {
 	char modPath[256];
-	snprintf(modPath, sizeof(modPath), "mod");
+	snprintf(modPath, sizeof(modPath), "data/binary/mod");
 	DWORD modAttr = GetFileAttributesA(modPath);
 	if(modAttr == INVALID_FILE_ATTRIBUTES || !(modAttr & FILE_ATTRIBUTE_DIRECTORY)){
-		Toast(TOAST_SAVE, "mod folder not found");
+		Toast(TOAST_SAVE, "data/binary/mod folder not found");
 		return;
 	}
 
@@ -570,7 +570,7 @@ MergeModCarSpawns(void)
 		snprintf(iplFilepath, sizeof(iplFilepath), "data/binary/ipl/%s", filename);
 
 		char modFilepath[256];
-		snprintf(modFilepath, sizeof(modFilepath), "mod/%s", filename);
+		snprintf(modFilepath, sizeof(modFilepath), "data/binary/mod/%s", filename);
 
 		int modSize;
 		uint8 *modBuf = ReadLooseFile(modFilepath, &modSize);
@@ -621,7 +621,7 @@ MergeModCarSpawns(void)
 		if(f){
 			fwrite(iplBuf, 1, iplSize, f);
 			fclose(f);
-			log("Cars: merged %d cars from mod/%s to %s", modNumCars, filename, filename);
+			log("Cars: merged %d cars from data/binary/mod/%s to %s", modNumCars, filename, filename);
 			mergedCount++;
 		}
 
