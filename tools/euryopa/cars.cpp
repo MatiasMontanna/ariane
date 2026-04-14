@@ -3,9 +3,37 @@
 #include "modloader.h"
 #include <algorithm>
 #include <map>
+#include <stdarg.h>
 #include <string>
 
 static FILE *logFile = nil;
+static FILE *debugLogFile = nil;
+
+static void openDebugLogFile(void){
+	debugLogFile = fopen("cars_merge_debug.log", "w");
+	if(debugLogFile){
+		fprintf(debugLogFile, "Debug log started\n");
+		fflush(debugLogFile);
+	}
+}
+
+static void debugLog(const char *fmt, ...){
+	if(debugLogFile){
+		va_list args;
+		va_start(args, fmt);
+		vfprintf(debugLogFile, fmt, args);
+		fprintf(debugLogFile, "\n");
+		fflush(debugLogFile);
+		va_end(args);
+	}
+}
+
+static void closeDebugLogFile(void){
+	if(debugLogFile){
+		fclose(debugLogFile);
+		debugLogFile = nil;
+	}
+}
 
 static void openLogFile(void){
 	logFile = fopen("cars_merge.log", "w");
@@ -879,10 +907,13 @@ MergeModCarSpawns(void)
 void
 MergeCloseCarSpawns(void)
 {
+	openDebugLogFile();
+	debugLog("MergeCloseCarSpawns starting, count=%d, threshold=%.2f", (int)carSpawns.size(), Cars::gMergeDistanceThreshold);
 	log("Cars: MergeCloseCarSpawns starting, count=%d, threshold=%.2f", (int)carSpawns.size(), Cars::gMergeDistanceThreshold);
 	
 	if(carSpawns.size() < 2){
 		log("Cars: less than 2 cars, nothing to merge");
+		closeDebugLogFile();
 		return;
 	}
 
@@ -899,7 +930,12 @@ MergeCloseCarSpawns(void)
 			float dy = a.y - b.y;
 			float dz = a.z - b.z;
 			float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-			if(dist < threshold){
+			int isSamePos = (dist <= threshold);
+			debugLog("comparing car[%d] vs car[%d] dist=%.2f threshold=%.2f same=%d", 
+				(int)i, (int)j, dist, threshold, isSamePos);
+			log("Cars: comparing car[%d](%.2f,%.2f,%.2f) vs car[%d](%.2f,%.2f,%.2f) dist=%.2f threshold=%.2f same=%d", 
+				(int)i, a.x,a.y,a.z, (int)j, b.x,b.y,b.z, dist, threshold, isSamePos);
+			if(isSamePos){
 				int alreadyMarked = 0;
 				for(size_t k = 0; k < toRemove.size(); k++){
 					if(toRemove[k] == (int)j){
@@ -944,6 +980,8 @@ MergeCloseCarSpawns(void)
 	Toast(TOAST_SAVE, "Merged %d close car spawns", removedCount);
 	SaveAllCarSpawns();
 	Init();
+	debugLog("DONE: removed %d cars, remaining %d", removedCount, (int)carSpawns.size());
+	closeDebugLogFile();
 }
 
 }  // namespace Cars
