@@ -931,11 +931,11 @@ MergeCloseCarSpawns(void)
 			float dz = a.z - b.z;
 			float dist = sqrtf(dx*dx + dy*dy + dz*dz);
 			int isSamePos = (dist <= threshold);
-			debugLog("comparing car[%d] vs car[%d] dist=%.2f threshold=%.2f same=%d", 
-				(int)i, (int)j, dist, threshold, isSamePos);
-			log("Cars: comparing car[%d](%.2f,%.2f,%.2f) vs car[%d](%.2f,%.2f,%.2f) dist=%.2f threshold=%.2f same=%d", 
-				(int)i, a.x,a.y,a.z, (int)j, b.x,b.y,b.z, dist, threshold, isSamePos);
 			if(isSamePos){
+				debugLog("MATCH: car[%d](%.2f,%.2f,%.2f) vs car[%d](%.2f,%.2f,%.2f) dist=%.2f", 
+					(int)i, a.x,a.y,a.z, (int)j, b.x,b.y,b.z, dist);
+				log("Cars: car[%d](%.2f,%.2f,%.2f) matches car[%d](%.2f,%.2f,%.2f) dist=%.2f", 
+					i, a.x,a.y,a.z, j, b.x,b.y,b.z, dist);
 				int alreadyMarked = 0;
 				for(size_t k = 0; k < toRemove.size(); k++){
 					if(toRemove[k] == (int)j){
@@ -945,11 +945,43 @@ MergeCloseCarSpawns(void)
 				}
 				if(!alreadyMarked){
 					toRemove.push_back((int)j);
-					log("Cars: car[%d](%.2f,%.2f,%.2f) matches car[%d](%.2f,%.2f,%.2f) dist=%.2f", 
-						i, a.x,a.y,a.z, j, b.x,b.y,b.z, dist);
 				}
 			}
 		}
+	}
+
+	debugLog("After position check: found %d to remove", (int)toRemove.size());
+	log("Cars: found %d cars within threshold (threshold=%.2f)", (int)toRemove.size(), threshold);
+
+	if(toRemove.empty()){
+		log("Cars: trying exact match by vehicleId + position...");
+		for(size_t i = 0; i < carSpawns.size(); i++){
+			for(size_t j = i + 1; j < carSpawns.size(); j++){
+				CarSpawn &a = carSpawns[i];
+				CarSpawn &b = carSpawns[j];
+				if(a.vehicleId == b.vehicleId){
+					float dx = a.x - b.x;
+					float dy = a.y - b.y;
+					float dz = a.z - b.z;
+					float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+					if(dist < 0.1f){
+						debugLog("vehicleId match: car[%d] vs car[%d] same vehId=%d dist=%.2f", 
+							(int)i, (int)j, a.vehicleId, dist);
+						int alreadyMarked = 0;
+						for(size_t k = 0; k < toRemove.size(); k++){
+							if(toRemove[k] == (int)j){
+								alreadyMarked = 1;
+								break;
+							}
+						}
+						if(!alreadyMarked){
+							toRemove.push_back((int)j);
+						}
+					}
+				}
+			}
+		}
+		debugLog("After vehicleId check: found %d to remove", (int)toRemove.size());
 	}
 
 	log("Cars: found %d duplicates to remove", (int)toRemove.size());
