@@ -940,14 +940,20 @@ MergeCloseCarSpawns(void)
 			CarSpawn &a = carSpawns[i];
 			CarSpawn &b = carSpawns[j];
 			
-			int sameX = (fabsf(a.x - b.x) < 0.01f);
-			int sameY = (fabsf(a.y - b.y) < 0.01f);
-			int sameZ = (fabsf(a.z - b.z) < 0.01f);
+			float dx = fabsf(a.x - b.x);
+			float dy = fabsf(a.y - b.y);
+			float dz = fabsf(a.z - b.z);
 			
-			if(sameX && sameY && sameZ){
-				debugLog("DUPLICATE: car[%d](%.2f,%.2f,%.2f) = car[%d](%.2f,%.2f,%.2f)", 
+			int sameX = (dx < 0.01f);
+			int sameY = (dy < 0.01f);
+			int sameZ = (dz < 0.01f);
+			
+			int samePos = sameX && sameY && sameZ;
+			
+			if(samePos){
+				debugLog("DUPLICATE: car[%d](%.5f,%.5f,%.5f) = car[%d](%.5f,%.5f,%.5f)", 
 					(int)i, a.x,a.y,a.z, (int)j, b.x,b.y,b.z);
-				log("Cars: DUPLICATE car[%d] at (%.2f,%.2f,%.2f) with car[%d]", 
+				log("Cars: DUPLICATE car[%d] at (%.5f,%.5f,%.5f) with car[%d]", 
 					i, a.x,a.y,a.z, (int)j);
 				
 				toRemove.push_back((int)j);
