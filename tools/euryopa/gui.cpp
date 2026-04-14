@@ -4028,6 +4028,8 @@ uiView(void)
 				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
 				ImGui::SameLine();
 				ImGui::Checkbox("Angle", &Cars::gRenderAngle);
+				ImGui::SameLine();
+				ImGui::Checkbox("Position", &Cars::gRenderPosition);
 				ImGui::Checkbox("Load Mod", &Cars::gLoadModCars);
 				if(Cars::gLoadModCars){
 					ImGui::SameLine();

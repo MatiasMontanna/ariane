@@ -66,6 +66,7 @@ bool Cars::gRenderUnknown1 = false;
 bool Cars::gRenderUnknown2 = false;
 bool Cars::gRenderFileName = false;
 bool Cars::gRenderAngle = true;
+bool Cars::gRenderPosition = false;
 bool Cars::gReplaceWithModCars = false;
 bool Cars::gAdditiveMerge = false;
 bool Cars::gRenderModCarsOrange = false;
@@ -337,7 +338,7 @@ Render(void)
 
 		if(!Cars::gRenderVehicleId && !Cars::gRenderPrimaryColor && !Cars::gRenderSecondaryColor &&
 		   !Cars::gRenderForceSpawn && !Cars::gRenderAlarmProb && !Cars::gRenderLockedProb &&
-		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2 && !Cars::gRenderFileName)
+		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2 && !Cars::gRenderFileName && !Cars::gRenderPosition)
 			continue;
 
 		rw::V3d worldPos = { car.x, car.y, car.z + halfZ * 2.5f };
@@ -398,6 +399,18 @@ Render(void)
 				if(Cars::gRenderFileName){
 					strncat(label, "F:", sizeof(label) - strlen(label) - 1);
 					strncat(label, car.iplName, sizeof(label) - strlen(label) - 1);
+				}
+				if(Cars::gRenderPosition){
+					strncat(label, "X:", sizeof(label) - strlen(label) - 1);
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%.0f ", car.x);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+					strncat(label, "Y:", sizeof(label) - strlen(label) - 1);
+					snprintf(tmp, sizeof(tmp), "%.0f ", car.y);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
+					strncat(label, "Z:", sizeof(label) - strlen(label) - 1);
+					snprintf(tmp, sizeof(tmp), "%.0f", car.z);
+					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
 				}
 
 				if(label[0] != '\0'){
