@@ -15,7 +15,6 @@ struct CarSpawn {
 	int32 lockedProb;
 	int32 unknown1;
 	int32 unknown2;
-	int32 fromMod;
 };
 
 namespace Cars {
@@ -43,17 +42,9 @@ extern bool gRenderUnknown1;
 extern bool gRenderUnknown2;
 extern bool gRenderFileName;
 extern bool gRenderAngle;
-extern bool gRenderPosition;
-extern bool gReplaceWithModCars;
-extern bool gAdditiveMerge;
-extern bool gRenderModCarsOrange;
-extern bool gLoadModCars;
-extern float gMergeDistanceThreshold;
 bool HasCarSpawns(void);
 int GetNumCarSpawns(void);
 CarSpawn* GetCarSpawn(int index);
-void MergeModCarSpawns(void);
-void MergeCloseCarSpawns(void);
 }
 
 #endif

@@ -1,56 +1,8 @@
 #include "euryopa.h"
 #include "cars.h"
 #include "modloader.h"
-#include <algorithm>
 #include <map>
-#include <stdarg.h>
 #include <string>
-
-static FILE *logFile = nil;
-static FILE *debugLogFile = nil;
-
-static void openDebugLogFile(void){
-	debugLogFile = fopen("cars_merge_debug.log", "w");
-	if(debugLogFile){
-		fprintf(debugLogFile, "Debug log started\n");
-		fflush(debugLogFile);
-	}
-}
-
-static void debugLog(const char *fmt, ...){
-	if(debugLogFile){
-		va_list args;
-		va_start(args, fmt);
-		vfprintf(debugLogFile, fmt, args);
-		fprintf(debugLogFile, "\n");
-		fflush(debugLogFile);
-		va_end(args);
-	}
-}
-
-static void closeDebugLogFile(void){
-	if(debugLogFile){
-		fclose(debugLogFile);
-		debugLogFile = nil;
-	}
-}
-
-static void openLogFile(void){
-	logFile = fopen("cars_merge.log", "w");
-	if(logFile){
-		fprintf(logFile, "Cars merge log started\n");
-		fflush(logFile);
-	}
-}
-
-static void closeLogFile(void){
-	if(logFile){
-		fprintf(logFile, "Cars merge log ended\n");
-		fflush(logFile);
-		fclose(logFile);
-		logFile = nil;
-	}
-}
 
 static std::vector<CarSpawn> carSpawns;
 static int selectedCarSpawnIndex = -1;
@@ -66,12 +18,6 @@ bool Cars::gRenderUnknown1 = false;
 bool Cars::gRenderUnknown2 = false;
 bool Cars::gRenderFileName = false;
 bool Cars::gRenderAngle = true;
-bool Cars::gRenderPosition = false;
-bool Cars::gReplaceWithModCars = false;
-bool Cars::gAdditiveMerge = false;
-bool Cars::gRenderModCarsOrange = false;
-bool Cars::gLoadModCars = false;
-float Cars::gMergeDistanceThreshold = 1.0f;
 
 namespace Cars {
 
@@ -79,8 +25,6 @@ void
 Init(void)
 {
 	carSpawns.clear();
-
-	log("Cars: Init - searching for .ipl files in data/binary/ipl/");
 
 	char path[256];
 	snprintf(path, sizeof(path), "data/binary/ipl/*");
@@ -102,7 +46,6 @@ Init(void)
 
 		char filepath[256];
 		snprintf(filepath, sizeof(filepath), "data/binary/ipl/%s", filename);
-		log("Cars: reading: %s", filepath);
 
 		int size;
 		uint8 *buf = ReadLooseFile(filepath, &size);
@@ -113,7 +56,6 @@ Init(void)
 
 		if(size < 0x4C){
 			log("Cars: %s too small (%d bytes)\n", filename, size);
-			if(logFile) fprintf(logFile, "too small: %s (%d bytes)\n", filename, size);
 			free(buf);
 			continue;
 		}
@@ -121,21 +63,19 @@ Init(void)
 		uint32 magic = *(uint32*)buf;
 		if(magic != 0x79726E62){
 			log("Cars: %s not bnry format (magic=0x%X)\n", filename, magic);
-			if(logFile) fprintf(logFile, "not bnry: %s magic=0x%X\n", filename, magic);
 			free(buf);
 			continue;
 		}
 
 		int32 numCars = *(int32*)(buf + 0x14);
-		int32 carsOffset = *(int32*)(buf + 0x3C);
-		log("Cars: %s has %d parked cars at offset 0x%X\n", filename, numCars, (unsigned int)carsOffset);
-		if(logFile) fprintf(logFile, "%s: %d cars at offset 0x%X, size=%d\n", filename, numCars, (unsigned int)carsOffset, size);
+		log("Cars: %s has %d parked cars\n", filename, numCars);
 
 		if(numCars <= 0){
 			free(buf);
 			continue;
 		}
 
+		int32 carsOffset = *(int32*)(buf + 0x3C);
 		if(carsOffset <= 0 || carsOffset + numCars * 48 > size){
 			log("Cars: %s invalid offset/size\n", filename);
 			free(buf);
@@ -163,7 +103,6 @@ Init(void)
 			spawn.unknown2 = *(int32*)(carEntry + 44);
 			strncpy(spawn.iplName, filename, sizeof(spawn.iplName) - 1);
 			spawn.iplName[sizeof(spawn.iplName) - 1] = '\0';
-			spawn.fromMod = 0;
 
 			carSpawns.push_back(spawn);
 		}
@@ -173,71 +112,7 @@ Init(void)
 
 	FindClose(hFind);
 
-	if(gLoadModCars){
-		log("Cars: Init - loading additional from data/binary/mod/");
-		char modPath[256];
-		WIN32_FIND_DATAA modFindData;
-		snprintf(modPath, sizeof(modPath), "data/binary/mod/*");
-		HANDLE modHFind = FindFirstFileA(modPath, &modFindData);
-		if(modHFind != INVALID_HANDLE_VALUE){
-			do{
-				const char *filename = modFindData.cFileName;
-				size_t namelen = strlen(filename);
-				if(namelen < 4 || strcmp(filename + namelen - 4, ".ipl") != 0)
-					continue;
-
-				char filepath[256];
-				snprintf(filepath, sizeof(filepath), "data/binary/mod/%s", filename);
-				log("Cars: loading mod: %s", filepath);
-
-				int size;
-				uint8 *buf = ReadLooseFile(filepath, &size);
-				if(buf == nil)
-					continue;
-
-				if(size < 0x4C){
-					free(buf);
-					continue;
-				}
-
-				int numCars = *(int32*)(buf + 0x14);
-				int carsOffset = *(int32*)(buf + 0x3C);
-				if(numCars <= 0 || carsOffset <= 0 || carsOffset + numCars * 48 > size){
-					free(buf);
-					continue;
-				}
-
-				uint8 *carsData = buf + carsOffset;
-				for(int i = 0; i < numCars; i++){
-					uint8 *carEntry = carsData + i * 48;
-
-					CarSpawn spawn;
-					spawn.x = *(float*)(carEntry + 0);
-					spawn.y = *(float*)(carEntry + 4);
-					spawn.z = *(float*)(carEntry + 8);
-					spawn.angle = *(float*)(carEntry + 12);
-					spawn.vehicleId = *(int32*)(carEntry + 16);
-					spawn.primaryColor = *(int32*)(carEntry + 20);
-					spawn.secondaryColor = *(int32*)(carEntry + 24);
-					spawn.forceSpawn = *(int32*)(carEntry + 28);
-					spawn.alarmProb = *(int32*)(carEntry + 32);
-					spawn.lockedProb = *(int32*)(carEntry + 36);
-					spawn.unknown1 = *(int32*)(carEntry + 40);
-					spawn.unknown2 = *(int32*)(carEntry + 44);
-					strncpy(spawn.iplName, filename, sizeof(spawn.iplName) - 1);
-					spawn.iplName[sizeof(spawn.iplName) - 1] = '\0';
-					spawn.fromMod = 1;
-
-					carSpawns.push_back(spawn);
-				}
-				free(buf);
-			}while(modFindData.cFileName[0] != '\0' && FindNextFileA(modHFind, &modFindData));
-			FindClose(modHFind);
-		}
-	}
-
 	log("Cars: loaded %d spawns\n", (int)carSpawns.size());
-	if(logFile) fprintf(logFile, "Cars: total loaded %d spawns\n", (int)carSpawns.size());
 }
 
 bool
@@ -283,15 +158,10 @@ Render(void)
 		return;
 
 	uint8 alpha = (uint8)(gCollisionWireframeAlpha * 255.0f);
+	rw::RGBA col = { 0, 255, 0, alpha };
 
 	for(size_t i = 0; i < carSpawns.size(); i++){
 		CarSpawn &car = carSpawns[i];
-
-		rw::RGBA col;
-		if(gRenderModCarsOrange && car.fromMod)
-			col = { 255, 165, 0, alpha };
-		else
-			col = { 0, 255, 0, alpha };
 
 		float halfX = 1.5f;
 		float halfY = 1.5f;
@@ -338,7 +208,7 @@ Render(void)
 
 		if(!Cars::gRenderVehicleId && !Cars::gRenderPrimaryColor && !Cars::gRenderSecondaryColor &&
 		   !Cars::gRenderForceSpawn && !Cars::gRenderAlarmProb && !Cars::gRenderLockedProb &&
-		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2 && !Cars::gRenderFileName && !Cars::gRenderPosition)
+		   !Cars::gRenderUnknown1 && !Cars::gRenderUnknown2 && !Cars::gRenderFileName)
 			continue;
 
 		rw::V3d worldPos = { car.x, car.y, car.z + halfZ * 2.5f };
@@ -399,18 +269,6 @@ Render(void)
 				if(Cars::gRenderFileName){
 					strncat(label, "F:", sizeof(label) - strlen(label) - 1);
 					strncat(label, car.iplName, sizeof(label) - strlen(label) - 1);
-				}
-				if(Cars::gRenderPosition){
-					strncat(label, "X:", sizeof(label) - strlen(label) - 1);
-					char tmp[32];
-					snprintf(tmp, sizeof(tmp), "%.0f ", car.x);
-					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
-					strncat(label, "Y:", sizeof(label) - strlen(label) - 1);
-					snprintf(tmp, sizeof(tmp), "%.0f ", car.y);
-					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
-					strncat(label, "Z:", sizeof(label) - strlen(label) - 1);
-					snprintf(tmp, sizeof(tmp), "%.0f", car.z);
-					strncat(label, tmp, sizeof(label) - strlen(label) - 1);
 				}
 
 				if(label[0] != '\0'){
@@ -638,362 +496,6 @@ SaveAllCarSpawns(void)
 	}
 
 	Toast(TOAST_SAVE, "Saved %d car spawns to disk", (int)carSpawns.size());
-}
-
-static int
-ReadCarSpawnsFromBuffer(uint8 *buf, int size, CarSpawn *spawns, int maxSpawns)
-{
-	if(size < 0x4C)
-		return 0;
-
-	uint32 magic = *(uint32*)buf;
-	if(magic != 0x79726E62)
-		return 0;
-
-	int32 numCars = *(int32*)(buf + 0x14);
-	if(numCars <= 0 || numCars > maxSpawns)
-		return 0;
-
-	int32 carsOffset = *(int32*)(buf + 0x3C);
-	if(carsOffset <= 0 || carsOffset + numCars * 48 > size)
-		return 0;
-
-	uint8 *carsData = buf + carsOffset;
-	for(int i = 0; i < numCars; i++){
-		uint8 *carEntry = carsData + i * 48;
-		spawns[i].x = *(float*)(carEntry + 0);
-		spawns[i].y = *(float*)(carEntry + 4);
-		spawns[i].z = *(float*)(carEntry + 8);
-		spawns[i].angle = *(float*)(carEntry + 12);
-		spawns[i].vehicleId = *(int32*)(carEntry + 16);
-		spawns[i].primaryColor = *(int32*)(carEntry + 20);
-		spawns[i].secondaryColor = *(int32*)(carEntry + 24);
-		spawns[i].forceSpawn = *(int32*)(carEntry + 28);
-		spawns[i].alarmProb = *(int32*)(carEntry + 32);
-		spawns[i].lockedProb = *(int32*)(carEntry + 36);
-		spawns[i].unknown1 = *(int32*)(carEntry + 40);
-		spawns[i].unknown2 = *(int32*)(carEntry + 44);
-	}
-
-	return numCars;
-}
-
-void
-MergeModCarSpawns(void)
-{
-	openLogFile();
-	if(logFile) fprintf(logFile, "Cars merge log started\n");
-
-	log("Cars: starting merge from data/binary/mod/");
-	if(logFile) fprintf(logFile, "Cars: starting merge from data/binary/mod/\n");
-
-	char modPath[256];
-	snprintf(modPath, sizeof(modPath), "data/binary/mod");
-	DWORD modAttr = GetFileAttributesA(modPath);
-	if(modAttr == INVALID_FILE_ATTRIBUTES || !(modAttr & FILE_ATTRIBUTE_DIRECTORY)){
-		log("Cars: data/binary/mod folder not found");
-		if(logFile) fprintf(logFile, "data/binary/mod folder not found\n");
-		closeLogFile();
-		Toast(TOAST_SAVE, "data/binary/mod folder not found");
-		return;
-	}
-	log("Cars: mod folder exists");
-	if(logFile) fprintf(logFile, "mod folder exists\n");
-
-	char iplPath[256];
-	snprintf(iplPath, sizeof(iplPath), "data/binary/ipl/*");
-
-	WIN32_FIND_DATAA findData;
-	HANDLE hFind = FindFirstFileA(iplPath, &findData);
-	if(hFind == INVALID_HANDLE_VALUE){
-		log("Cars: no IPL files found");
-		if(logFile) fprintf(logFile, "no IPL files found\n");
-		if(logFile) fclose(logFile);
-		Toast(TOAST_SAVE, "No IPL files found");
-		return;
-	}
-
-	int mergedCount = 0;
-
-	do{
-		const char *filename = findData.cFileName;
-		size_t namelen = strlen(filename);
-		if(namelen < 4 || strcmp(filename + namelen - 4, ".ipl") != 0)
-			continue;
-
-		char iplFilepath[256];
-		snprintf(iplFilepath, sizeof(iplFilepath), "data/binary/ipl/%s", filename);
-
-		char modFilepath[256];
-		snprintf(modFilepath, sizeof(modFilepath), "data/binary/mod/%s", filename);
-
-		log("Cars: checking mod file: %s", modFilepath);
-		if(logFile) fprintf(logFile, "checking mod file: %s\n", modFilepath);
-
-		int modSize;
-		uint8 *modBuf = ReadLooseFile(modFilepath, &modSize);
-		if(modBuf == nil){
-			log("Cars: could not read mod file: %s", modFilepath);
-			if(logFile) fprintf(logFile, "could not read mod file: %s\n", modFilepath);
-			continue;
-		}
-
-		CarSpawn modSpawns[1000];
-		int modNumCars = ReadCarSpawnsFromBuffer(modBuf, modSize, modSpawns, 1000);
-		free(modBuf);
-
-		log("Cars: mod file has %d cars: %s", modNumCars, filename);
-		if(logFile) fprintf(logFile, "mod file %s has %d cars\n", filename, modNumCars);
-
-		if(modNumCars <= 0)
-			continue;
-
-		int iplSize;
-		uint8 *iplBuf = ReadLooseFile(iplFilepath, &iplSize);
-		if(iplBuf == nil)
-			continue;
-
-		int32 oldCarsOffset = *(int32*)(iplBuf + 0x3C);
-		int32 oldNumCars = 0;
-		CarSpawn oldSpawns[1000];
-		if(iplSize >= 0x4C){
-			oldNumCars = *(int32*)(iplBuf + 0x14);
-			if(oldNumCars < 0) oldNumCars = 0;
-			if(oldNumCars > 0 && oldCarsOffset > 0 && oldCarsOffset + oldNumCars * 48 <= iplSize){
-				uint8 *oldCarsData = iplBuf + oldCarsOffset;
-				for(int i = 0; i < oldNumCars && i < 1000; i++){
-					uint8 *carEntry = oldCarsData + i * 48;
-					oldSpawns[i].x = *(float*)(carEntry + 0);
-					oldSpawns[i].y = *(float*)(carEntry + 4);
-					oldSpawns[i].z = *(float*)(carEntry + 8);
-					oldSpawns[i].angle = *(float*)(carEntry + 12);
-					oldSpawns[i].vehicleId = *(int32*)(carEntry + 16);
-					oldSpawns[i].primaryColor = *(int32*)(carEntry + 20);
-					oldSpawns[i].secondaryColor = *(int32*)(carEntry + 24);
-					oldSpawns[i].forceSpawn = *(int32*)(carEntry + 28);
-					oldSpawns[i].alarmProb = *(int32*)(carEntry + 32);
-					oldSpawns[i].lockedProb = *(int32*)(carEntry + 36);
-					oldSpawns[i].unknown1 = *(int32*)(carEntry + 40);
-					oldSpawns[i].unknown2 = *(int32*)(carEntry + 44);
-				}
-			}
-		}
-
-		int newCarsFromMod = 0;
-		if(gAdditiveMerge && modNumCars > 0 && oldNumCars > 0){
-			for(int m = 0; m < modNumCars; m++){
-				int found = 0;
-				for(int o = 0; o < oldNumCars; o++){
-					if(modSpawns[m].vehicleId == oldSpawns[o].vehicleId){
-						found = 1;
-						break;
-					}
-				}
-				if(!found) newCarsFromMod++;
-			}
-		}else if(modNumCars > 0){
-			newCarsFromMod = modNumCars;
-		}
-
-		int totalNumCars = gAdditiveMerge ? (oldNumCars + newCarsFromMod) : modNumCars;
-
-		if(logFile) fprintf(logFile, "old=%d, mod=%d, newFromMod=%d, total=%d, additive=%d\n", 
-			oldNumCars, modNumCars, newCarsFromMod, totalNumCars, gAdditiveMerge ? 1 : 0);
-
-		int newCarsOffset = 0x40;
-		int newFileSize = newCarsOffset + totalNumCars * 48;
-		if(newFileSize > iplSize){
-			uint8 *newBuf = (uint8*)realloc(iplBuf, newFileSize);
-			if(newBuf == nil){
-				free(iplBuf);
-				continue;
-			}
-			iplBuf = newBuf;
-			iplSize = newFileSize;
-		}
-		*(int32*)(iplBuf + 0x3C) = newCarsOffset;
-
-		*(int32*)(iplBuf + 0x14) = totalNumCars;
-		log("Cars: writing %d cars (old=%d + newMod=%d) at offset 0x%X, file size %d", 
-			totalNumCars, oldNumCars, newCarsFromMod, newCarsOffset, iplSize);
-		if(logFile) fprintf(logFile, "writing %d cars (old=%d + newMod=%d) at offset 0x%X, file size %d\n", 
-			totalNumCars, oldNumCars, newCarsFromMod, newCarsOffset, iplSize);
-
-		uint8 *carsData = iplBuf + newCarsOffset;
-		if(oldNumCars > 0){
-			for(int i = 0; i < oldNumCars; i++){
-				uint8 *carEntry = carsData + i * 48;
-				*(float*)(carEntry + 0) = oldSpawns[i].x;
-				*(float*)(carEntry + 4) = oldSpawns[i].y;
-				*(float*)(carEntry + 8) = oldSpawns[i].z;
-				*(float*)(carEntry + 12) = oldSpawns[i].angle;
-				*(int32*)(carEntry + 16) = oldSpawns[i].vehicleId;
-				*(int32*)(carEntry + 20) = oldSpawns[i].primaryColor;
-				*(int32*)(carEntry + 24) = oldSpawns[i].secondaryColor;
-				*(int32*)(carEntry + 28) = oldSpawns[i].forceSpawn;
-				*(int32*)(carEntry + 32) = oldSpawns[i].alarmProb;
-				*(int32*)(carEntry + 36) = oldSpawns[i].lockedProb;
-				*(int32*)(carEntry + 40) = oldSpawns[i].unknown1;
-				*(int32*)(carEntry + 44) = oldSpawns[i].unknown2;
-			}
-		}
-		if(gAdditiveMerge && modNumCars > 0 && oldNumCars > 0){
-			int dstIdx = oldNumCars;
-			for(int i = 0; i < modNumCars; i++){
-				int found = 0;
-				for(int o = 0; o < oldNumCars; o++){
-					if(modSpawns[i].vehicleId == oldSpawns[o].vehicleId){
-						found = 1;
-						break;
-					}
-				}
-				if(!found){
-					uint8 *carEntry = carsData + dstIdx * 48;
-					*(float*)(carEntry + 0) = modSpawns[i].x;
-					*(float*)(carEntry + 4) = modSpawns[i].y;
-					*(float*)(carEntry + 8) = modSpawns[i].z;
-					*(float*)(carEntry + 12) = modSpawns[i].angle;
-					*(int32*)(carEntry + 16) = modSpawns[i].vehicleId;
-					*(int32*)(carEntry + 20) = modSpawns[i].primaryColor;
-					*(int32*)(carEntry + 24) = modSpawns[i].secondaryColor;
-					*(int32*)(carEntry + 28) = modSpawns[i].forceSpawn;
-					*(int32*)(carEntry + 32) = modSpawns[i].alarmProb;
-					*(int32*)(carEntry + 36) = modSpawns[i].lockedProb;
-					*(int32*)(carEntry + 40) = modSpawns[i].unknown1;
-					*(int32*)(carEntry + 44) = modSpawns[i].unknown2;
-					dstIdx++;
-				}
-			}
-		}else if(modNumCars > 0){
-			for(int i = 0; i < modNumCars; i++){
-				uint8 *carEntry = carsData + i * 48;
-				*(float*)(carEntry + 0) = modSpawns[i].x;
-				*(float*)(carEntry + 4) = modSpawns[i].y;
-				*(float*)(carEntry + 8) = modSpawns[i].z;
-				*(float*)(carEntry + 12) = modSpawns[i].angle;
-				*(int32*)(carEntry + 16) = modSpawns[i].vehicleId;
-				*(int32*)(carEntry + 20) = modSpawns[i].primaryColor;
-				*(int32*)(carEntry + 24) = modSpawns[i].secondaryColor;
-				*(int32*)(carEntry + 28) = modSpawns[i].forceSpawn;
-				*(int32*)(carEntry + 32) = modSpawns[i].alarmProb;
-				*(int32*)(carEntry + 36) = modSpawns[i].lockedProb;
-				*(int32*)(carEntry + 40) = modSpawns[i].unknown1;
-				*(int32*)(carEntry + 44) = modSpawns[i].unknown2;
-			}
-		}
-
-	FILE *f = fopen(iplFilepath, "wb");
-		if(f){
-			size_t written = fwrite(iplBuf, 1, iplSize, f);
-			fclose(f);
-			log("Cars: merged %d cars (%d old + %d mod) to %s, wrote %d bytes", totalNumCars, oldNumCars, modNumCars, filename, (int)written);
-			if(logFile) fprintf(logFile, "merged %d cars (%d old + %d mod) to %s, wrote %d bytes\n", totalNumCars, oldNumCars, modNumCars, filename, (int)written);
-			mergedCount++;
-		}else{
-			log("Cars: failed to open for writing: %s", iplFilepath);
-			if(logFile) fprintf(logFile, "FAILED to open for writing: %s\n", iplFilepath);
-		}
-
-		free(iplBuf);
-
-	}while(FindNextFileA(hFind, &findData));
-
-	FindClose(hFind);
-
-	if(logFile) fprintf(logFile, "mergedCount = %d\n", mergedCount);
-	if(logFile) fclose(logFile);
-
-	if(mergedCount > 0){
-		log("Cars: calling Init() after merge");
-		if(logFile) fprintf(logFile, "calling Init() after merge\n");
-		Toast(TOAST_SAVE, "Merged car spawns from mod folder to %d IPL file(s)", mergedCount);
-		Init();
-		log("Cars: Init() completed, total spawns: %d", (int)carSpawns.size());
-		if(logFile) fprintf(logFile, "Init() completed, total spawns: %d\n", (int)carSpawns.size());
-		closeLogFile();
-	}else{
-		closeLogFile();
-		Toast(TOAST_SAVE, "No matching IPL files found in mod folder");
-	}
-}
-
-void
-MergeCloseCarSpawns(void)
-{
-	openDebugLogFile();
-	debugLog("MergeCloseCarSpawns starting, count=%d, threshold=%.2f", (int)carSpawns.size(), Cars::gMergeDistanceThreshold);
-	log("Cars: MergeCloseCarSpawns starting, count=%d, threshold=%.2f", (int)carSpawns.size(), Cars::gMergeDistanceThreshold);
-	
-	if(carSpawns.size() < 2){
-		log("Cars: less than 2 cars, nothing to merge");
-		closeDebugLogFile();
-		return;
-	}
-
-	float threshold = Cars::gMergeDistanceThreshold;
-	std::vector<int> toRemove;
-
-	log("Cars: checking for duplicate positions (threshold=%.2f)...", threshold);
-
-	for(size_t i = 0; i < carSpawns.size(); i++){
-		for(size_t j = i + 1; j < carSpawns.size(); j++){
-			CarSpawn &a = carSpawns[i];
-			CarSpawn &b = carSpawns[j];
-			
-			float dx = fabsf(a.x - b.x);
-			float dy = fabsf(a.y - b.y);
-			float dz = fabsf(a.z - b.z);
-			
-			int sameX = (dx < 0.01f);
-			int sameY = (dy < 0.01f);
-			int sameZ = (dz < 0.01f);
-			
-			int samePos = sameX && sameY && sameZ;
-			
-			if(samePos){
-				debugLog("DUPLICATE: car[%d](%.5f,%.5f,%.5f) = car[%d](%.5f,%.5f,%.5f)", 
-					(int)i, a.x,a.y,a.z, (int)j, b.x,b.y,b.z);
-				log("Cars: DUPLICATE car[%d] at (%.5f,%.5f,%.5f) with car[%d]", 
-					i, a.x,a.y,a.z, (int)j);
-				
-				toRemove.push_back((int)j);
-			}
-		}
-	}
-
-	debugLog("Found %d duplicates to remove", (int)toRemove.size());
-	log("Cars: found %d duplicate car spawns", (int)toRemove.size());
-
-	log("Cars: found %d duplicates to remove", (int)toRemove.size());
-
-	if(toRemove.empty()){
-		log("Cars: no close cars found within threshold %.2f", threshold);
-		return;
-	}
-
-	std::sort(toRemove.begin(), toRemove.end());
-	std::vector<CarSpawn> newSpawns;
-	for(size_t i = 0; i < carSpawns.size(); i++){
-		int remove = 0;
-		for(size_t k = 0; k < toRemove.size(); k++){
-			if(toRemove[k] == (int)i){
-				remove = 1;
-				break;
-			}
-		}
-		if(!remove)
-			newSpawns.push_back(carSpawns[i]);
-	}
-
-	carSpawns = newSpawns;
-	int removedCount = (int)toRemove.size();
-	log("Cars: merged %d close cars (threshold %.2f), %d remaining", 
-		removedCount, threshold, (int)carSpawns.size());
-	Toast(TOAST_SAVE, "Merged %d close car spawns", removedCount);
-	SaveAllCarSpawns();
-	Init();
-	debugLog("DONE: removed %d cars, remaining %d", removedCount, (int)carSpawns.size());
-	closeDebugLogFile();
 }
 
 }  // namespace Cars

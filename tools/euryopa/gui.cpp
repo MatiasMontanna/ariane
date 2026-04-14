@@ -4028,17 +4028,6 @@ uiView(void)
 				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
 				ImGui::SameLine();
 				ImGui::Checkbox("Angle", &Cars::gRenderAngle);
-				ImGui::SameLine();
-				ImGui::Checkbox("Position", &Cars::gRenderPosition);
-				ImGui::Checkbox("Load Mod", &Cars::gLoadModCars);
-				if(Cars::gLoadModCars){
-					ImGui::SameLine();
-					if(ImGui::Button("Reload")){
-						Cars::Init();
-					}
-				}
-				ImGui::SameLine();
-				ImGui::Checkbox("Mod Orange", &Cars::gRenderModCarsOrange);
 				ImGui::SeparatorText("Properties");
 				ImGui::Checkbox("Vehicle ID", &Cars::gRenderVehicleId);
 				ImGui::SameLine();
@@ -4057,22 +4046,6 @@ uiView(void)
 				if(ImGui::Button("Export CSV")){
 					Cars::ExportCSV();
 				}
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth(60);
-				ImGui::InputFloat("Dist", &Cars::gMergeDistanceThreshold, 0.1f, 1.0f, "%.2f");
-				ImGui::SameLine();
-				if(ImGui::Button("Merge Close")){
-					Cars::MergeCloseCarSpawns();
-				}
-				ImGui::SameLine();
-				ImGui::Checkbox("Additive", &Cars::gAdditiveMerge);
-				ImGui::SameLine();
-				if(ImGui::Button("Merge data/binary/mod")){
-					Cars::MergeModCarSpawns();
-				}
-				ImGui::SetItemTooltip(Cars::gAdditiveMerge ? 
-					"Add mod cars to existing car blocks" : 
-					"Replace car blocks in data/binary/ipl/ with content from data/binary/mod/ folder");
 				ImGui::Unindent();
 			}
 		}
