@@ -70,9 +70,14 @@ workspace "librwgta"
 		symbols "On"
 	filter "configurations:Release*"
 		defines { "NDEBUG" }
-		optimize "On"
+		optimize "Speed"
+		buildoptions { "/fp:fast", "/GL" }
+		removeplatforms { "win-x86-d3d9" }
+		removeplatforms { "win-x86-gl3" }
+		removeplatforms { "win-x86-null" }
 	filter "configurations:ReleaseStatic"
 		staticruntime("On")
+		linkoptions { "/OPT:REF", "/OPT:ICF" }
 
 	filter { "platforms:*null" }
 		defines { "RW_NULL" }
@@ -118,6 +123,7 @@ workspace "librwgta"
 
 	filter "action:vs*"
 		buildoptions { "/wd4996", "/wd4244" }
+	filter {}
 		
 	filter { "platforms:win*gl3", "action:not vs*" }
 		if _OPTIONS["gfxlib"] == "sdl2" then
