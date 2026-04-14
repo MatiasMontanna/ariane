@@ -64,7 +64,7 @@ jobs:
       - name: Build librw
         shell: cmd
         working-directory: librw/build
-        run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librw /m /p:AdditionalLinkerFlags=/LARGEADDRESSAWARE
+        run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librw /m
 
       - name: Patch librw imgui missing d3d9 declarations
         shell: pwsh
@@ -87,7 +87,7 @@ jobs:
       - name: Build euryopa
         shell: cmd
         working-directory: ariane/build
-        run: msbuild librwgta.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librwgta;euryopa /m /p:AdditionalLinkerFlags=/LARGEADDRESSAWARE /p:RuntimeLibrary=MT
+        run: msbuild librwgta.sln /p:Configuration=Release /p:Platform=win-amd64-d3d9 /t:librwgta;euryopa /m
 
       - name: Upload euryopa.exe
         uses: actions/upload-artifact@v4
