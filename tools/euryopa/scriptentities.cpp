@@ -737,7 +737,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_LOCATE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_LOCATE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -834,7 +834,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "PLAY_CONCERTED_SOUND" || cmd == "PLAY_FRONT_END_SOUND") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
