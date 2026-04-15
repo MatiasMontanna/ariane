@@ -1030,10 +1030,10 @@ ScriptEntities::Render(void)
 
 		bool isSelected = (i == gSelectedScriptEntity);
 		if (isSelected) {
-			col.r = 255;
-			col.g = 255;
-			col.b = 255;
-			col.a = 255;
+			col.red = 255;
+			col.green = 255;
+			col.blue = 255;
+			col.alpha = 255;
 		}
 
 		rw::V3d v[8] = {
@@ -1263,6 +1263,49 @@ ScriptEntities::GetEntityTypeName(ScriptEntityType type)
 	}
 }
 
+static bool
+IsEntityTypeEnabled(ScriptEntityType type)
+{
+	switch (type) {
+		case ENTITY_CAR: return ScriptEntities::gRenderScriptCars;
+		case ENTITY_PED: return ScriptEntities::gRenderScriptPeds;
+		case ENTITY_OBJECT: return ScriptEntities::gRenderScriptObjects;
+		case ENTITY_PICKUP: return ScriptEntities::gRenderScriptPickups;
+		case ENTITY_BLIP: return ScriptEntities::gRenderScriptBlips;
+		case ENTITY_FX: return ScriptEntities::gRenderScriptFx;
+		case ENTITY_CHECKPOINT: return ScriptEntities::gRenderScriptCheckpoints;
+		case ENTITY_GENERATOR: return ScriptEntities::gRenderScriptGenerators;
+		case ENTITY_LOCATE: return ScriptEntities::gRenderScriptLocates;
+		case ENTITY_CAMERA: return ScriptEntities::gRenderScriptCameras;
+		case ENTITY_ROUTE: return ScriptEntities::gRenderScriptRoutes;
+		case ENTITY_TELEPORT: return ScriptEntities::gRenderScriptTeleports;
+		case ENTITY_PLAYER: return ScriptEntities::gRenderScriptPlayers;
+		case ENTITY_GANG_CAR: return ScriptEntities::gRenderScriptGangCars;
+		case ENTITY_GARAGE: return ScriptEntities::gRenderScriptGarages;
+		case ENTITY_PATH_POINT: return ScriptEntities::gRenderScriptPathPoints;
+		case ENTITY_FIRE: return ScriptEntities::gRenderScriptFires;
+		case ENTITY_EXPLOSION: return ScriptEntities::gRenderScriptExplosions;
+		case ENTITY_SEARCHLIGHT: return ScriptEntities::gRenderScriptSearchlights;
+		case ENTITY_CORONA: return ScriptEntities::gRenderScriptCoronas;
+		case ENTITY_MARKER: return ScriptEntities::gRenderScriptMarkers;
+		case ENTITY_DOOR: return ScriptEntities::gRenderScriptDoors;
+		case ENTITY_REMOTE_CAR: return ScriptEntities::gRenderScriptRemoteCars;
+		case ENTITY_TRAIN: return ScriptEntities::gRenderScriptTrains;
+		case ENTITY_BOAT: return ScriptEntities::gRenderScriptBoats;
+		case ENTITY_HELI: return ScriptEntities::gRenderScriptHelis;
+		case ENTITY_WEATHER: return ScriptEntities::gRenderScriptWeathers;
+		case ENTITY_ZONE: return ScriptEntities::gRenderScriptZones;
+		case ENTITY_SPAWN: return ScriptEntities::gRenderScriptSpawns;
+		case ENTITY_PROJECTILE: return ScriptEntities::gRenderScriptProjectiles;
+		case ENTITY_AUDIO: return ScriptEntities::gRenderScriptAudio;
+		case ENTITY_DRAW: return ScriptEntities::gRenderScriptDraw;
+		case ENTITY_TASK: return ScriptEntities::gRenderScriptTasks;
+		case ENTITY_DAMAGE: return ScriptEntities::gRenderScriptDamage;
+		case ENTITY_MISSION: return ScriptEntities::gRenderScriptMission;
+		default: return true;
+	}
+}
+
 void
 ScriptEntities::SelectScriptEntity(int index)
 {
@@ -1344,20 +1387,20 @@ ScriptEntities::PickScriptEntity(float mouseX, float mouseY)
 		if (!IsEntityTypeEnabled(e.type))
 			continue;
 
-		float dist = sqrt((cam->m_position.x - e.x) * (cam->m_position.x - e.x) +
-		                 (cam->m_position.y - e.y) * (cam->m_position.y - e.y) +
-		                 (cam->m_position.z - e.z) * (cam->m_position.z - e.z));
-		if (dist > gScriptCubeDistance)
+		float dist = sqrt((TheCamera.m_position.x - e.x) * (TheCamera.m_position.x - e.x) +
+		                 (TheCamera.m_position.y - e.y) * (TheCamera.m_position.y - e.y) +
+		                 (TheCamera.m_position.z - e.z) * (TheCamera.m_position.z - e.z));
+		if (dist > ScriptEntities::gScriptCubeDistance)
 			continue;
 
 		float t;
-		float radius = gScriptCubeSize * 0.5f + 0.5f;
-		if (IntersectRaySphere2D(cam->m_position.x, cam->m_position.y,
+		float radius = ScriptEntities::gScriptCubeSize * 0.5f + 0.5f;
+		if (IntersectRaySphere2D(TheCamera.m_position.x, TheCamera.m_position.y,
 		                          rayDir.x, rayDir.y,
 		                          e.x, e.y, radius, &t)) {
-			rw::V3d hitPos = { cam->m_position.x + rayDir.x * t,
-			                   cam->m_position.y + rayDir.y * t,
-			                   cam->m_position.z + rayDir.z * t };
+			rw::V3d hitPos = { TheCamera.m_position.x + rayDir.x * t,
+			                   TheCamera.m_position.y + rayDir.y * t,
+			                   TheCamera.m_position.z + rayDir.z * t };
 			float hitDistZ = fabs(hitPos.z - e.z);
 			if (hitDistZ < radius && t < bestT) {
 				bestT = t;
@@ -1459,47 +1502,4 @@ ScriptEntities::RenderScriptEntityProperties(void)
 	}
 
 	ImGui::End();
-}
-
-static bool
-IsEntityTypeEnabled(ScriptEntityType type)
-{
-	switch (type) {
-		case ENTITY_CAR: return gRenderScriptCars;
-		case ENTITY_PED: return gRenderScriptPeds;
-		case ENTITY_OBJECT: return gRenderScriptObjects;
-		case ENTITY_PICKUP: return gRenderScriptPickups;
-		case ENTITY_BLIP: return gRenderScriptBlips;
-		case ENTITY_FX: return gRenderScriptFx;
-		case ENTITY_CHECKPOINT: return gRenderScriptCheckpoints;
-		case ENTITY_GENERATOR: return gRenderScriptGenerators;
-		case ENTITY_LOCATE: return gRenderScriptLocates;
-		case ENTITY_CAMERA: return gRenderScriptCameras;
-		case ENTITY_ROUTE: return gRenderScriptRoutes;
-		case ENTITY_TELEPORT: return gRenderScriptTeleports;
-		case ENTITY_PLAYER: return gRenderScriptPlayers;
-		case ENTITY_GANG_CAR: return gRenderScriptGangCars;
-		case ENTITY_GARAGE: return gRenderScriptGarages;
-		case ENTITY_PATH_POINT: return gRenderScriptPathPoints;
-		case ENTITY_FIRE: return gRenderScriptFires;
-		case ENTITY_EXPLOSION: return gRenderScriptExplosions;
-		case ENTITY_SEARCHLIGHT: return gRenderScriptSearchlights;
-		case ENTITY_CORONA: return gRenderScriptCoronas;
-		case ENTITY_MARKER: return gRenderScriptMarkers;
-		case ENTITY_DOOR: return gRenderScriptDoors;
-		case ENTITY_REMOTE_CAR: return gRenderScriptRemoteCars;
-		case ENTITY_TRAIN: return gRenderScriptTrains;
-		case ENTITY_BOAT: return gRenderScriptBoats;
-		case ENTITY_HELI: return gRenderScriptHelis;
-		case ENTITY_WEATHER: return gRenderScriptWeathers;
-		case ENTITY_ZONE: return gRenderScriptZones;
-		case ENTITY_SPAWN: return gRenderScriptSpawns;
-		case ENTITY_PROJECTILE: return gRenderScriptProjectiles;
-		case ENTITY_AUDIO: return gRenderScriptAudio;
-		case ENTITY_DRAW: return gRenderScriptDraw;
-		case ENTITY_TASK: return gRenderScriptTasks;
-		case ENTITY_DAMAGE: return gRenderScriptDamage;
-		case ENTITY_MISSION: return gRenderScriptMission;
-		default: return true;
-	}
 }
