@@ -17,6 +17,9 @@ bool ScriptEntities::gRenderScriptFx = true;
 bool ScriptEntities::gRenderScriptCheckpoints = true;
 bool ScriptEntities::gRenderScriptGenerators = true;
 bool ScriptEntities::gRenderScriptLocates = true;
+bool ScriptEntities::gRenderScriptCameras = true;
+bool ScriptEntities::gRenderScriptRoutes = true;
+bool ScriptEntities::gRenderScriptTeleports = true;
 
 float ScriptEntities::gScriptLabelDistance = 200.0f;
 float ScriptEntities::gScriptCubeSize = 0.5f;
@@ -372,6 +375,33 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 				continue;
 			}
 
+			if (cmd == "SET_FIXED_CAMERA_POSITION" || cmd == "SET_CAMERA_POSITION") {
+				float x = 0, y = 0, z = 0;
+				if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+					addEntity(gEntities, ENTITY_CAMERA, x, y, z, "", scriptName.c_str(), "", lineNum);
+				}
+				continue;
+			}
+
+			if (cmd == "EXTEND_ROUTE" || cmd == "EXTEND_ROUTE") {
+				float x = 0, y = 0, z = 0;
+				if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+					addEntity(gEntities, ENTITY_ROUTE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				}
+				continue;
+			}
+
+			if (cmd == "SET_CHAR_COORDINATES" || cmd == "SET_CHAR_COORDINATES_DONT_WARP_GANG" ||
+				cmd == "SET_CAR_COORDINATES" || cmd == "TASK_GO_STRAIGHT_TO_COORD") {
+				float x = 0, y = 0, z = 0;
+				skipToWhitespace(lp);
+				skipWhitespace(lp);
+				if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+					addEntity(gEntities, ENTITY_TELEPORT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				}
+				continue;
+			}
+
 			for (auto& kv : coordVars) {
 				std::string var = kv.first;
 				std::string assign = var + "=";
@@ -423,6 +453,9 @@ ScriptEntities::Render(void)
 			case ENTITY_CHECKPOINT: shouldRender = gRenderScriptCheckpoints; break;
 			case ENTITY_GENERATOR: shouldRender = gRenderScriptGenerators; break;
 			case ENTITY_LOCATE: shouldRender = gRenderScriptLocates; break;
+			case ENTITY_CAMERA: shouldRender = gRenderScriptCameras; break;
+			case ENTITY_ROUTE: shouldRender = gRenderScriptRoutes; break;
+			case ENTITY_TELEPORT: shouldRender = gRenderScriptTeleports; break;
 		}
 
 		if (!shouldRender) continue;
@@ -441,6 +474,9 @@ ScriptEntities::Render(void)
 			case ENTITY_CHECKPOINT: col = { 100, 255, 100, 200 }; break;
 			case ENTITY_GENERATOR: col = { 100, 200, 255, 200 }; break;
 			case ENTITY_LOCATE: col = { 200, 200, 100, 200 }; break;
+			case ENTITY_CAMERA: col = { 255, 0, 200, 200 }; break;
+			case ENTITY_ROUTE: col = { 0, 255, 200, 200 }; break;
+			case ENTITY_TELEPORT: col = { 200, 0, 200, 200 }; break;
 		}
 
 		rw::V3d v[8] = {
@@ -485,6 +521,9 @@ ScriptEntities::Render(void)
 					case ENTITY_CHECKPOINT: strncat(label, "[CHECK] ", sizeof(label) - 1); break;
 					case ENTITY_GENERATOR: strncat(label, "[GEN] ", sizeof(label) - 1); break;
 					case ENTITY_LOCATE: strncat(label, "[LOC] ", sizeof(label) - 1); break;
+					case ENTITY_CAMERA: strncat(label, "[CAM] ", sizeof(label) - 1); break;
+					case ENTITY_ROUTE: strncat(label, "[ROUTE] ", sizeof(label) - 1); break;
+					case ENTITY_TELEPORT: strncat(label, "[TELE] ", sizeof(label) - 1); break;
 				}
 
 				if (gRenderScriptModelName && e.modelName[0]) {

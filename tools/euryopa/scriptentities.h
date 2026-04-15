@@ -13,7 +13,10 @@ enum ScriptEntityType {
 	ENTITY_FX,
 	ENTITY_CHECKPOINT,
 	ENTITY_GENERATOR,
-	ENTITY_LOCATE
+	ENTITY_LOCATE,
+	ENTITY_CAMERA,
+	ENTITY_ROUTE,
+	ENTITY_TELEPORT
 };
 
 struct ScriptEntity {
@@ -44,6 +47,9 @@ extern bool gRenderScriptFx;
 extern bool gRenderScriptCheckpoints;
 extern bool gRenderScriptGenerators;
 extern bool gRenderScriptLocates;
+extern bool gRenderScriptCameras;
+extern bool gRenderScriptRoutes;
+extern bool gRenderScriptTeleports;
 
 extern float gScriptLabelDistance;
 extern float gScriptCubeSize;
