@@ -6,6 +6,7 @@
 #include <string>
 
 std::vector<ScriptEntity> gEntities;
+std::vector<ScriptFile> gScriptFiles;
 
 bool ScriptEntities::gRenderScriptEntities = false;
 bool ScriptEntities::gRenderScriptCars = true;
@@ -141,12 +142,13 @@ static void addEntity(std::vector<ScriptEntity>& ents, ScriptEntityType type, fl
 	ents.push_back(e);
 }
 
-static void parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars);
+static void parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars, int fileIndex);
 
 void
 ScriptEntities::Init(void)
 {
 	gEntities.clear();
+	gScriptFiles.clear();
 	log("ScriptEntities: Init - parsing scripts folder\n");
 
 	std::map<std::string, float> coordVars;
@@ -200,7 +202,15 @@ ScriptEntities::Init(void)
 			} else {
 				size_t namelen = strlen(name);
 				if (namelen >= 3 && strcmp(name + namelen - 3, ".sc") == 0) {
-					parseScFile(fullPath, baseDir, name, coordVars);
+					ScriptFile sf;
+					strncpy(sf.fullPath, fullPath, sizeof(sf.fullPath) - 1);
+					sf.fullPath[sizeof(sf.fullPath) - 1] = '\0';
+					strncpy(sf.filename, name, sizeof(sf.filename) - 1);
+					sf.filename[sizeof(sf.filename) - 1] = '\0';
+					sf.enabled = true;
+					sf.numEntities = 0;
+					sf.entityIndices.clear();
+					gScriptFiles.push_back(sf);
 				}
 			}
 		} while (FindNextFileA(hFind, &findData));
@@ -209,14 +219,40 @@ ScriptEntities::Init(void)
 		processed++;
 	}
 
-	log("ScriptEntities: loaded %d entities\n", (int)gEntities.size());
+	for (size_t i = 0; i < gScriptFiles.size(); i++) {
+		parseScFile(gScriptFiles[i].fullPath, baseDir, gScriptFiles[i].filename, coordVars, (int)i);
+	}
+
+	log("ScriptEntities: loaded %d entities from %d files\n", (int)gEntities.size(), (int)gScriptFiles.size());
 }
 
-static void
-parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars)
+void
+ScriptEntities::Reload(void)
+{
+	Init();
+}
+
+void
+ScriptEntities::TeleportToEntity(int entityIndex)
+{
+	if (entityIndex < 0 || entityIndex >= (int)gEntities.size())
+		return;
+	ScriptEntity& e = gEntities[entityIndex];
+	TeleportToCoords(e.x, e.y, e.z);
+}
+
+void
+ScriptEntities::TeleportToCoords(float x, float y, float z)
+{
+	FindPlayerPed(0)->SetPosition(rw::V3d(x, y, z));
+}
+
+static void parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars, int fileIndex)
 {
 	FILE* f = fopen(filepath, "r");
 	if (!f) return;
+
+	int startEntityIndex = (int)gEntities.size();
 
 	fseek(f, 0, SEEK_END);
 	long fsize = ftell(f);
@@ -348,7 +384,7 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
 				addEntity(gEntities, ENTITY_OBJECT, x, y, z, model.c_str(), scriptName.c_str(), "", lineNum);
 			}
-		 continue;
+			continue;
 		}
 
 		if (cmd == "CREATE_PICKUP" || cmd == "CREATE_PICKUP_MONEY" ||
@@ -547,7 +583,7 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 
 		if (cmd == "OPEN_DOOR" || cmd == "CLOSE_DOOR" || cmd == "LOCK_DOOR" ||
 			cmd == "UNLOCK_DOOR" || cmd == "SET_DOOR_OPEN" || cmd == "GET_DOOR_OPEN" ||
-			cmd == "DOOR_Ajar_ANGLE" || cmd == "ROTATE_DOOR") {
+			cmd == "DOOR_AJAR_ANGLE" || cmd == "ROTATE_DOOR") {
 			float x = 0, y = 0, z = 0;
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
@@ -827,6 +863,13 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 	}
 
 	free(buffer);
+
+	if (fileIndex >= 0 && fileIndex < (int)gScriptFiles.size()) {
+		gScriptFiles[fileIndex].numEntities = (int)gEntities.size() - startEntityIndex;
+		for (int i = startEntityIndex; i < (int)gEntities.size(); i++) {
+			gScriptFiles[fileIndex].entityIndices.push_back(i);
+		}
+	}
 }
 
 void
@@ -840,6 +883,22 @@ ScriptEntities::Render(void)
 
 	for (size_t i = 0; i < gEntities.size(); i++) {
 		ScriptEntity& e = gEntities[i];
+
+		if (!gScriptFiles.empty()) {
+			bool fileEnabled = false;
+			for (auto& sf : gScriptFiles) {
+				if (sf.enabled) {
+					for (int idx : sf.entityIndices) {
+						if (idx == (int)i) {
+							fileEnabled = true;
+							break;
+						}
+					}
+				}
+				if (fileEnabled) break;
+			}
+			if (!fileEnabled) continue;
+		}
 
 		float dx = e.x - camPos.x;
 		float dy = e.y - camPos.y;
@@ -1052,6 +1111,7 @@ void
 ScriptEntities::Shutdown(void)
 {
 	gEntities.clear();
+	gScriptFiles.clear();
 }
 
 int
@@ -1060,10 +1120,99 @@ ScriptEntities::GetNumEntities(void)
 	return (int)gEntities.size();
 }
 
+int
+ScriptEntities::GetNumFiles(void)
+{
+	return (int)gScriptFiles.size();
+}
+
 ScriptEntity*
 ScriptEntities::GetEntity(int index)
 {
 	if (index >= 0 && index < (int)gEntities.size())
 		return &gEntities[index];
 	return nil;
+}
+
+ScriptFile*
+ScriptEntities::GetFile(int index)
+{
+	if (index >= 0 && index < (int)gScriptFiles.size())
+		return &gScriptFiles[index];
+	return nil;
+}
+
+ScriptEntity*
+ScriptEntities::GetEntityByFileAndIndex(int fileIndex, int entityInFileIndex)
+{
+	if (fileIndex >= 0 && fileIndex < (int)gScriptFiles.size()) {
+		ScriptFile& sf = gScriptFiles[fileIndex];
+		if (entityInFileIndex >= 0 && entityInFileIndex < (int)sf.entityIndices.size()) {
+			int globalIndex = sf.entityIndices[entityInFileIndex];
+			if (globalIndex >= 0 && globalIndex < (int)gEntities.size()) {
+				return &gEntities[globalIndex];
+			}
+		}
+	}
+	return nil;
+}
+
+void
+ScriptEntities::SetFileEnabled(int fileIndex, bool enabled)
+{
+	if (fileIndex >= 0 && fileIndex < (int)gScriptFiles.size()) {
+		gScriptFiles[fileIndex].enabled = enabled;
+	}
+}
+
+bool
+ScriptEntities::IsFileEnabled(int fileIndex)
+{
+	if (fileIndex >= 0 && fileIndex < (int)gScriptFiles.size()) {
+		return gScriptFiles[fileIndex].enabled;
+	}
+	return false;
+}
+
+const char*
+ScriptEntities::GetEntityTypeName(ScriptEntityType type)
+{
+	switch (type) {
+		case ENTITY_CAR: return "CAR";
+		case ENTITY_PED: return "PED";
+		case ENTITY_OBJECT: return "OBJECT";
+		case ENTITY_PICKUP: return "PICKUP";
+		case ENTITY_BLIP: return "BLIP";
+		case ENTITY_FX: return "FX";
+		case ENTITY_CHECKPOINT: return "CHECKPOINT";
+		case ENTITY_GENERATOR: return "GENERATOR";
+		case ENTITY_LOCATE: return "LOCATE";
+		case ENTITY_CAMERA: return "CAMERA";
+		case ENTITY_ROUTE: return "ROUTE";
+		case ENTITY_TELEPORT: return "TELEPORT";
+		case ENTITY_PLAYER: return "PLAYER";
+		case ENTITY_GANG_CAR: return "GANG_CAR";
+		case ENTITY_GARAGE: return "GARAGE";
+		case ENTITY_PATH_POINT: return "PATH_POINT";
+		case ENTITY_FIRE: return "FIRE";
+		case ENTITY_EXPLOSION: return "EXPLOSION";
+		case ENTITY_SEARCHLIGHT: return "SEARCHLIGHT";
+		case ENTITY_CORONA: return "CORONA";
+		case ENTITY_MARKER: return "MARKER";
+		case ENTITY_DOOR: return "DOOR";
+		case ENTITY_REMOTE_CAR: return "REMOTE_CAR";
+		case ENTITY_TRAIN: return "TRAIN";
+		case ENTITY_BOAT: return "BOAT";
+		case ENTITY_HELI: return "HELI";
+		case ENTITY_WEATHER: return "WEATHER";
+		case ENTITY_ZONE: return "ZONE";
+		case ENTITY_SPAWN: return "SPAWN";
+		case ENTITY_PROJECTILE: return "PROJECTILE";
+		case ENTITY_AUDIO: return "AUDIO";
+		case ENTITY_DRAW: return "DRAW";
+		case ENTITY_TASK: return "TASK";
+		case ENTITY_DAMAGE: return "DAMAGE";
+		case ENTITY_MISSION: return "MISSION";
+		default: return "UNKNOWN";
+	}
 }

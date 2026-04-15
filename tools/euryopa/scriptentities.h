@@ -54,11 +54,22 @@ struct ScriptEntity {
 	char varName[64];
 };
 
+struct ScriptFile {
+	char filename[128];
+	char fullPath[512];
+	bool enabled;
+	int numEntities;
+	std::vector<int> entityIndices;
+};
+
 namespace ScriptEntities {
 
 void Init(void);
 void Render(void);
 void Shutdown(void);
+void Reload(void);
+void TeleportToEntity(int entityIndex);
+void TeleportToCoords(float x, float y, float z);
 
 extern bool gRenderScriptEntities;
 extern bool gRenderScriptCars;
@@ -107,7 +118,14 @@ extern bool gRenderScriptLineNumber;
 extern int gMaxScriptLabels;
 
 int GetNumEntities(void);
+int GetNumFiles(void);
 ScriptEntity* GetEntity(int index);
+ScriptFile* GetFile(int index);
+ScriptEntity* GetEntityByFileAndIndex(int fileIndex, int entityInFileIndex);
+void SetFileEnabled(int fileIndex, bool enabled);
+bool IsFileEnabled(int fileIndex);
+
+const char* GetEntityTypeName(ScriptEntityType type);
 
 }
 

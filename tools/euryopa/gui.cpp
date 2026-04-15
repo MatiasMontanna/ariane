@@ -4054,7 +4054,63 @@ ImGui::Unindent();
 	ImGui::Checkbox("Draw Script Entities", &ScriptEntities::gRenderScriptEntities);
 	if(ScriptEntities::gRenderScriptEntities){
 		ImGui::Indent();
-		ImGui::Text("Entities: %d", ScriptEntities::GetNumEntities());
+		ImGui::Text("Entities: %d | Files: %d", ScriptEntities::GetNumEntities(), ScriptEntities::GetNumFiles());
+		if(ImGui::Button("Reload Scripts")){
+			ScriptEntities::Reload();
+		}
+		ImGui::SeparatorText("Files");
+		int numFiles = ScriptEntities::GetNumFiles();
+		if(numFiles == 0){
+			ImGui::TextDisabled("No script files found");
+		}else{
+			float listHeight = ImGui::GetContentRegionAvail().y * 0.35f;
+			if(listHeight < 100.0f) listHeight = 100.0f;
+			if(listHeight > 300.0f) listHeight = 300.0f;
+			if(ImGui::BeginChild("##script_files", ImVec2(0, listHeight), true)){
+				for(int i = 0; i < numFiles; i++){
+					ScriptFile* sf = ScriptEntities::GetFile(i);
+					if(!sf) continue;
+					ImGui::PushID(i);
+					ImGui::Checkbox(sf->filename, &sf->enabled);
+					ImGui::SameLine();
+					ImGui::TextDisabled("(%d)", sf->numEntities);
+					ImGui::PopID();
+				}
+			}
+			ImGui::EndChild();
+		}
+		ImGui::SeparatorText("Entity List");
+		listHeight = ImGui::GetContentRegionAvail().y * 0.35f;
+		if(listHeight < 100.0f) listHeight = 100.0f;
+		if(listHeight > 400.0f) listHeight = 400.0f;
+		if(ImGui::BeginChild("##script_entities", ImVec2(0, listHeight), true)){
+			for(int i = 0; i < numFiles; i++){
+				ScriptFile* sf = ScriptEntities::GetFile(i);
+				if(!sf) continue;
+				if(!sf->enabled) continue;
+				if(sf->numEntities == 0) continue;
+				if(ImGui::CollapsingHeader(sf->filename, ImGuiTreeNodeFlags_DefaultOpen)){
+					for(int j = 0; j < sf->numEntities; j++){
+						ScriptEntity* ent = ScriptEntities::GetEntityByFileAndIndex(i, j);
+						if(!ent) continue;
+						ImGui::PushID(i * 10000 + j);
+						ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "[%s]", ScriptEntities::GetEntityTypeName(ent->type));
+						ImGui::SameLine();
+						if(ent->modelName[0]){
+							ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "%s", ent->modelName);
+							ImGui::SameLine();
+						}
+						ImGui::Text("L%d: %.0f, %.0f, %.0f", ent->lineNum, ent->x, ent->y, ent->z);
+						ImGui::SameLine();
+						if(ImGui::SmallButton("Tele")){
+							ScriptEntities::TeleportToEntity(ScriptEntities::GetNumEntities());
+						}
+						ImGui::PopID();
+					}
+				}
+			}
+		}
+		ImGui::EndChild();
 		ImGui::SeparatorText("Vehicles");
 		ImGui::Checkbox("Cars", &ScriptEntities::gRenderScriptCars);
 		ImGui::SameLine();
