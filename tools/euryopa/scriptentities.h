@@ -88,10 +88,13 @@ extern bool gRenderScriptSpawns;
 extern bool gRenderScriptProjectiles;
 
 extern float gScriptLabelDistance;
+extern float gScriptCubeDistance;
 extern float gScriptCubeSize;
+extern bool gRenderScriptText;
 extern bool gRenderScriptFileName;
 extern bool gRenderScriptModelName;
 extern bool gRenderScriptLineNumber;
+extern int gMaxScriptLabels;
 
 int GetNumEntities(void);
 ScriptEntity* GetEntity(int index);

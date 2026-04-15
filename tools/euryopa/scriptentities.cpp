@@ -40,10 +40,13 @@ bool ScriptEntities::gRenderScriptSpawns = true;
 bool ScriptEntities::gRenderScriptProjectiles = true;
 
 float ScriptEntities::gScriptLabelDistance = 200.0f;
+float ScriptEntities::gScriptCubeDistance = 400.0f;
 float ScriptEntities::gScriptCubeSize = 0.5f;
+bool ScriptEntities::gRenderScriptText = true;
 bool ScriptEntities::gRenderScriptFileName = true;
 bool ScriptEntities::gRenderScriptModelName = true;
 bool ScriptEntities::gRenderScriptLineNumber = false;
+int ScriptEntities::gMaxScriptLabels = 100;
 
 static bool isWhitespace(char c) {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -658,6 +661,7 @@ ScriptEntities::Render(void)
 		return;
 
 	rw::V3d camPos = TheCamera.m_position;
+	int labelsRendered = 0;
 
 	for (size_t i = 0; i < gEntities.size(); i++) {
 		ScriptEntity& e = gEntities[i];
@@ -666,7 +670,7 @@ ScriptEntities::Render(void)
 		float dy = e.y - camPos.y;
 		float dz = e.z - camPos.z;
 		float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-		if (dist > gScriptLabelDistance)
+		if (dist > gScriptCubeDistance)
 			continue;
 
 		bool shouldRender = false;
@@ -770,6 +774,14 @@ ScriptEntities::Render(void)
 		RenderLine(v[1], v[5], col, col);
 		RenderLine(v[2], v[6], col, col);
 		RenderLine(v[3], v[7], col, col);
+
+		if (!gRenderScriptText || labelsRendered >= gMaxScriptLabels)
+			continue;
+
+		if (dist > gScriptLabelDistance)
+			continue;
+
+		labelsRendered++;
 
 		rw::V3d worldPos = { e.x, e.y, e.z + verticalOffset * 1.5f };
 		rw::V3d screenPos;
