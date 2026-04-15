@@ -13,7 +13,16 @@ bool ScriptEntities::gRenderScriptPeds = true;
 bool ScriptEntities::gRenderScriptObjects = true;
 bool ScriptEntities::gRenderScriptPickups = true;
 bool ScriptEntities::gRenderScriptBlips = true;
-bool ScriptEntities::gRenderScriptCoords = true;
+bool ScriptEntities::gRenderScriptFx = true;
+bool ScriptEntities::gRenderScriptCheckpoints = true;
+bool ScriptEntities::gRenderScriptGenerators = true;
+bool ScriptEntities::gRenderScriptLocates = true;
+
+float ScriptEntities::gScriptLabelDistance = 200.0f;
+float ScriptEntities::gScriptCubeSize = 0.5f;
+bool ScriptEntities::gRenderScriptFileName = true;
+bool ScriptEntities::gRenderScriptModelName = true;
+bool ScriptEntities::gRenderScriptLineNumber = false;
 
 static bool isWhitespace(char c) {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -71,22 +80,15 @@ static bool tryParseInt(const char*& p, int& out) {
 	return true;
 }
 
-static std::string getScriptFilename(const char* filepath) {
-	const char* lastSlash = filepath;
-	for (const char* p = filepath; *p; p++) {
-		if (*p == '/' || *p == '\\') lastSlash = p + 1;
-	}
-	return std::string(lastSlash);
-}
-
 static void addEntity(std::vector<ScriptEntity>& ents, ScriptEntityType type, float x, float y, float z, 
-					 const char* modelName, const char* scriptName, const char* varName, int lineNum, float heading = 0.0f) {
+					 const char* modelName, const char* scriptName, const char* varName, int lineNum, float heading = 0.0f, float radius = 0.0f) {
 	ScriptEntity e;
 	e.type = type;
 	e.x = x;
 	e.y = y;
 	e.z = z;
 	e.heading = heading;
+	e.radius = radius;
 	e.modelId = 0;
 	e.lineNum = lineNum;
 	if (modelName) {
@@ -124,44 +126,100 @@ ScriptEntities::Init(void)
 		return;
 	}
 
-	char path[512];
-	snprintf(path, sizeof(path), "%s/scripts/*", exeDir);
-	
+	char scriptsDir[512];
+	snprintf(scriptsDir, sizeof(scriptsDir), "%s/scripts", exeDir);
+
 	WIN32_FIND_DATAA findData;
-	HANDLE hFind = FindFirstFileA(path, &findData);
-	if (hFind == INVALID_HANDLE_VALUE) {
-		log("ScriptEntities: scripts folder not found at %s/scripts\n", exeDir);
-		return;
+	HANDLE hFind;
+
+	char searchPath[512];
+	char baseDir[512];
+	strncpy(baseDir, scriptsDir, sizeof(baseDir) - 1);
+	baseDir[sizeof(baseDir) - 1] = '\0';
+
+	char dirsToSearch[64][512];
+	int numDirs = 1;
+	strncpy(dirsToSearch[0], scriptsDir, 511);
+	dirsToSearch[0][511] = '\0';
+
+	int processed = 0;
+	while (processed < numDirs && numDirs < 64) {
+		snprintf(searchPath, sizeof(searchPath), "%s/*", dirsToSearch[processed]);
+
+		hFind = FindFirstFileA(searchPath, &findData);
+		if (hFind == INVALID_HANDLE_VALUE) {
+			processed++;
+			continue;
+		}
+
+		do {
+			const char* name = findData.cFileName;
+			if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+				continue;
+
+			char fullPath[512];
+			snprintf(fullPath, sizeof(fullPath), "%s/%s", dirsToSearch[processed], name);
+
+			if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+				if (numDirs < 64) {
+					strncpy(dirsToSearch[numDirs], fullPath, 511);
+					dirsToSearch[numDirs][511] = '\0';
+					numDirs++;
+				}
+			} else {
+				size_t namelen = strlen(name);
+				if (namelen >= 3 && strcmp(name + namelen - 3, ".sc") == 0) {
+					parseScFile(fullPath, baseDir, name, coordVars);
+				}
+			}
+		} while (FindNextFileA(hFind, &findData));
+
+		FindClose(hFind);
+		processed++;
 	}
 
-	char scriptsBaseDir[512];
-	snprintf(scriptsBaseDir, sizeof(scriptsBaseDir), "%s/scripts/", exeDir);
-	size_t baseLen = strlen(scriptsBaseDir);
+	log("ScriptEntities: loaded %d entities\n", (int)gEntities.size());
+}
 
-	do {
-		const char* filename = findData.cFileName;
-		size_t namelen = strlen(filename);
-		if (namelen < 3 || strcmp(filename + namelen - 3, ".sc") != 0)
-			continue;
+static void
+parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars)
+{
+	FILE* f = fopen(filepath, "r");
+	if (!f) return;
 
-		char filepath[512];
-		snprintf(filepath, sizeof(filepath), "%s%s", scriptsBaseDir, filename);
-		
-		FILE* f = fopen(filepath, "r");
-		if (!f) continue;
+	fseek(f, 0, SEEK_END);
+	long fsize = ftell(f);
+	fseek(f, 0, SEEK_SET);
 
-		fseek(f, 0, SEEK_END);
-		long fsize = ftell(f);
-		fseek(f, 0, SEEK_SET);
+	char* buffer = (char*)malloc(fsize + 1);
+	fread(buffer, 1, fsize, f);
+	buffer[fsize] = '\0';
+	fclose(f);
 
-		char* buffer = (char*)malloc(fsize + 1);
-		fread(buffer, 1, fsize, f);
-		buffer[fsize] = '\0';
-		fclose(f);
+	const char* lastSlash = strrchr(filepath, '/');
+	const char* lastBackslash = strrchr(filepath, '\\');
+	if (!lastSlash) lastSlash = filepath - 1;
+	if (!lastBackslash) lastBackslash = filepath - 1;
+	if (lastBackslash > lastSlash) lastSlash = lastBackslash;
 
-		std::string scriptName = getScriptFilename(filepath);
-		coordVars.clear();
+	const char* relPathStart = strstr(filepath, "scripts/");
+	if (!relPathStart) relPathStart = strstr(filepath, "scripts\\");
+	if (relPathStart) relPathStart += 8;
+	else relPathStart = lastSlash + 1;
 
+	char relPath[512];
+	strncpy(relPath, relPathStart, sizeof(relPath) - 1);
+	relPath[sizeof(relPath) - 1] = '\0';
+
+	const char* dotPos = strrchr(relPath, '.');
+	if (dotPos) {
+		size_t nameLen = dotPos - relPath;
+		if (nameLen < sizeof(relPath)) relPath[nameLen] = '\0';
+	}
+
+	coordVars.clear();
+
+		std::string scriptName = relPath;
 		const char* p = buffer;
 		int lineNum = 0;
 		std::string currentLine;
@@ -261,6 +319,59 @@ ScriptEntities::Init(void)
 				continue;
 			}
 
+			if (cmd == "CREATE_FX_SYSTEM" || cmd == "CREATE_FX_SYSTEM_PP" || 
+				cmd == "CREATE_FX_SYSTEM_W ember" || cmd == "CREATE_EXPLOSION") {
+				std::string fxName = getNextWord(lp);
+				float x = 0, y = 0, z = 0;
+				if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+					addEntity(gEntities, ENTITY_FX, x, y, z, fxName.c_str(), scriptName.c_str(), "", lineNum);
+				}
+				continue;
+			}
+
+			if (cmd == "SWITCH_CAR_GENERATOR") {
+				float x = 0, y = 0, z = 0;
+				std::string dummy;
+				if (tryParseFloat(lp, x)) {
+					y = x;
+					z = x;
+					addEntity(gEntities, ENTITY_GENERATOR, x, y, z, "", scriptName.c_str(), "", lineNum);
+				}
+				continue;
+			}
+
+			if (cmd == "LOCATE_CHAR_ANY_MEANS_3D" || cmd == "LOCATE_CHAR_ANY_MEANS_2D" ||
+				cmd == "LOCATE_CHAR_ON_FOOT_3D" || cmd == "LOCATE_CHAR_ON_FOOT_2D" ||
+				cmd == "LOCATE_CHAR_IN_CAR_3D" || cmd == "LOCATE_CHAR_IN_CAR_2D" ||
+				cmd == "LOCATE_STOPPED_CHAR_ANY_MEANS_3D" || cmd == "LOCATE_STOPPED_CHAR_ANY_MEANS_2D" ||
+				cmd == "LOCATE_CAR_3D" || cmd == "LOCATE_CAR_2D" ||
+				cmd == "LOCATE_CHAR_ANY_MEANS_CAR_2D" || cmd == "LOCATE_CHAR_ANY_MEANS_CAR_3D" ||
+				cmd == "LOCATE_CHAR_IN_CAR_3D" || cmd == "LOCATE_CHAR_ON_FOOT_3D" ||
+				cmd == "LOCATE_CHAR_ON_FOOT_2D" || cmd == "LOCATE_CHAR_STANDING" ||
+				cmd == "LOCATE_CHAR_STANDING_IN_AREA_3D" || cmd == "LOCATE_CHAR_STANDING_IN_AREA_2D") {
+				float x = 0, y = 0, z = 0;
+				float r = 5.0f;
+				skipToWhitespace(lp);
+				skipWhitespace(lp);
+				if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+					tryParseFloat(lp, r);
+					tryParseFloat(lp, r);
+					tryParseFloat(lp, r);
+					addEntity(gEntities, ENTITY_LOCATE, x, y, z, "", scriptName.c_str(), "", lineNum, 0.0f, r);
+				}
+				continue;
+			}
+
+			if (cmd == "PRINT_BIG" || cmd == "PRINT" || cmd == "PRINT_NOW" ||
+				cmd == "PRINT_WITH_NUMBER_BIG" || cmd == "PRINT_WITH_NUMBER" ||
+				cmd == "PRINT_SOON" || cmd == "PRINT_SOON_NOW") {
+				float x = 0, y = 0, z = 0;
+				if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+					addEntity(gEntities, ENTITY_CHECKPOINT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				}
+				continue;
+			}
+
 			for (auto& kv : coordVars) {
 				std::string var = kv.first;
 				std::string assign = var + "=";
@@ -289,8 +400,17 @@ ScriptEntities::Render(void)
 	if (!gRenderScriptEntities || gEntities.empty())
 		return;
 
+	rw::V3d camPos = TheCamera.m_position;
+
 	for (size_t i = 0; i < gEntities.size(); i++) {
 		ScriptEntity& e = gEntities[i];
+
+		float dx = e.x - camPos.x;
+		float dy = e.y - camPos.y;
+		float dz = e.z - camPos.z;
+		float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+		if (dist > gScriptLabelDistance)
+			continue;
 
 		bool shouldRender = false;
 		switch (e.type) {
@@ -299,13 +419,16 @@ ScriptEntities::Render(void)
 			case ENTITY_OBJECT: shouldRender = gRenderScriptObjects; break;
 			case ENTITY_PICKUP: shouldRender = gRenderScriptPickups; break;
 			case ENTITY_BLIP: shouldRender = gRenderScriptBlips; break;
-			case ENTITY_COORD: shouldRender = gRenderScriptCoords; break;
+			case ENTITY_FX: shouldRender = gRenderScriptFx; break;
+			case ENTITY_CHECKPOINT: shouldRender = gRenderScriptCheckpoints; break;
+			case ENTITY_GENERATOR: shouldRender = gRenderScriptGenerators; break;
+			case ENTITY_LOCATE: shouldRender = gRenderScriptLocates; break;
 		}
 
 		if (!shouldRender) continue;
 
-		float halfSize = 0.5f;
-		float verticalOffset = 1.5f;
+		float halfSize = gScriptCubeSize;
+		float verticalOffset = halfSize * 3.0f;
 
 		rw::RGBA col;
 		switch (e.type) {
@@ -314,7 +437,10 @@ ScriptEntities::Render(void)
 			case ENTITY_OBJECT: col = { 200, 100, 0, 200 }; break;
 			case ENTITY_PICKUP: col = { 255, 0, 255, 200 }; break;
 			case ENTITY_BLIP: col = { 255, 255, 0, 200 }; break;
-			case ENTITY_COORD: col = { 150, 150, 150, 200 }; break;
+			case ENTITY_FX: col = { 255, 100, 50, 200 }; break;
+			case ENTITY_CHECKPOINT: col = { 100, 255, 100, 200 }; break;
+			case ENTITY_GENERATOR: col = { 100, 200, 255, 200 }; break;
+			case ENTITY_LOCATE: col = { 200, 200, 100, 200 }; break;
 		}
 
 		rw::V3d v[8] = {
@@ -341,7 +467,7 @@ ScriptEntities::Render(void)
 		RenderLine(v[2], v[6], col, col);
 		RenderLine(v[3], v[7], col, col);
 
-		rw::V3d worldPos = { e.x, e.y, e.z + verticalOffset * 2.5f };
+		rw::V3d worldPos = { e.x, e.y, e.z + verticalOffset * 1.5f };
 		rw::V3d screenPos;
 		float w, h;
 		if (Sprite::CalcScreenCoors(worldPos, &screenPos, &w, &h, false)) {
@@ -355,12 +481,26 @@ ScriptEntities::Render(void)
 					case ENTITY_OBJECT: strncat(label, "[OBJ] ", sizeof(label) - 1); break;
 					case ENTITY_PICKUP: strncat(label, "[PICKUP] ", sizeof(label) - 1); break;
 					case ENTITY_BLIP: strncat(label, "[BLIP] ", sizeof(label) - 1); break;
-					case ENTITY_COORD: strncat(label, "[COORD] ", sizeof(label) - 1); break;
+					case ENTITY_FX: strncat(label, "[FX] ", sizeof(label) - 1); break;
+					case ENTITY_CHECKPOINT: strncat(label, "[CHECK] ", sizeof(label) - 1); break;
+					case ENTITY_GENERATOR: strncat(label, "[GEN] ", sizeof(label) - 1); break;
+					case ENTITY_LOCATE: strncat(label, "[LOC] ", sizeof(label) - 1); break;
 				}
 
-				if (e.modelName[0]) {
+				if (gRenderScriptModelName && e.modelName[0]) {
 					strncat(label, e.modelName, sizeof(label) - 1);
 					strncat(label, " ", sizeof(label) - 1);
+				}
+
+				if (gRenderScriptFileName && e.scriptName[0]) {
+					strncat(label, e.scriptName, sizeof(label) - 1);
+					strncat(label, " ", sizeof(label) - 1);
+				}
+
+				if (gRenderScriptLineNumber) {
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "L%d ", e.lineNum);
+					strncat(label, tmp, sizeof(label) - 1);
 				}
 
 				char tmp[64];

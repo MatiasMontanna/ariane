@@ -10,18 +10,22 @@ enum ScriptEntityType {
 	ENTITY_OBJECT,
 	ENTITY_PICKUP,
 	ENTITY_BLIP,
-	ENTITY_COORD
+	ENTITY_FX,
+	ENTITY_CHECKPOINT,
+	ENTITY_GENERATOR,
+	ENTITY_LOCATE
 };
 
 struct ScriptEntity {
 	ScriptEntityType type;
 	float x, y, z;
 	float heading;
+	float radius;
 	int modelId;
+	int lineNum;
 	char modelName[32];
 	char scriptName[64];
 	char varName[64];
-	int lineNum;
 };
 
 namespace ScriptEntities {
@@ -36,7 +40,16 @@ extern bool gRenderScriptPeds;
 extern bool gRenderScriptObjects;
 extern bool gRenderScriptPickups;
 extern bool gRenderScriptBlips;
-extern bool gRenderScriptCoords;
+extern bool gRenderScriptFx;
+extern bool gRenderScriptCheckpoints;
+extern bool gRenderScriptGenerators;
+extern bool gRenderScriptLocates;
+
+extern float gScriptLabelDistance;
+extern float gScriptCubeSize;
+extern bool gRenderScriptFileName;
+extern bool gRenderScriptModelName;
+extern bool gRenderScriptLineNumber;
 
 int GetNumEntities(void);
 ScriptEntity* GetEntity(int index);

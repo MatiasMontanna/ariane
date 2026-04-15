@@ -4055,6 +4055,7 @@ ImGui::Unindent();
 	if(ScriptEntities::gRenderScriptEntities){
 		ImGui::Indent();
 		ImGui::Text("Entities: %d", ScriptEntities::GetNumEntities());
+		ImGui::SeparatorText("Types");
 		ImGui::Checkbox("Cars", &ScriptEntities::gRenderScriptCars);
 		ImGui::SameLine();
 		ImGui::Checkbox("Peds", &ScriptEntities::gRenderScriptPeds);
@@ -4063,7 +4064,22 @@ ImGui::Unindent();
 		ImGui::Checkbox("Pickups", &ScriptEntities::gRenderScriptPickups);
 		ImGui::Checkbox("Blips", &ScriptEntities::gRenderScriptBlips);
 		ImGui::SameLine();
-		ImGui::Checkbox("Coords", &ScriptEntities::gRenderScriptCoords);
+		ImGui::Checkbox("FX", &ScriptEntities::gRenderScriptFx);
+		ImGui::Checkbox("Checkpoints", &ScriptEntities::gRenderScriptCheckpoints);
+		ImGui::SameLine();
+		ImGui::Checkbox("Generators", &ScriptEntities::gRenderScriptGenerators);
+		ImGui::Checkbox("Locations", &ScriptEntities::gRenderScriptLocates);
+		ImGui::SeparatorText("Options");
+		ImGui::SetNextItemWidth(80);
+		ImGui::InputFloat("Distance", &ScriptEntities::gScriptLabelDistance, 10.0f, 50.0f, "%.0f");
+		ImGui::SetNextItemWidth(80);
+		ImGui::InputFloat("Cube Size", &ScriptEntities::gScriptCubeSize, 0.1f, 0.5f, "%.1f");
+		ImGui::SeparatorText("Labels");
+		ImGui::Checkbox("File Name", &ScriptEntities::gRenderScriptFileName);
+		ImGui::SameLine();
+		ImGui::Checkbox("Model Name", &ScriptEntities::gRenderScriptModelName);
+		ImGui::SameLine();
+		ImGui::Checkbox("Line #", &ScriptEntities::gRenderScriptLineNumber);
 		ImGui::Unindent();
 	}
 
