@@ -115,6 +115,8 @@ static void addEntity(std::vector<ScriptEntity>& ents, ScriptEntityType type, fl
 	ents.push_back(e);
 }
 
+static void parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars);
+
 void
 ScriptEntities::Init(void)
 {
@@ -416,12 +418,7 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 			}
 		}
 
-		free(buffer);
-	} while (FindNextFileA(hFind, &findData));
-
-	FindClose(hFind);
-
-	log("ScriptEntities: loaded %d entities\n", (int)gEntities.size());
+	free(buffer);
 }
 
 void
