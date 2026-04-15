@@ -34,7 +34,12 @@ enum ScriptEntityType {
 	ENTITY_WEATHER,
 	ENTITY_ZONE,
 	ENTITY_SPAWN,
-	ENTITY_PROJECTILE
+	ENTITY_PROJECTILE,
+	ENTITY_AUDIO,
+	ENTITY_DRAW,
+	ENTITY_TASK,
+	ENTITY_DAMAGE,
+	ENTITY_MISSION
 };
 
 struct ScriptEntity {
@@ -86,6 +91,11 @@ extern bool gRenderScriptWeathers;
 extern bool gRenderScriptZones;
 extern bool gRenderScriptSpawns;
 extern bool gRenderScriptProjectiles;
+extern bool gRenderScriptAudio;
+extern bool gRenderScriptDraw;
+extern bool gRenderScriptTasks;
+extern bool gRenderScriptDamage;
+extern bool gRenderScriptMission;
 
 extern float gScriptLabelDistance;
 extern float gScriptCubeDistance;

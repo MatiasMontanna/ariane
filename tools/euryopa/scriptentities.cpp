@@ -38,6 +38,11 @@ bool ScriptEntities::gRenderScriptWeathers = true;
 bool ScriptEntities::gRenderScriptZones = true;
 bool ScriptEntities::gRenderScriptSpawns = true;
 bool ScriptEntities::gRenderScriptProjectiles = true;
+bool ScriptEntities::gRenderScriptAudio = true;
+bool ScriptEntities::gRenderScriptDraw = true;
+bool ScriptEntities::gRenderScriptTasks = true;
+bool ScriptEntities::gRenderScriptDamage = true;
+bool ScriptEntities::gRenderScriptMission = true;
 
 float ScriptEntities::gScriptLabelDistance = 200.0f;
 float ScriptEntities::gScriptCubeDistance = 400.0f;
@@ -350,7 +355,11 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 			cmd == "CREATE_AMMO_PICKUP" || cmd == "CREATE_WEAPON_PICKUP" ||
 			cmd == "CREATE_FLOATING_BLIP_2D" || cmd == "CREATE_PICKUP_WITH_ANGLE" ||
 			cmd == "CREATE_MONEY_PICKUP" || cmd == "CREATE_PICKUP_SPECIAL" ||
-			cmd == "CREATE_ASSET_PICKUP" || cmd == "CREATE_PICKUP_MONEY_WITH_TIME") {
+			cmd == "CREATE_ASSET_PICKUP" || cmd == "CREATE_PICKUP_MONEY_WITH_TIME" ||
+			cmd == "CREATE_HIDDEN_PACKAGE" || cmd == "CREATE_SPECIAL" ||
+			cmd == "CREATE_PICKUP_IN_SHOP" || cmd == "CREATE_ITEM_PICKUP" ||
+			cmd == "CREATE_PICKUP_MONEY_WITH_HEADSHOT" || cmd == "CREATE_SCRIPT_PICKUP" ||
+			cmd == "CREATE_PICKUP_MONEY_NO_PROMPT") {
 			skipWhitespace(lp);
 			std::string model = getNextWord(lp);
 			
@@ -637,6 +646,172 @@ parseScFile(const char* filepath, const char* baseDir, const char* filename, std
 			continue;
 		}
 
+		if (cmd == "CREATE_RANDOM_PED" || cmd == "CREATE_RANDOM_CHAR" ||
+			cmd == "CREATE_RANDOM_CAR" || cmd == "CREATE_RANDOM_VEHICLE" ||
+			cmd == "CREATE_RANDOM_BOAT" || cmd == "CREATE_RANDOM_TRAIN") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_PED, x, y, z, "RANDOM", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "STORE_COORDINATES" || cmd == "STORE_CHAR_COORDINATES" ||
+			cmd == "STORE_PLAYER_COORDINATES" || cmd == "STORE_CAR_COORDINATES" ||
+			cmd == "STORE_OBJECT_COORDINATES" || cmd == "GET_CHAR_COORDINATES" ||
+			cmd == "GET_CAR_COORDINATES" || cmd == "GET_PLAYER_COORDINATES" ||
+			cmd == "GET_OBJECT_COORDINATES" || cmd == "STORE_POS_XYZ" ||
+			cmd == "GET_OFFSET_COORDINATES" || cmd == "GET_CHAR_DISTANCE_FROM_CHAR" ||
+			cmd == "GET_DISTANCE_FROM_CAR" || cmd == "GET_DISTANCE_FROM_POINT" ||
+			cmd == "LOCATE_CHAR_ANY_MEANS_CHAR_2D" || cmd == "LOCATE_CHAR_ANY_MEANS_CHAR_3D" ||
+			cmd == "LOCATE_CHAR_ON_FOOT_CHAR_2D" || cmd == "LOCATE_CHAR_ON_FOOT_CHAR_3D" ||
+			cmd == "LOCATE_CHAR_IN_CAR_CHAR_2D" || cmd == "LOCATE_CHAR_IN_CAR_CHAR_3D" ||
+			cmd == "LOCATE_CHAR_STANDING_CHAR_2D" || cmd == "LOCATE_CHAR_STANDING_CHAR_3D" ||
+			cmd == "LOCATE_CHAR_IN_AREA_2D" || cmd == "LOCATE_CHAR_IN_AREA_3D" ||
+			cmd == "LOCATE_CHAR_ANY_MEANS_2D" || cmd == "LOCATE_CHAR_ANY_MEANS_3D" ||
+			cmd == "LOCATE_CHAR_ON_FOOT_2D" || cmd == "LOCATE_CHAR_ON_FOOT_3D" ||
+			cmd == "LOCATE_CHAR_IN_CAR_2D" || cmd == "LOCATE_CHAR_IN_CAR_3D" ||
+			cmd == "LOCATE_CHAR_STANDING" || cmd == "LOCATE_CHAR_STANDING_IN_AREA_2D" ||
+			cmd == "LOCATE_CHAR_STANDING_IN_AREA_3D" || cmd == "LOCATE_CAR_2D" ||
+			cmd == "LOCATE_CAR_3D" || cmd == "LOCATE_STOPPED_CHAR_ANY_MEANS_2D" ||
+			cmd == "LOCATE_STOPPED_CHAR_ANY_MEANS_3D" || cmd == "LOCATE_STOPPED_CHAR_ON_FOOT_2D" ||
+			cmd == "LOCATE_STOPPED_CHAR_ON_FOOT_3D" || cmd == "LOCATE_STOPPED_CAR_2D" ||
+			cmd == "LOCATE_STOPPED_CAR_3D" || cmd == "LOCATE_STOPPED_CHAR_IN_CAR_2D" ||
+			cmd == "LOCATE_STOPPED_CHAR_IN_CAR_3D") {
+			float x = 0, y = 0, z = 0;
+			skipToWhitespace(lp);
+			skipWhitespace(lp);
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_LOCATE, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "START_KILL_FRENZY" || cmd == "CREATE_KILL_FRENZY" ||
+			cmd == "START_KILL_FRENZY_2" || cmd == "START_KILL_FRENZY_3" ||
+			cmd == "START_KILL_FRENZY_4" || cmd == "START_KILL_FRENZY_5") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_MARKER, x, y, z, "FRENZY", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "PLAY_MISSION_AUDIO" || cmd == "LOAD_MISSION_AUDIO" ||
+			cmd == "SET_MISSION_AUDIO_POSITION" || cmd == "PLAY_LOADED_MISSION_AUDIO" ||
+			cmd == "PLAY_MISSION_AUDIO_THEN_PAUSES") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "DRAW_SPHERE" || cmd == "DRAW_SPHERE_AT" ||
+			cmd == "DRAW_CORONA_AT" || cmd == "DRAW_SPRITE_AT" ||
+			cmd == "DRAW_SPRITE_WITH_ANGLE" || cmd == "DRAW_SPRITE_NIT" ||
+			cmd == "DRAW_SPRITE_2D" || cmd == "DRAW_TEXTURE" ||
+			cmd == "DRAW_RECT" || cmd == "DRAW_DEBUG_CUBE") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_DRAW, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "TASK_GO_STRAIGHT_TO_COORD" || cmd == "TASK_GO_TO_COORD" ||
+			cmd == "TASK_GO_TO_COORD_IN_CAR" || cmd == "TASK_LEAVE_CAR" ||
+			cmd == "TASK_LEAVE_ANY_CAR" || cmd == "TASK_WANDER" ||
+			cmd == "TASK_WANDER_FROM_COORD" || cmd == "TASK_FOLLOW_PATH" ||
+			cmd == "TASK_SHOOT" || cmd == "TASK_KILL_CHAR_FROM_CAR" ||
+			cmd == "TASK_KILL_CHAR_ON_FOOT" || cmd == "TASK_DIE" ||
+			cmd == "TASK_DUCK" || cmd == "TASK_STAND_STILL" ||
+			cmd == "TASK_LOOK_AT_CHAR" || cmd == "TASK_LOOK_AT_PLAYER" ||
+			cmd == "TASK_LOOK_AT_CAR" || cmd == "TASK_AIM_GUN_AT_CHAR" ||
+			cmd == "TASK_AIM_GUN_AT_PLAYER" || cmd == "TASK_AIM_GUN_AT_CAR" ||
+			cmd == "TASK_TIRED" || cmd == "TASK_SIT_DOWN" ||
+			cmd == "TASK_COWER" || cmd == "TASK_HANDS_UP" ||
+			cmd == "TASK_FOLLOW_FORMATION") {
+			float x = 0, y = 0, z = 0;
+			skipToWhitespace(lp);
+			skipWhitespace(lp);
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_TASK, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "SET_CHAR_HEADING" || cmd == "SET_CAR_HEADING" ||
+			cmd == "SET_OBJECT_HEADING" || cmd == "SET_PLAYER_HEADING" ||
+			cmd == "SET_CHAR_COORDINATES_NO_OFFSET" || cmd == "SET_CAR_COORDINATES_NO_OFFSET" ||
+			cmd == "SET_CHAR_POSITION" || cmd == "SET_CAR_POSITION" ||
+			cmd == "SET_CHAR_VELOCITY" || cmd == "SET_CAR_VELOCITY" ||
+			cmd == "SET_CHAR_PROOFS" || cmd == "SET_CAR_PROOFS") {
+			float x = 0, y = 0, z = 0;
+			skipToWhitespace(lp);
+			skipWhitespace(lp);
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_TELEPORT, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "SET_CHAR_HEALTH" || cmd == "SET_CAR_HEALTH" ||
+			cmd == "ADD_HEALTH" || cmd == "ADD_ARMOUR" ||
+			cmd == "SET_CHAR_ARMOUR" || cmd == "SET_CHAR_MAX_HEALTH" ||
+			cmd == "SET_CAR_MAX_HEALTH" || cmd == "DAMAGE_CAR" ||
+			cmd == "DAMAGE_CHAR" || cmd == "EXPLODE_CAR" ||
+			cmd == "EXPLODE_CHAR") {
+			float x = 0, y = 0, z = 0;
+			skipToWhitespace(lp);
+			skipWhitespace(lp);
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_DAMAGE, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "PLAY_SOUND" || cmd == "PLAY_SOUND_FROM_PLAYER" ||
+			cmd == "PLAY_SOUND_FROM_CAR" || cmd == "PLAY_SOUND_FROM_CHAR" ||
+			cmd == "PLAY_SOUND_FROM_OBJECT" || cmd == "LOAD_SOUND" ||
+			cmd == "RELEASE_SOUND" || cmd == "STOP_SOUND" ||
+			cmd == "PLAY_MUSIC" || cmd == "STOP_MUSIC" ||
+			cmd == "PLAY_CONCERTED_SOUND" || cmd == "PLAY_FRONT_END_SOUND") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "CREATE_PED_WITH_GUN" || cmd == "CREATE_MISSION_PED" ||
+			cmd == "CREATE_ESCAPE_PARAM_PED" || cmd == "CREATE_SWAT_MEMBER" ||
+			cmd == "CREATE_FBI_MEMBER" || cmd == "CREATE_ARMY_MEMBER" ||
+			cmd == "CREATE_HVY_STEALTH_MOTO" || cmd == "CREATE_STEALTH_MOTO" ||
+			cmd == "CREATE_MISSION_CAR" || cmd == "CREATE_MISSION_CAR_NO_SAVE" ||
+			cmd == "CREATE_CAR_UNTIL_CAR_IS_DELETE" || cmd == "CREATE_CAR_UNTIL_NO_LONGER_NEEDED" ||
+			cmd == "CREATE_OBJECT_UNTIL_CAR_IS_DELETE" || cmd == "CREATE_OBJECT_UNTIL_NO_LONGER_NEEDED" ||
+			cmd == "CREATE_CHAR_UNTIL_NO_LONGER_NEEDED" || cmd == "CREATE_CHAR_UNTIL_CAR_IS_DELETE") {
+			float x = 0, y = 0, z = 0;
+			skipToWhitespace(lp);
+			skipWhitespace(lp);
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_MISSION, x, y, z, "", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "TRIGGER_MISSION_COMPLETED_SOUND" || cmd == "TRIGGER_MISSION_FAILED_SOUND" ||
+			cmd == "TRIGGERPolice_BAITS" || cmd == "TRIGGER_GARAGE_OPENED_SOUND" ||
+			cmd == "TRIGGER_GARAGE_CLOSED_SOUND" || cmd == "TRIGGER_AUDIO_EVENT" ||
+			cmd == "TRIGGER_BANK_WARNING_SOUND") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "TRIGGER", scriptName.c_str(), "", lineNum);
+			}
+			continue;
+		}
+
 		for (auto& kv : coordVars) {
 			std::string var = kv.first;
 			std::string assign = var + "=";
@@ -705,6 +880,11 @@ ScriptEntities::Render(void)
 			case ENTITY_ZONE: shouldRender = gRenderScriptZones; break;
 			case ENTITY_SPAWN: shouldRender = gRenderScriptSpawns; break;
 			case ENTITY_PROJECTILE: shouldRender = gRenderScriptProjectiles; break;
+			case ENTITY_AUDIO: shouldRender = gRenderScriptAudio; break;
+			case ENTITY_DRAW: shouldRender = gRenderScriptDraw; break;
+			case ENTITY_TASK: shouldRender = gRenderScriptTasks; break;
+			case ENTITY_DAMAGE: shouldRender = gRenderScriptDamage; break;
+			case ENTITY_MISSION: shouldRender = gRenderScriptMission; break;
 		}
 
 		if (!shouldRender) continue;
@@ -749,6 +929,11 @@ ScriptEntities::Render(void)
 			case ENTITY_ZONE: col = { 200, 100, 150, 200 }; break;
 			case ENTITY_SPAWN: col = { 100, 255, 150, 200 }; break;
 			case ENTITY_PROJECTILE: col = { 255, 100, 100, 200 }; break;
+			case ENTITY_AUDIO: col = { 200, 100, 200, 200 }; break;
+			case ENTITY_DRAW: col = { 255, 200, 50, 200 }; break;
+			case ENTITY_TASK: col = { 150, 150, 200, 200 }; break;
+			case ENTITY_DAMAGE: col = { 255, 50, 50, 200 }; break;
+			case ENTITY_MISSION: col = { 255, 215, 0, 200 }; break;
 		}
 
 		rw::V3d v[8] = {
@@ -822,6 +1007,11 @@ ScriptEntities::Render(void)
 					case ENTITY_ZONE: strncat(label, "[ZONE] ", sizeof(label) - 1); break;
 					case ENTITY_SPAWN: strncat(label, "[SPAWN] ", sizeof(label) - 1); break;
 					case ENTITY_PROJECTILE: strncat(label, "[PROJ] ", sizeof(label) - 1); break;
+					case ENTITY_AUDIO: strncat(label, "[AUDIO] ", sizeof(label) - 1); break;
+					case ENTITY_DRAW: strncat(label, "[DRAW] ", sizeof(label) - 1); break;
+					case ENTITY_TASK: strncat(label, "[TASK] ", sizeof(label) - 1); break;
+					case ENTITY_DAMAGE: strncat(label, "[DMG] ", sizeof(label) - 1); break;
+					case ENTITY_MISSION: strncat(label, "[MSN] ", sizeof(label) - 1); break;
 				}
 
 				if (gRenderScriptModelName && e.modelName[0]) {
