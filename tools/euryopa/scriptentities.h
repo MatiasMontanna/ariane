@@ -52,6 +52,7 @@ struct ScriptEntity {
 	char modelName[32];
 	char scriptName[64];
 	char varName[64];
+	char comment[128];
 };
 
 struct ScriptFile {
@@ -115,6 +116,7 @@ extern bool gRenderScriptText;
 extern bool gRenderScriptFileName;
 extern bool gRenderScriptModelName;
 extern bool gRenderScriptLineNumber;
+extern bool gRenderScriptComment;
 extern int gMaxScriptLabels;
 
 int GetNumEntities(void);

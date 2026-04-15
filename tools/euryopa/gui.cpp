@@ -4192,6 +4192,8 @@ ImGui::Unindent();
 		ImGui::Checkbox("Model Name", &ScriptEntities::gRenderScriptModelName);
 		ImGui::SameLine();
 		ImGui::Checkbox("Line #", &ScriptEntities::gRenderScriptLineNumber);
+		ImGui::SameLine();
+		ImGui::Checkbox("Comment", &ScriptEntities::gRenderScriptComment);
 		ImGui::Unindent();
 	}
 

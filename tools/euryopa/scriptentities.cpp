@@ -52,6 +52,7 @@ bool ScriptEntities::gRenderScriptText = true;
 bool ScriptEntities::gRenderScriptFileName = true;
 bool ScriptEntities::gRenderScriptModelName = true;
 bool ScriptEntities::gRenderScriptLineNumber = false;
+bool ScriptEntities::gRenderScriptComment = true;
 int ScriptEntities::gMaxScriptLabels = 100;
 
 static bool isWhitespace(char c) {
@@ -111,7 +112,7 @@ static bool tryParseInt(const char*& p, int& out) {
 }
 
 static void addEntity(std::vector<ScriptEntity>& ents, ScriptEntityType type, float x, float y, float z, 
-					 const char* modelName, const char* scriptName, const char* varName, int lineNum, float heading = 0.0f, float radius = 0.0f) {
+					 const char* modelName, const char* scriptName, const char* varName, const char* comment, int lineNum, float heading = 0.0f, float radius = 0.0f) {
 	ScriptEntity e;
 	e.type = type;
 	e.x = x;
@@ -139,7 +140,22 @@ static void addEntity(std::vector<ScriptEntity>& ents, ScriptEntityType type, fl
 	} else {
 		e.varName[0] = '\0';
 	}
+	if (comment) {
+		strncpy(e.comment, comment, sizeof(e.comment) - 1);
+		e.comment[sizeof(e.comment) - 1] = '\0';
+	} else {
+		e.comment[0] = '\0';
+	}
 	ents.push_back(e);
+}
+
+static const char* extractComment(const char* line) {
+	const char* comment = strstr(line, "//");
+	if (comment) {
+		while (*comment == ' ' || *comment == '\t') comment++;
+		return comment;
+	}
+	return "";
 }
 
 static void parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars, int fileIndex);
@@ -333,7 +349,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			float x = 0, y = 0, z = 0, h = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
 				tryParseFloat(lp, h);
-				addEntity(gEntities, ENTITY_CAR, x, y, z, model.c_str(), scriptName.c_str(), "", lineNum, h);
+				addEntity(gEntities, ENTITY_CAR, x, y, z, model.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum, h);
 			}
 			continue;
 		}
@@ -344,7 +360,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_PLAYER, x, y, z, "PLAYER", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_PLAYER, x, y, z, "PLAYER", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -359,7 +375,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_PED, x, y, z, model.c_str(), scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_PED, x, y, z, model.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -370,7 +386,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_GANG_CAR, x, y, z, model.c_str(), scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_GANG_CAR, x, y, z, model.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -383,7 +399,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_OBJECT, x, y, z, model.c_str(), scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_OBJECT, x, y, z, model.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -399,10 +415,12 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "CREATE_PICKUP_MONEY_NO_PROMPT") {
 			skipWhitespace(lp);
 			std::string model = getNextWord(lp);
+			skipWhitespace(lp);
+			std::string pickupType = getNextWord(lp);
 			
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_PICKUP, x, y, z, model.c_str(), scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_PICKUP, x, y, z, model.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -413,7 +431,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "ADD_BLIP_FOR_CONTACT_POINT" || cmd == "ADD_BLIP_FOR_OBJECT") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_BLIP, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_BLIP, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -423,7 +441,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			std::string fxName = getNextWord(lp);
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_FX, x, y, z, fxName.c_str(), scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_FX, x, y, z, fxName.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -431,7 +449,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 		if (cmd == "CREATE_EXPLOSION" || cmd == "CREATE_MOLOTOV") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_EXPLOSION, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_EXPLOSION, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -439,7 +457,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 		if (cmd == "START_SCRIPT_FIRE" || cmd == "CREATE_SCRIPT_FIRE") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_FIRE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_FIRE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -450,7 +468,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			if (tryParseFloat(lp, x)) {
 				y = x;
 				z = x;
-				addEntity(gEntities, ENTITY_GENERATOR, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_GENERATOR, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -478,7 +496,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 				tryParseFloat(lp, r);
 				tryParseFloat(lp, r);
 				tryParseFloat(lp, r);
-				addEntity(gEntities, ENTITY_LOCATE, x, y, z, "", scriptName.c_str(), "", lineNum, 0.0f, r);
+				addEntity(gEntities, ENTITY_LOCATE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum, 0.0f, r);
 			}
 			continue;
 		}
@@ -496,7 +514,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "ADD_BLIP_FOR_COORD_2" || cmd == "ADD_UPSIDEDOWN_BLIP") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_CHECKPOINT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_CHECKPOINT, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -508,7 +526,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "ATTACH_CAMERA_TO_VEHICLE_LOOK_AT_COORD") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_CAMERA, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_CAMERA, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -518,7 +536,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "ADD_PATH_POINT_NODES") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_ROUTE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_ROUTE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -532,7 +550,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_TELEPORT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_TELEPORT, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -548,7 +566,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 				float cx = (x1 + x2) / 2.0f;
 				float cy = (y1 + y2) / 2.0f;
 				float cz = (z1 + z2) / 2.0f;
-				addEntity(gEntities, ENTITY_GARAGE, cx, cy, cz, "", scriptName.c_str(), "", lineNum, 0.0f, 10.0f);
+				addEntity(gEntities, ENTITY_GARAGE, cx, cy, cz, "", scriptName.c_str(), "", currentLine.c_str(), lineNum, 0.0f, 10.0f);
 			}
 			continue;
 		}
@@ -556,7 +574,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 		if (cmd == "CREATE_SEARCHLIGHT" || cmd == "CREATE_SEARCHLIGHT_NO_ANGLE") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_SEARCHLIGHT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_SEARCHLIGHT, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -565,7 +583,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "CREATE_LIGHT_WITH_ANGLE" || cmd == "DRAW_SPRING") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_CORONA, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_CORONA, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -577,7 +595,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "CREATE_PICKUP_WITH_ANGLE") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_MARKER, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_MARKER, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -589,7 +607,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_DOOR, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_DOOR, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -598,7 +616,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "START_KILL_FRENZY" || cmd == "CREATE_KILL_FRENZY") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_REMOTE_CAR, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_REMOTE_CAR, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -610,7 +628,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "DELETE_ALL_TRAINS" || cmd == "MARK_MISSION_TRAINS_AS_NO_LONGER_NEEDED") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_TRAIN, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_TRAIN, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -621,7 +639,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "BOAT_GROUND_BEHIND_BOAT" || cmd == "GET_BOAT_CRUISE_SPEED") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_BOAT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_BOAT, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -632,7 +650,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "HELI_LANDING" || cmd == "SET_FLYING_THROUGH_WINDSCREEN") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_HELI, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_HELI, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -641,7 +659,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "SET_WEATHER_NOW" || cmd == "SET_PERSISTENT_WEATHER") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_WEATHER, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_WEATHER, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -654,7 +672,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_ZONE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_ZONE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -666,7 +684,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_SPAWN, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_SPAWN, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -678,7 +696,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "CREATE_PROJECTILE" || cmd == "CREATE_PROJECTILE_FROM_CAR") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_PROJECTILE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_PROJECTILE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -688,7 +706,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "CREATE_RANDOM_BOAT" || cmd == "CREATE_RANDOM_TRAIN") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_PED, x, y, z, "RANDOM", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_PED, x, y, z, "RANDOM", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -729,7 +747,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "START_KILL_FRENZY_4" || cmd == "START_KILL_FRENZY_5") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_MARKER, x, y, z, "FRENZY", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_MARKER, x, y, z, "FRENZY", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -739,7 +757,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "PLAY_MISSION_AUDIO_THEN_PAUSES") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -751,7 +769,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "DRAW_RECT" || cmd == "DRAW_DEBUG_CUBE") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_DRAW, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_DRAW, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -773,7 +791,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_TASK, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_TASK, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -788,7 +806,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_TELEPORT, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_TELEPORT, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -803,7 +821,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_DAMAGE, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_DAMAGE, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -833,7 +851,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			skipToWhitespace(lp);
 			skipWhitespace(lp);
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_MISSION, x, y, z, "", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_MISSION, x, y, z, "", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -844,7 +862,7 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			cmd == "TRIGGER_BANK_WARNING_SOUND") {
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
-				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "TRIGGER", scriptName.c_str(), "", lineNum);
+				addEntity(gEntities, ENTITY_AUDIO, x, y, z, "TRIGGER", scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -1093,6 +1111,11 @@ ScriptEntities::Render(void)
 				char tmp[64];
 				snprintf(tmp, sizeof(tmp), "%.0f,%.0f,%.0f", e.x, e.y, e.z);
 				strncat(label, tmp, sizeof(label) - 1);
+
+				if (gRenderScriptComment && e.comment[0]) {
+					strncat(label, " ", sizeof(label) - 1);
+					strncat(label, e.comment, sizeof(label) - 1);
+				}
 
 				ImU32 labelCol = IM_COL32(255, 255, 0, 255);
 				ImFont* font = ImGui::GetFont();
