@@ -31,6 +31,7 @@ struct ObjectInst;
 #include "sapaths.h"
 #include "carrec.h"
 #include "cars.h"
+#include "scriptentities.h"
 
 #ifdef RWHALFPIXEL
 #define HALFPX (0.5f)
@@ -206,7 +207,7 @@ enum {
 	NUMOBJECTDEFS = 40000,
 	NUMTEXDICTS = 10000,
 	NUMCOLS = 510,
-	NUMSCENES = 256,
+	NUMSCENES = 80,
 	NUMIPLS = 512,
 	NUMCDIMAGES = 100,
 	NUMTCYCBOXES = 64,

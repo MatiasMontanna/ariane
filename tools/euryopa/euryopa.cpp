@@ -1608,6 +1608,7 @@ LoadGame(void)
 	SAPaths::Reset();
 	Carrec::Init();
 	Cars::Init();
+	ScriptEntities::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){
@@ -2240,6 +2241,8 @@ Draw(void)
 		Carrec::Render();
 	if(gRenderCarSpawns)
 		Cars::Render();
+	if(ScriptEntities::gRenderScriptEntities)
+		ScriptEntities::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)

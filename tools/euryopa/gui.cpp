@@ -4046,26 +4046,29 @@ uiView(void)
 				if(ImGui::Button("Export CSV")){
 					Cars::ExportCSV();
 				}
-				ImGui::Unindent();
+ImGui::Unindent();
 			}
 		}
 	}
 
-
-	ImGui::Checkbox("Draw Water", &gRenderWater);
-	if(params.water == GAME_SA){
+	ImGui::Checkbox("Draw Script Entities", &ScriptEntities::gRenderScriptEntities);
+	if(ScriptEntities::gRenderScriptEntities){
+		ImGui::Indent();
+		ImGui::Text("Entities: %d", ScriptEntities::GetNumEntities());
+		ImGui::Checkbox("Cars", &ScriptEntities::gRenderScriptCars);
 		ImGui::SameLine();
-		if(ImGui::Button("Edit Water (H)")){
-			if(!WaterLevel::gWaterEditMode){
-				WaterLevel::gWaterEditMode = true;
-				ClearSelection();
-				if(gPlaceMode)
-					SpawnExitPlaceMode();
-			}
-		}
+		ImGui::Checkbox("Peds", &ScriptEntities::gRenderScriptPeds);
+		ImGui::Checkbox("Objects", &ScriptEntities::gRenderScriptObjects);
+		ImGui::SameLine();
+		ImGui::Checkbox("Pickups", &ScriptEntities::gRenderScriptPickups);
+		ImGui::Checkbox("Blips", &ScriptEntities::gRenderScriptBlips);
+		ImGui::SameLine();
+		ImGui::Checkbox("Coords", &ScriptEntities::gRenderScriptCoords);
+		ImGui::Unindent();
 	}
-	if(gameversion == GAME_SA)
-		ImGui::Checkbox("Play Animations", &gPlayAnimations);
+
+ 	if(gameversion == GAME_SA)
+ 		ImGui::Checkbox("Play Animations", &gPlayAnimations);
 
 //<<<<<<< HEAD
 	static int render = 0;
