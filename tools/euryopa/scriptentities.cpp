@@ -1320,64 +1320,19 @@ ScriptEntities::DeselectScriptEntity(void)
 	gSelectedScriptEntity = -1;
 }
 
-static bool
-IntersectRaySphere2D(float rayStartX, float rayStartY, float rayDirX, float rayDirY,
-                     float centerX, float centerY, float radius, float *t)
-{
-	rw::V3d diff = { rayStartX - centerX, rayStartY - centerY, 0.0f };
-	float a = rayDirX * rayDirX + rayDirY * rayDirY;
-	float b = 2.0f * (rayDirX * diff.x + rayDirY * diff.y);
-	float c = diff.x * diff.x + diff.y * diff.y - radius * radius;
-	float discr = b * b - 4.0f * a * c;
-	if (discr < 0.0f)
-		return false;
-	float root = sqrt(discr);
-	float inv2a = 0.5f / a;
-	*t = (-b - root) * inv2a;
-	if (*t < 0.0f)
-		*t = (-b + root) * inv2a;
-	return *t >= 0.0f;
-}
-
 int
 ScriptEntities::PickScriptEntity(float mouseX, float mouseY)
 {
+	(void)mouseX;
+	(void)mouseY;
 	if (!gRenderScriptEntities || !gSelectScriptEntities)
 		return -1;
 
-	rw::Camera *cam = Scene.camera;
-	if (!cam)
-		return -1;
-
-	float invViewW = 1.0f / (float)Scene.camera->frameBuffer->width;
-	float invViewH = 1.0f / (float)Scene.camera->frameBuffer->height;
-	float aspect = invViewH / invViewW;
-
-	float fovY = 70.0f * 3.14159265f / 180.0f;
-	float tanHalfFovY = tanf(fovY * 0.5f);
-
-	rw::V3d forward = { 0.0f, 0.0f, -1.0f };
-	rw::V3d right = { 1.0f, 0.0f, 0.0f };
-	rw::V3d up = { 0.0f, 1.0f, 0.0f };
-
-	rw::Matrix *m = &cam->viewMatrix;
-	forward.x = -m->at.x; forward.y = -m->at.y; forward.z = -m->at.z;
-	right.x = m->right.x; right.y = m->right.y; right.z = m->right.z;
-	up.x = m->up.x; up.y = m->up.y; up.z = m->up.z;
-
-	float u = (2.0f * mouseX * invViewW) - 1.0f;
-	float v = 1.0f - (2.0f * mouseY * invViewH);
-	float rayDirX = u * tanHalfFovY * aspect;
-	float rayDirY = v * tanHalfFovY;
-	float rayDirZ = -1.0f;
-
-	rw::V3d rayDir = {
-		rayDirX * right.x + rayDirY * up.x + rayDirZ * forward.x,
-		rayDirX * right.y + rayDirY * up.y + rayDirZ * forward.y,
-		rayDirX * right.z + rayDirY * up.z + rayDirZ * forward.z
-	};
-	float len = sqrt(rayDir.x * rayDir.x + rayDir.y * rayDir.y + rayDir.z * rayDir.z);
-	rayDir.x /= len; rayDir.y /= len; rayDir.z /= len;
+	rw::V3d origin = TheCamera.m_position;
+	rw::V3d dir = normalize(TheCamera.m_mouseDir);
+	Ray ray;
+	ray.start = origin;
+	ray.dir = dir;
 
 	float bestT = 1.0e30f;
 	int bestIndex = -1;
@@ -1387,25 +1342,14 @@ ScriptEntities::PickScriptEntity(float mouseX, float mouseY)
 		if (!IsEntityTypeEnabled(e.type))
 			continue;
 
-		float dist = sqrt((TheCamera.m_position.x - e.x) * (TheCamera.m_position.x - e.x) +
-		                 (TheCamera.m_position.y - e.y) * (TheCamera.m_position.y - e.y) +
-		                 (TheCamera.m_position.z - e.z) * (TheCamera.m_position.z - e.z));
-		if (dist > ScriptEntities::gScriptCubeDistance)
-			continue;
+		CSphere sphere;
+		sphere.center = { e.x, e.y, e.z + 1.0f };
+		sphere.radius = 3.0f;
 
 		float t;
-		float radius = ScriptEntities::gScriptCubeSize * 0.5f + 0.5f;
-		if (IntersectRaySphere2D(TheCamera.m_position.x, TheCamera.m_position.y,
-		                          rayDir.x, rayDir.y,
-		                          e.x, e.y, radius, &t)) {
-			rw::V3d hitPos = { TheCamera.m_position.x + rayDir.x * t,
-			                   TheCamera.m_position.y + rayDir.y * t,
-			                   TheCamera.m_position.z + rayDir.z * t };
-			float hitDistZ = fabs(hitPos.z - e.z);
-			if (hitDistZ < radius && t < bestT) {
-				bestT = t;
-				bestIndex = i;
-			}
+		if (IntersectRaySphere(ray, sphere, &t) && t > 0.0f && t < bestT) {
+			bestT = t;
+			bestIndex = i;
 		}
 	}
 	return bestIndex;
