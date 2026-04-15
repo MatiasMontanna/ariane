@@ -1524,6 +1524,13 @@ handleTool(void)
 			if(carSpawnIdx >= 0){
 				Cars::SelectCarSpawn(carSpawnIdx);
 				ClearSelection();
+			}else if(ScriptEntities::gRenderScriptEntities && ScriptEntities::gSelectScriptEntities){
+				int entityIdx = ScriptEntities::PickScriptEntity((float)CPad::newMouseState.x, (float)CPad::newMouseState.y);
+				if(entityIdx >= 0){
+					ScriptEntities::SelectScriptEntity(entityIdx);
+				}else{
+					ScriptEntities::DeselectScriptEntity();
+				}
 			}else{
 				ObjectInst *inst = GetInstanceByID(pick());
 				if(inst && !inst->m_isDeleted){
@@ -1874,6 +1881,14 @@ dogizmo(void)
 		return;
 	}
 
+	if(ScriptEntities::gRenderScriptEntities && ScriptEntities::gSelectedScriptEntity >= 0){
+		rw::Camera *cam = (rw::Camera*)rw::engine->currentCamera;
+		float *fview = (float*)&cam->devView;
+		float *fproj = (float*)&cam->devProj;
+		ScriptEntities::HandleScriptEntityGizmo(fview, fproj);
+		return;
+	}
+
 	ObjectInst *inst = (ObjectInst*)selection.first->item;
 	if(inst->m_isDeleted)
 		return;
@@ -2164,6 +2179,7 @@ Draw(void)
 	// Has to be called for highlighting some objects
 	// but also can mess with timecycle mid frame :/
 	gui();
+	ScriptEntities::RenderScriptEntityProperties();
 
 	dogizmo();
 

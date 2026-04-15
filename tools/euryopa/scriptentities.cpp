@@ -55,6 +55,11 @@ bool ScriptEntities::gRenderScriptLineNumber = false;
 bool ScriptEntities::gRenderScriptComment = true;
 int ScriptEntities::gMaxScriptLabels = 100;
 
+bool ScriptEntities::gSelectScriptEntities = false;
+int ScriptEntities::gSelectedScriptEntity = -1;
+bool ScriptEntities::gScriptEntityGizmoEnabled = true;
+int ScriptEntities::gScriptEntityGizmoMode = 0;
+
 static bool isWhitespace(char c) {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
@@ -421,6 +426,15 @@ static void parseScFile(const char* filepath, const char* baseDir, const char* f
 			float x = 0, y = 0, z = 0;
 			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
 				addEntity(gEntities, ENTITY_PICKUP, x, y, z, model.c_str(), scriptName.c_str(), "", currentLine.c_str(), lineNum);
+			}
+			continue;
+		}
+
+		if (cmd == "CREATE_HORSESHOE_PICKUP" || cmd == "CREATE_SNAPSHOT_PICKUP" ||
+			cmd == "CREATE_OYSTER_PICKUP") {
+			float x = 0, y = 0, z = 0;
+			if (tryParseFloat(lp, x) && tryParseFloat(lp, y) && tryParseFloat(lp, z)) {
+				addEntity(gEntities, ENTITY_PICKUP, x, y, z, cmd.c_str() + 7, scriptName.c_str(), "", currentLine.c_str(), lineNum);
 			}
 			continue;
 		}
@@ -1014,6 +1028,14 @@ ScriptEntities::Render(void)
 			case ENTITY_MISSION: col = { 255, 215, 0, 200 }; break;
 		}
 
+		bool isSelected = (i == gSelectedScriptEntity);
+		if (isSelected) {
+			col.r = 255;
+			col.g = 255;
+			col.b = 255;
+			col.a = 255;
+		}
+
 		rw::V3d v[8] = {
 			{ e.x - halfSize, e.y - halfSize, e.z },
 			{ e.x + halfSize, e.y - halfSize, e.z },
@@ -1238,5 +1260,246 @@ ScriptEntities::GetEntityTypeName(ScriptEntityType type)
 		case ENTITY_DAMAGE: return "DAMAGE";
 		case ENTITY_MISSION: return "MISSION";
 		default: return "UNKNOWN";
+	}
+}
+
+void
+ScriptEntities::SelectScriptEntity(int index)
+{
+	if (index >= 0 && index < (int)gEntities.size()) {
+		gSelectedScriptEntity = index;
+	}
+}
+
+void
+ScriptEntities::DeselectScriptEntity(void)
+{
+	gSelectedScriptEntity = -1;
+}
+
+static bool
+IntersectRaySphere2D(float rayStartX, float rayStartY, float rayDirX, float rayDirY,
+                     float centerX, float centerY, float radius, float *t)
+{
+	rw::V3d diff = { rayStartX - centerX, rayStartY - centerY, 0.0f };
+	float a = rayDirX * rayDirX + rayDirY * rayDirY;
+	float b = 2.0f * (rayDirX * diff.x + rayDirY * diff.y);
+	float c = diff.x * diff.x + diff.y * diff.y - radius * radius;
+	float discr = b * b - 4.0f * a * c;
+	if (discr < 0.0f)
+		return false;
+	float root = sqrt(discr);
+	float inv2a = 0.5f / a;
+	*t = (-b - root) * inv2a;
+	if (*t < 0.0f)
+		*t = (-b + root) * inv2a;
+	return *t >= 0.0f;
+}
+
+int
+ScriptEntities::PickScriptEntity(float mouseX, float mouseY)
+{
+	if (!gRenderScriptEntities || !gSelectScriptEntities)
+		return -1;
+
+	rw::Camera *cam = Scene.camera;
+	if (!cam)
+		return -1;
+
+	float invViewW = 1.0f / (float)Scene.camera->frameBuffer->width;
+	float invViewH = 1.0f / (float)Scene.camera->frameBuffer->height;
+	float aspect = invViewH / invViewW;
+
+	float fovY = 70.0f * 3.14159265f / 180.0f;
+	float tanHalfFovY = tanf(fovY * 0.5f);
+
+	rw::V3d forward = { 0.0f, 0.0f, -1.0f };
+	rw::V3d right = { 1.0f, 0.0f, 0.0f };
+	rw::V3d up = { 0.0f, 1.0f, 0.0f };
+
+	rw::Matrix *m = &cam->viewMatrix;
+	forward.x = -m->at.x; forward.y = -m->at.y; forward.z = -m->at.z;
+	right.x = m->right.x; right.y = m->right.y; right.z = m->right.z;
+	up.x = m->up.x; up.y = m->up.y; up.z = m->up.z;
+
+	float u = (2.0f * mouseX * invViewW) - 1.0f;
+	float v = 1.0f - (2.0f * mouseY * invViewH);
+	float rayDirX = u * tanHalfFovY * aspect;
+	float rayDirY = v * tanHalfFovY;
+	float rayDirZ = -1.0f;
+
+	rw::V3d rayDir = {
+		rayDirX * right.x + rayDirY * up.x + rayDirZ * forward.x,
+		rayDirX * right.y + rayDirY * up.y + rayDirZ * forward.y,
+		rayDirX * right.z + rayDirY * up.z + rayDirZ * forward.z
+	};
+	float len = sqrt(rayDir.x * rayDir.x + rayDir.y * rayDir.y + rayDir.z * rayDir.z);
+	rayDir.x /= len; rayDir.y /= len; rayDir.z /= len;
+
+	float bestT = 1.0e30f;
+	int bestIndex = -1;
+
+	for (int i = 0; i < (int)gEntities.size(); i++) {
+		ScriptEntity &e = gEntities[i];
+		if (!IsEntityTypeEnabled(e.type))
+			continue;
+
+		float dist = sqrt((cam->m_position.x - e.x) * (cam->m_position.x - e.x) +
+		                 (cam->m_position.y - e.y) * (cam->m_position.y - e.y) +
+		                 (cam->m_position.z - e.z) * (cam->m_position.z - e.z));
+		if (dist > gScriptCubeDistance)
+			continue;
+
+		float t;
+		float radius = gScriptCubeSize * 0.5f + 0.5f;
+		if (IntersectRaySphere2D(cam->m_position.x, cam->m_position.y,
+		                          rayDir.x, rayDir.y,
+		                          e.x, e.y, radius, &t)) {
+			rw::V3d hitPos = { cam->m_position.x + rayDir.x * t,
+			                   cam->m_position.y + rayDir.y * t,
+			                   cam->m_position.z + rayDir.z * t };
+			float hitDistZ = fabs(hitPos.z - e.z);
+			if (hitDistZ < radius && t < bestT) {
+				bestT = t;
+				bestIndex = i;
+			}
+		}
+	}
+	return bestIndex;
+}
+
+void
+ScriptEntities::HandleScriptEntityGizmo(float* viewMatrix, float* projMatrix)
+{
+#ifndef RWHALFPIXEL
+#define RWHALFPIXEL
+#endif
+#include "imgui/ImGuizmo.h"
+
+	if (!gScriptEntityGizmoEnabled || gSelectedScriptEntity < 0)
+		return;
+	if (gSelectedScriptEntity >= (int)gEntities.size())
+		return;
+
+	ImGuizmo::SetRect(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+
+	ScriptEntity &e = gEntities[gSelectedScriptEntity];
+	float matrix[16] = {
+		1.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		e.x, e.y, e.z, 1.0f
+	};
+
+	float snap[3] = { 0.5f, 0.5f, 0.5f };
+	if (!ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+		snap[0] = snap[1] = snap[2] = 0.0f;
+
+	ImGuizmo::OPERATION op = gScriptEntityGizmoMode == 0 ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE;
+	ImGuizmo::Manipulate(viewMatrix, projMatrix, op, ImGuizmo::WORLD, matrix, nil, snap);
+
+	if (ImGuizmo::IsUsing()) {
+		e.x = matrix[12];
+		e.y = matrix[13];
+		e.z = matrix[14];
+	}
+}
+
+void
+ScriptEntities::RenderScriptEntityProperties(void)
+{
+	if (!gRenderScriptEntities || gSelectedScriptEntity < 0)
+		return;
+	if (gSelectedScriptEntity >= (int)gEntities.size())
+		return;
+
+	ScriptEntity &e = gEntities[gSelectedScriptEntity];
+
+	ImGui::SetNextWindowSize(ImVec2(300, 250), ImGuiCond_Once);
+	ImGui::Begin("Script Entity Properties", nil, ImGuiWindowFlags_NoCollapse);
+
+	ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Type: %s", GetEntityTypeName(e.type));
+
+	if (e.modelName[0]) {
+		ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Model: %s", e.modelName);
+	}
+	if (e.scriptName[0]) {
+		ImGui::Text("Script: %s", e.scriptName);
+	}
+	ImGui::Text("Line: %d", e.lineNum);
+
+	ImGui::SeparatorText("Position");
+	ImGui::SetNextItemWidth(80);
+	ImGui::InputFloat("X", &e.x, 0.5f, 1.0f, "%.2f");
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(80);
+	ImGui::InputFloat("Y", &e.y, 0.5f, 1.0f, "%.2f");
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(80);
+	ImGui::InputFloat("Z", &e.z, 0.5f, 1.0f, "%.2f");
+
+	ImGui::SeparatorText("Gizmo");
+	ImGui::RadioButton("Move", &gScriptEntityGizmoMode, 0);
+	ImGui::SameLine();
+	ImGui::RadioButton("Rotate", &gScriptEntityGizmoMode, 1);
+	ImGui::Checkbox("Gizmo Enabled", &gScriptEntityGizmoEnabled);
+
+	ImGui::SeparatorText("Actions");
+	if (ImGui::Button("Teleport Here")) {
+		TeleportToEntity(gSelectedScriptEntity);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Deselect")) {
+		DeselectScriptEntity();
+	}
+
+	if (e.comment[0]) {
+		ImGui::SeparatorText("Comment");
+		ImGui::TextWrapped("%s", e.comment);
+	}
+
+	ImGui::End();
+}
+
+static bool
+IsEntityTypeEnabled(ScriptEntityType type)
+{
+	switch (type) {
+		case ENTITY_CAR: return gRenderScriptCars;
+		case ENTITY_PED: return gRenderScriptPeds;
+		case ENTITY_OBJECT: return gRenderScriptObjects;
+		case ENTITY_PICKUP: return gRenderScriptPickups;
+		case ENTITY_BLIP: return gRenderScriptBlips;
+		case ENTITY_FX: return gRenderScriptFx;
+		case ENTITY_CHECKPOINT: return gRenderScriptCheckpoints;
+		case ENTITY_GENERATOR: return gRenderScriptGenerators;
+		case ENTITY_LOCATE: return gRenderScriptLocates;
+		case ENTITY_CAMERA: return gRenderScriptCameras;
+		case ENTITY_ROUTE: return gRenderScriptRoutes;
+		case ENTITY_TELEPORT: return gRenderScriptTeleports;
+		case ENTITY_PLAYER: return gRenderScriptPlayers;
+		case ENTITY_GANG_CAR: return gRenderScriptGangCars;
+		case ENTITY_GARAGE: return gRenderScriptGarages;
+		case ENTITY_PATH_POINT: return gRenderScriptPathPoints;
+		case ENTITY_FIRE: return gRenderScriptFires;
+		case ENTITY_EXPLOSION: return gRenderScriptExplosions;
+		case ENTITY_SEARCHLIGHT: return gRenderScriptSearchlights;
+		case ENTITY_CORONA: return gRenderScriptCoronas;
+		case ENTITY_MARKER: return gRenderScriptMarkers;
+		case ENTITY_DOOR: return gRenderScriptDoors;
+		case ENTITY_REMOTE_CAR: return gRenderScriptRemoteCars;
+		case ENTITY_TRAIN: return gRenderScriptTrains;
+		case ENTITY_BOAT: return gRenderScriptBoats;
+		case ENTITY_HELI: return gRenderScriptHelis;
+		case ENTITY_WEATHER: return gRenderScriptWeathers;
+		case ENTITY_ZONE: return gRenderScriptZones;
+		case ENTITY_SPAWN: return gRenderScriptSpawns;
+		case ENTITY_PROJECTILE: return gRenderScriptProjectiles;
+		case ENTITY_AUDIO: return gRenderScriptAudio;
+		case ENTITY_DRAW: return gRenderScriptDraw;
+		case ENTITY_TASK: return gRenderScriptTasks;
+		case ENTITY_DAMAGE: return gRenderScriptDamage;
+		case ENTITY_MISSION: return gRenderScriptMission;
+		default: return true;
 	}
 }

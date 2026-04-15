@@ -119,6 +119,17 @@ extern bool gRenderScriptLineNumber;
 extern bool gRenderScriptComment;
 extern int gMaxScriptLabels;
 
+extern bool gSelectScriptEntities;
+extern int gSelectedScriptEntity;
+extern bool gScriptEntityGizmoEnabled;
+extern int gScriptEntityGizmoMode;
+
+void SelectScriptEntity(int index);
+void DeselectScriptEntity(void);
+int PickScriptEntity(float mouseX, float mouseY);
+void HandleScriptEntityGizmo(float* viewMatrix, float* projMatrix);
+void RenderScriptEntityProperties(void);
+
 int GetNumEntities(void);
 int GetNumFiles(void);
 ScriptEntity* GetEntity(int index);

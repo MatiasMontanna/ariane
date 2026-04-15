@@ -4054,6 +4054,15 @@ ImGui::Unindent();
 	ImGui::Checkbox("Draw Script Entities", &ScriptEntities::gRenderScriptEntities);
 	if(ScriptEntities::gRenderScriptEntities){
 		ImGui::Indent();
+		ImGui::Checkbox("Select Entities", &ScriptEntities::gSelectScriptEntities);
+		ImGui::SameLine();
+		if(ScriptEntities::gSelectedScriptEntity >= 0){
+			ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Selected: %d", ScriptEntities::gSelectedScriptEntity);
+			ImGui::SameLine();
+			if(ImGui::SmallButton("Deselect")){
+				ScriptEntities::DeselectScriptEntity();
+			}
+		}
 		ImGui::Text("Entities: %d | Files: %d", ScriptEntities::GetNumEntities(), ScriptEntities::GetNumFiles());
 		if(ImGui::Button("Reload Scripts")){
 			ScriptEntities::Reload();
@@ -4063,6 +4072,17 @@ ImGui::Unindent();
 		if(numFiles == 0){
 			ImGui::TextDisabled("No script files found");
 		}else{
+			if(ImGui::Button("Enable All")){
+				for(int i = 0; i < numFiles; i++){
+					ScriptEntities::SetFileEnabled(i, true);
+				}
+			}
+			ImGui::SameLine();
+			if(ImGui::Button("Disable All")){
+				for(int i = 0; i < numFiles; i++){
+					ScriptEntities::SetFileEnabled(i, false);
+				}
+			}
 			float listHeight = ImGui::GetContentRegionAvail().y * 0.35f;
 			if(listHeight < 100.0f) listHeight = 100.0f;
 			if(listHeight > 300.0f) listHeight = 300.0f;
@@ -4093,7 +4113,12 @@ ImGui::Unindent();
 					for(int j = 0; j < sf->numEntities; j++){
 						ScriptEntity* ent = ScriptEntities::GetEntityByFileAndIndex(i, j);
 						if(!ent) continue;
+						int globalIndex = sf->entityIndices[j];
 						ImGui::PushID(i * 10000 + j);
+						if(ScriptEntities::gSelectScriptEntities && ImGui::Selectable("##sel", globalIndex == ScriptEntities::gSelectedScriptEntity, ImGuiSelectableFlags_None, ImVec2(5, 0))){
+							ScriptEntities::SelectScriptEntity(globalIndex);
+						}
+						ImGui::SameLine();
 						ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "[%s]", ScriptEntities::GetEntityTypeName(ent->type));
 						ImGui::SameLine();
 						if(ent->modelName[0]){
@@ -4103,7 +4128,7 @@ ImGui::Unindent();
 						ImGui::Text("L%d: %.0f, %.0f, %.0f", ent->lineNum, ent->x, ent->y, ent->z);
 						ImGui::SameLine();
 						if(ImGui::SmallButton("Tele")){
-							ScriptEntities::TeleportToEntity(ScriptEntities::GetNumEntities());
+							ScriptEntities::TeleportToEntity(globalIndex);
 						}
 						ImGui::PopID();
 					}
@@ -4194,6 +4219,18 @@ ImGui::Unindent();
 		ImGui::Checkbox("Line #", &ScriptEntities::gRenderScriptLineNumber);
 		ImGui::SameLine();
 		ImGui::Checkbox("Comment", &ScriptEntities::gRenderScriptComment);
+		if(ScriptEntities::gSelectedScriptEntity >= 0){
+			ImGui::Separator();
+			ImGui::Text("Selected Entity Properties:");
+			ImGui::SetNextItemWidth(80);
+			ImGui::InputFloat("X", &ScriptEntities::GetEntity(ScriptEntities::gSelectedScriptEntity)->x, 0.5f, 1.0f, "%.2f");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(80);
+			ImGui::InputFloat("Y", &ScriptEntities::GetEntity(ScriptEntities::gSelectedScriptEntity)->y, 0.5f, 1.0f, "%.2f");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(80);
+			ImGui::InputFloat("Z", &ScriptEntities::GetEntity(ScriptEntities::gSelectedScriptEntity)->z, 0.5f, 1.0f, "%.2f");
+		}
 		ImGui::Unindent();
 	}
 
