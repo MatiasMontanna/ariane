@@ -16,7 +16,25 @@ enum ScriptEntityType {
 	ENTITY_LOCATE,
 	ENTITY_CAMERA,
 	ENTITY_ROUTE,
-	ENTITY_TELEPORT
+	ENTITY_TELEPORT,
+	ENTITY_PLAYER,
+	ENTITY_GANG_CAR,
+	ENTITY_GARAGE,
+	ENTITY_PATH_POINT,
+	ENTITY_FIRE,
+	ENTITY_EXPLOSION,
+	ENTITY_SEARCHLIGHT,
+	ENTITY_CORONA,
+	ENTITY_MARKER,
+	ENTITY_DOOR,
+	ENTITY_REMOTE_CAR,
+	ENTITY_TRAIN,
+	ENTITY_BOAT,
+	ENTITY_HELI,
+	ENTITY_WEATHER,
+	ENTITY_ZONE,
+	ENTITY_SPAWN,
+	ENTITY_PROJECTILE
 };
 
 struct ScriptEntity {
@@ -50,6 +68,24 @@ extern bool gRenderScriptLocates;
 extern bool gRenderScriptCameras;
 extern bool gRenderScriptRoutes;
 extern bool gRenderScriptTeleports;
+extern bool gRenderScriptPlayers;
+extern bool gRenderScriptGangCars;
+extern bool gRenderScriptGarages;
+extern bool gRenderScriptPathPoints;
+extern bool gRenderScriptFires;
+extern bool gRenderScriptExplosions;
+extern bool gRenderScriptSearchlights;
+extern bool gRenderScriptCoronas;
+extern bool gRenderScriptMarkers;
+extern bool gRenderScriptDoors;
+extern bool gRenderScriptRemoteCars;
+extern bool gRenderScriptTrains;
+extern bool gRenderScriptBoats;
+extern bool gRenderScriptHelis;
+extern bool gRenderScriptWeathers;
+extern bool gRenderScriptZones;
+extern bool gRenderScriptSpawns;
+extern bool gRenderScriptProjectiles;
 
 extern float gScriptLabelDistance;
 extern float gScriptCubeSize;
