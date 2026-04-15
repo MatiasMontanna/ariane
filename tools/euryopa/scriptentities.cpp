@@ -244,7 +244,8 @@ ScriptEntities::TeleportToEntity(int entityIndex)
 void
 ScriptEntities::TeleportToCoords(float x, float y, float z)
 {
-	FindPlayerPed(0)->SetPosition(rw::V3d(x, y, z));
+	TheCamera.m_position = rw::V3d(x, y, z);
+	TheCamera.m_target = rw::V3d(x, y, z + 10.0f);
 }
 
 static void parseScFile(const char* filepath, const char* baseDir, const char* filename, std::map<std::string, float>& coordVars, int fileIndex)

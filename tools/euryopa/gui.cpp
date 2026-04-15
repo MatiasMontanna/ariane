@@ -4080,10 +4080,10 @@ ImGui::Unindent();
 			ImGui::EndChild();
 		}
 		ImGui::SeparatorText("Entity List");
-		listHeight = ImGui::GetContentRegionAvail().y * 0.35f;
-		if(listHeight < 100.0f) listHeight = 100.0f;
-		if(listHeight > 400.0f) listHeight = 400.0f;
-		if(ImGui::BeginChild("##script_entities", ImVec2(0, listHeight), true)){
+		float entityListHeight = ImGui::GetContentRegionAvail().y * 0.35f;
+		if(entityListHeight < 100.0f) entityListHeight = 100.0f;
+		if(entityListHeight > 400.0f) entityListHeight = 400.0f;
+		if(ImGui::BeginChild("##script_entities", ImVec2(0, entityListHeight), true)){
 			for(int i = 0; i < numFiles; i++){
 				ScriptFile* sf = ScriptEntities::GetFile(i);
 				if(!sf) continue;
