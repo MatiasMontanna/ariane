@@ -95,65 +95,16 @@ jobs:
           name: ariane-windows-d3d9
           path: ariane/bin/win-amd64-d3d9/Release/ariane.exe
 
-  build-windows-clang:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout ariane
-        uses: actions/checkout@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          path: ariane
-
-      - name: Checkout librw
-        uses: actions/checkout@v4
-        with:
-          repository: MatiasMontanna/librw
-          path: librw
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Install Premake5
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v5.0.0-beta8/premake-5.0.0-beta8-windows.zip" -OutFile premake5.zip
-          Expand-Archive premake5.zip -DestinationPath premake5
-          echo "${{ github.workspace }}\premake5" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Generate librw project files
-        shell: cmd
-        working-directory: librw
-        run: premake5 vs2022
-
-      - name: Patch librw for Clang-CL
-        shell: pwsh
-        run: |
-          (Get-Content librw/build/librw.vcxproj) -replace '<PlatformToolset>v142</PlatformToolset>', '<PlatformToolset>ClangCL</PlatformToolset>' | Set-Content librw/build/librw.vcxproj
-
-      - name: Build librw with Clang-CL
-        shell: cmd
-        working-directory: librw/build
-        run: msbuild librw.sln /p:Configuration=Release /p:Platform=win-amd64-gl3 /p:PlatformToolset=ClangCL /t:librw /m
-
-      - name: Generate ariane project files
-        shell: cmd
-        working-directory: ariane
-        run: premake5 vs2022
-
-      - name: Patch ariane for Clang-CL
-        shell: pwsh
-        run: |
-          Get-ChildItem ariane/build -Filter "*.vcxproj" | ForEach-Object {
-            (Get-Content $_.FullName) -replace '<PlatformToolset>v143</PlatformToolset>', '<PlatformToolset>ClangCL</PlatformToolset>' -replace '<PlatformToolset>v142</PlatformToolset>', '<PlatformToolset>ClangCL</PlatformToolset>' | Set-Content $_.FullName
-          }
-
-      - name: Build euryopa with Clang-CL
-        shell: cmd
-        working-directory: ariane/build
-        run: msbuild librwgta.sln /p:Configuration=Release /p:Platform=win-amd64-gl3 /p:PlatformToolset=ClangCL /t:librwgta;euryopa /m
-
-      - name: Upload euryopa.exe
-        uses: actions/upload-artifact@v4
-        with:
-          name: ariane-windows-clang-gl3
-          path: ariane/bin/win-amd64-gl3/Release/ariane.exe
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Ariane ${{ steps.version.outputs.version }} (${{ steps.version.outputs.channel }})
+          body: |
+            Ariane ${{ steps.version.outputs.version }} — channel: **${{ steps.version.outputs.channel }}**
+          files: ariane/bin/win-amd64-d3d9/Release/ariane.exe
+          draft: false
+          prerelease: ${{ steps.version.outputs.channel == 'PE' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

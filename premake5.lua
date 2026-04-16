@@ -39,13 +39,6 @@ newoption {
 	default     = "master",
 }
 
-newoption {
-	trigger     = "clang",
-	value       = "PATH",
-	description = "Path to Clang installation (for clang toolset)",
-	default     = "",
-}
-
 Zlibdir = "C:/Users/aap/src/zlib-1.2.11"
 luadir = "/usr/include/lua5.4"
 
@@ -109,8 +102,6 @@ workspace "librwgta"
 
 	filter { "platforms:win*" }
 		system "windows"
-		filter { "action:gmake2" }
-			toolset "clang"
 	filter { "platforms:linux*" }
 		system "linux"
 	filter { "platforms:macos*" }
@@ -168,23 +159,11 @@ end
 				links { "SDL2" }
 			end
 		filter { "platforms:win-amd64-gl3" }
-			filter { "action:vs*" }
-				libdirs { path.join(_OPTIONS["glfwdir64"], "lib-vc2015") }
-				libdirs { path.join(_OPTIONS["sdl2dir"], "lib/x64") }
-			filter { "action:gmake2" }
-				libdirs { path.join(_OPTIONS["glfwdir64"], "lib-mingw-w64") }
-				libdirs { path.join(_OPTIONS["glfwdir64"], "lib-mingw") }
-				libdirs { path.join(_OPTIONS["sdl2dir"], "lib/x64") }
-				libdirs { path.join(_OPTIONS["sdl2dir"], "lib") }
+			libdirs { path.join(_OPTIONS["glfwdir64"], "lib-vc2015") }
+			libdirs { path.join(_OPTIONS["sdl2dir"], "lib/x64") }
 		filter { "platforms:win-x86-gl3" }
-			filter { "action:vs*" }
-				libdirs { path.join(_OPTIONS["glfwdir32"], "lib-vc2015") }
-				libdirs { path.join(_OPTIONS["sdl2dir"], "lib/x86") }
-			filter { "action:gmake2" }
-				libdirs { path.join(_OPTIONS["glfwdir32"], "lib-mingw-w64") }
-				libdirs { path.join(_OPTIONS["glfwdir32"], "lib-mingw") }
-				libdirs { path.join(_OPTIONS["sdl2dir"], "lib/x86") }
-				libdirs { path.join(_OPTIONS["sdl2dir"], "lib") }
+			libdirs { path.join(_OPTIONS["glfwdir32"], "lib-vc2015") }
+			libdirs { path.join(_OPTIONS["sdl2dir"], "lib/x86") }
 		filter { "platforms:win*gl3" }
 			links { "opengl32" }
 			if _OPTIONS["gfxlib"] == "glfw" then
