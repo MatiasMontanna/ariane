@@ -1368,7 +1368,8 @@ ScriptEntities::HandleScriptEntityGizmo(float* viewMatrix, float* projMatrix)
 	if (gSelectedScriptEntity >= (int)gEntities.size())
 		return;
 
-	ImGuizmo::SetRect(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+	ImGuiIO &io = ImGui::GetIO();
+	ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
 	ScriptEntity &e = gEntities[gSelectedScriptEntity];
 	float matrix[16] = {
@@ -1378,9 +1379,9 @@ ScriptEntities::HandleScriptEntityGizmo(float* viewMatrix, float* projMatrix)
 		e.x, e.y, e.z, 1.0f
 	};
 
-	float snap[3] = { 0.5f, 0.5f, 0.5f };
-	if (!ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-		snap[0] = snap[1] = snap[2] = 0.0f;
+	float snap[3] = { 0.0f, 0.0f, 0.0f };
+	if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+		snap[0] = snap[1] = snap[2] = 0.5f;
 
 	ImGuizmo::OPERATION op = gScriptEntityGizmoMode == 0 ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE;
 	ImGuizmo::Manipulate(viewMatrix, projMatrix, op, ImGuizmo::WORLD, matrix, nil, snap);

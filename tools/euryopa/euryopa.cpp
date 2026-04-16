@@ -1882,11 +1882,35 @@ dogizmo(void)
 	}
 
 	if(ScriptEntities::gRenderScriptEntities && ScriptEntities::gSelectedScriptEntity >= 0){
-		rw::Camera *cam = (rw::Camera*)rw::engine->currentCamera;
-		float *fview = (float*)&cam->devView;
-		float *fproj = (float*)&cam->devProj;
-		ScriptEntities::HandleScriptEntityGizmo(fview, fproj);
-		return;
+		int idx = ScriptEntities::gSelectedScriptEntity;
+		ScriptEntity *e = ScriptEntities::GetEntity(idx);
+		if(e && ScriptEntities::gScriptEntityGizmoEnabled){
+			rw::Camera *cam = (rw::Camera*)rw::engine->currentCamera;
+			float *fview = (float*)&cam->devView;
+			float *fproj = (float*)&cam->devProj;
+			float matrix[16] = {
+				1.0f, 0.0f, 0.0f, 0.0f,
+				0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f,
+				e->x, e->y, e->z, 1.0f
+			};
+
+			ImGuiIO &io = ImGui::GetIO();
+			ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+			ImGuizmo::OPERATION op = ScriptEntities::gScriptEntityGizmoMode == 0 ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE;
+			ImGuizmo::Manipulate(fview, fproj, op, ImGuizmo::WORLD, matrix, nil, nil);
+
+			if(ImGuizmo::IsUsing()){
+				e->x = matrix[12];
+				e->y = matrix[13];
+				e->z = matrix[14];
+			}
+
+			gGizmoHovered = ImGuizmo::IsOver();
+			gGizmoUsing = ImGuizmo::IsUsing();
+			return;
+		}
 	}
 
 	ObjectInst *inst = (ObjectInst*)selection.first->item;
