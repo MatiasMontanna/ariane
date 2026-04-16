@@ -95,16 +95,69 @@ jobs:
           name: ariane-windows-d3d9
           path: ariane/bin/win-amd64-d3d9/Release/ariane.exe
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+  build-windows-clang:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout ariane
+        uses: actions/checkout@v4
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: Ariane ${{ steps.version.outputs.version }} (${{ steps.version.outputs.channel }})
-          body: |
-            Ariane ${{ steps.version.outputs.version }} — channel: **${{ steps.version.outputs.channel }}**
-          files: ariane/bin/win-amd64-d3d9/Release/ariane.exe
-          draft: false
-          prerelease: ${{ steps.version.outputs.channel == 'PE' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          path: ariane
+
+      - name: Checkout librw
+        uses: actions/checkout@v4
+        with:
+          repository: MatiasMontanna/librw
+          path: librw
+
+      - name: Setup MinGW with Clang
+        uses: egor-tensin/setup-mingw@v4
+        with:
+          platform: x64
+          variant: clang
+
+      - name: Install Premake5
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v5.0.0-beta8/premake-5.0.0-beta8-windows.zip" -OutFile premake5.zip
+          Expand-Archive premake5.zip -DestinationPath premake5
+          echo "${{ github.workspace }}\premake5" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Download GLFW
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/glfw/glfw/releases/download/3.3.4/glfw-3.3.4.bin.WIN64.zip" -OutFile glfw.zip
+          Expand-Archive glfw.zip -DestinationPath glfw
+
+      - name: Generate librw project files
+        shell: cmd
+        working-directory: librw
+        run: premake5 gmake2
+
+      - name: Build librw
+        shell: cmd
+        working-directory: librw/build
+        run: |
+          set CC=clang
+          set CXX=clang++
+          make -j4 librw CONFIG=release-gl3
+
+      - name: Generate ariane project files
+        shell: cmd
+        working-directory: ariane
+        run: |
+          premake5 gmake2 --gfxlib=glfw --glfwdir64=../glfw
+
+      - name: Build euryopa
+        shell: cmd
+        working-directory: ariane/build
+        run: |
+          set CC=clang
+          set CXX=clang++
+          make -j4 euryopa CONFIG=release-gl3
+
+      - name: Upload euryopa.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ariane-windows-clang-gl3
+          path: ariane/bin/win-amd64-gl3/Release/ariane.exe
