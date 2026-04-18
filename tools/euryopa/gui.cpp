@@ -4717,10 +4717,17 @@ uiOneEffect(Effect *e, ObjectDef *obj)
 
 	case FX_ROADSIGN:
 		ImGui::DragFloat2("Size", &e->roadsign.width);
-		ImGui::InputText("Line 1", e->roadsign.text[0], 16);
-		ImGui::InputText("Line 2", e->roadsign.text[1], 16);
-		ImGui::InputText("Line 3", e->roadsign.text[2], 16);
-		ImGui::InputText("Line 4", e->roadsign.text[3], 16);
+		{
+			static char buf1[17] = {0}, buf2[17] = {0}, buf3[17] = {0}, buf4[17] = {0};
+			memcpy(buf1, e->roadsign.text[0], 16);
+			memcpy(buf2, e->roadsign.text[1], 16);
+			memcpy(buf3, e->roadsign.text[2], 16);
+			memcpy(buf4, e->roadsign.text[3], 16);
+			if(ImGui::InputText("Line 1", buf1, 17)) memcpy(e->roadsign.text[0], buf1, 16);
+			if(ImGui::InputText("Line 2", buf2, 17)) memcpy(e->roadsign.text[1], buf2, 16);
+			if(ImGui::InputText("Line 3", buf3, 17)) memcpy(e->roadsign.text[2], buf3, 16);
+			if(ImGui::InputText("Line 4", buf4, 17)) memcpy(e->roadsign.text[3], buf4, 16);
+		}
 		break;
 
 	case FX_TRIGGERPOINT:
