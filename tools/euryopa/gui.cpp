@@ -4716,12 +4716,11 @@ uiOneEffect(Effect *e, ObjectDef *obj)
 		break;
 
 	case FX_ROADSIGN:
-		ImGui::TextDisabled("Render-only preview");
-		ImGui::Text("Size: %.2f x %.2f", e->roadsign.width, e->roadsign.height);
-		ImGui::Text("Line 1: %.16s", e->roadsign.text[0]);
-		ImGui::Text("Line 2: %.16s", e->roadsign.text[1]);
-		ImGui::Text("Line 3: %.16s", e->roadsign.text[2]);
-		ImGui::Text("Line 4: %.16s", e->roadsign.text[3]);
+		ImGui::DragFloat2("Size", &e->roadsign.width);
+		ImGui::InputText("Line 1", e->roadsign.text[0], 16);
+		ImGui::InputText("Line 2", e->roadsign.text[1], 16);
+		ImGui::InputText("Line 3", e->roadsign.text[2], 16);
+		ImGui::InputText("Line 4", e->roadsign.text[3], 16);
 		break;
 
 	case FX_TRIGGERPOINT:
@@ -4740,6 +4739,13 @@ uiOneEffect(Effect *e, ObjectDef *obj)
 		ImGui::Text("Direction: %s", e->escalator.goingUp ? "Up" : "Down");
 		break;
 	}
+
+	if(Effects::selectedEffectInst && ImGui::Button("Select parent for Export")){
+		Effects::selectedEffectInst->Select();
+		ImGui::SetWindowFocus("Object Info");
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("(use Export DFF button)");
 }
 
 static void
