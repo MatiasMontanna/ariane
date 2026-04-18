@@ -3,6 +3,7 @@
 #include "modloader.h"
 #include <limits.h>
 #include <algorithm>
+#include <stdlib.h>
 #include <string.h>
 #include <vector>
 
@@ -20,6 +21,18 @@ bool gPlaceSnapToObjects = true;
 bool gPlaceSnapToGround = true;
 bool gDragFollowGround = false;
 bool gDragAlignToSurface = false;
+
+// Brush tool
+bool gBrushMode = false;
+float gBrushZOffset = 0.0f;
+bool gBrushAlignToSurface = false;
+float gBrushYawMin = 0.0f;
+float gBrushYawMax = 0.0f;
+float gBrushSpacing = 2.0f;
+float gBrushRadius = 0.0f;
+int gBrushCount = 1;
+float gBrushDelayMs = 0.0f;
+static const int BRUSH_MAX_PER_BURST = 128;
 bool gGizmoSnap = false;
 float gGizmoSnapAngle = 15.0f;
 float gGizmoSnapTranslate = 1.0f;
@@ -73,6 +86,10 @@ bool gRenderColMaterialColors;
 bool gRenderColFilled;
 bool gRenderDffMaterialColors;
 float gCollisionDffWireframeDist = 100.0f;
+bool gRenderColBoundingBox = true;
+bool gRenderColBoxes = true;
+bool gRenderColSpheres = true;
+bool gRenderColTriangles = true;
 bool gRenderCarrecs;
 bool gRenderCarSpawns;
 bool gRenderZones;
@@ -941,7 +958,7 @@ GetGroundPlacementSurface(rw::V3d pos, rw::V3d *hitPos, rw::V3d *hitNormal, bool
 	return found;
 }
 
-static float
+float
 GetPlacementBaseOffset(int objectId)
 {
 	ObjectDef *obj = GetObjectDef(objectId);
@@ -1047,7 +1064,7 @@ GetMinZOffsetForRotation(ObjectInst *inst, const rw::Quat &rotation)
 	return minZ;
 }
 
-static rw::Quat
+rw::Quat
 BuildGroundAlignedRotationFromRotation(const rw::Quat &sourceRotation, rw::V3d groundNormal)
 {
 	rw::V3d fallbackAt = { 0.0f, 0.0f, 1.0f };
@@ -1314,6 +1331,234 @@ GetPlacementPosition(void)
 	return surfacePos;
 }
 
+// --- Brush tool ---
+
+// Find the surface point under the mouse cursor and its normal.
+// Tries a direct ray-cast against visible instances first (so the brush paints
+// on whatever is under the cursor — terrain, buildings, rocks); falls back to
+// intersecting the mouse ray with a horizontal plane at the camera target
+// height and then snapping to ground.
+// Selected instances are always skipped: after a brush placement the new
+// instance is selected, so this prevents drag-paint from stacking up on its
+// own just-painted objects.
+bool
+GetBrushSurfaceHit(rw::V3d *hitPos, rw::V3d *hitNormal)
+{
+	Ray ray;
+	ray.start = TheCamera.m_position;
+	ray.dir = normalize(TheCamera.m_mouseDir);
+
+	// Direct hit against any visible object, ignoring the current selection.
+	float bestT = 1.0e30f;
+	ObjectInst *hitInst = GetVisibleInstUnderRay(ray, nil, &bestT);
+	if(hitInst && !hitInst->m_selected){
+		rw::V3d p, n;
+		if(IntersectRayColModelDetailed(ray, hitInst, &p, &n)){
+			if(n.z < 0.0f) n = scale(n, -1.0f);
+			if(hitPos) *hitPos = p;
+			if(hitNormal) *hitNormal = n;
+			return true;
+		}
+	}
+
+	// Fallback: project ray to camera-target plane, then snap down to ground.
+	float planeZ = TheCamera.m_target.z;
+	rw::V3d dir = ray.dir;
+	rw::V3d origin = ray.start;
+	rw::V3d surfacePos;
+	if(fabs(dir.z) < 0.001f)
+		surfacePos = add(origin, scale(dir, 50.0f));
+	else{
+		float t = (planeZ - origin.z) / dir.z;
+		if(t < 1.0f) t = 50.0f;
+		if(t > 5000.0f) t = 5000.0f;
+		surfacePos.x = origin.x + dir.x * t;
+		surfacePos.y = origin.y + dir.y * t;
+		surfacePos.z = planeZ;
+	}
+
+	rw::V3d groundHit, groundNormal = { 0.0f, 0.0f, 1.0f };
+	if(GetGroundPlacementSurface(surfacePos, &groundHit, &groundNormal, /*ignoreSelection=*/true)){
+		if(hitPos) *hitPos = groundHit;
+		if(hitNormal) *hitNormal = groundNormal;
+		return true;
+	}
+	return false;
+}
+
+void
+EnterBrushMode(int objectId)
+{
+	if(objectId < 0 || GetObjectDef(objectId) == nil)
+		return;
+	// Mutually exclusive with place mode
+	if(gPlaceMode)
+		SpawnExitPlaceMode();
+	SetSpawnObjectId(objectId);
+	gBrushMode = true;
+}
+
+void
+ExitBrushMode(void)
+{
+	gBrushMode = false;
+}
+
+// Drag-paint state: last sample position + time, used to gate continuous paint.
+static rw::V3d sBrushLastPaintPos = { 0.0f, 0.0f, 0.0f };
+static bool sBrushHasLastPaint = false;
+static double sBrushLastPaintTime = 0.0;
+
+static float
+brushRandomUnit(void)
+{
+	return (float)rand() / (float)RAND_MAX;
+}
+
+// Pick a uniform random point inside the brush disc (in world XY), centered at `center`.
+static rw::V3d
+brushSampleInDisc(rw::V3d center, float radius)
+{
+	if(radius <= 0.0001f)
+		return center;
+	// Uniform disc: r = R*sqrt(u), theta = 2π*v
+	float u = brushRandomUnit();
+	float v = brushRandomUnit();
+	float r = radius * sqrtf(u);
+	float theta = v * 6.28318530718f;
+	rw::V3d p = center;
+	p.x += r * cosf(theta);
+	p.y += r * sinf(theta);
+	return p;
+}
+
+// Build the per-spawn rotation quaternion: random yaw in [yawMin,yawMax],
+// optionally swung to the surface normal.
+static rw::Quat
+brushBuildRotation(rw::V3d hitNormal)
+{
+	rw::Quat rot = { 0.0f, 0.0f, 0.0f, 1.0f };
+	float yawSpan = gBrushYawMax - gBrushYawMin;
+	float yawDeg = gBrushYawMin + (yawSpan > 0.0f ? yawSpan * brushRandomUnit() : 0.0f);
+	if(fabs(yawDeg) > 0.0001f){
+		float yawRad = yawDeg * (3.14159265358979323846f / 180.0f);
+		rot = rw::Quat::rotation(yawRad, { 0.0f, 0.0f, 1.0f });
+	}
+	if(gBrushAlignToSurface)
+		rot = BuildGroundAlignedRotationFromRotation(rot, hitNormal);
+	return rot;
+}
+
+// A single brush burst: fires N placements (N = clamp(gBrushCount) for radius > 0, else 1)
+// and batches them into a single undo entry. Each sample is ground-snapped
+// independently so the brush tracks terrain even across a wide disc.
+static void
+brushBurstAt(rw::V3d hitPos, rw::V3d hitNormal)
+{
+	int objId = GetSpawnObjectId();
+	if(objId < 0) return;
+
+	float baseOff = GetPlacementBaseOffset(objId);
+
+	int count = 1;
+	if(gBrushRadius > 0.01f){
+		count = gBrushCount;
+		if(count < 1) count = 1;
+		if(count > BRUSH_MAX_PER_BURST) count = BRUSH_MAX_PER_BURST;
+	}
+
+	ObjectInst *batch[MAX_BATCH_OBJECTS];
+	int n = 0;
+	ClearSelection();
+
+	for(int i = 0; i < count; i++){
+		if(n + 2 > MAX_BATCH_OBJECTS)
+			break;
+
+		rw::V3d samplePos, sampleNormal = hitNormal;
+		if(count == 1 || gBrushRadius <= 0.01f){
+			samplePos = hitPos;
+		}else{
+			rw::V3d discPoint = brushSampleInDisc(hitPos, gBrushRadius);
+			rw::V3d snapped;
+			if(GetGroundPlacementSurface(discPoint, &snapped, &sampleNormal, /*ignoreSelection=*/true))
+				samplePos = snapped;
+			else
+				continue;  // sample outside world bounds — skip
+		}
+
+		rw::Quat rot = brushBuildRotation(sampleNormal);
+
+		samplePos.z += baseOff;
+		samplePos.z += gBrushZOffset;
+
+		n += SpawnPlaceObjectNoUndo(samplePos, &rot, &batch[n], MAX_BATCH_OBJECTS - n);
+	}
+
+	if(n > 0){
+		UndoRecordPaste(batch, n);
+		ObjectDef *obj = GetObjectDef(objId);
+		if(count > 1)
+			Toast(TOAST_SPAWN, "Painted %d x %s", count, obj ? obj->m_name : "?");
+		else
+			Toast(TOAST_SPAWN, "Placed %s", obj ? obj->m_name : "?");
+	}
+
+	sBrushLastPaintPos = hitPos;
+	sBrushHasLastPaint = true;
+	sBrushLastPaintTime = ImGui::GetTime();
+}
+
+static void
+handleBrushTool(void)
+{
+	ImGuiIO &io = ImGui::GetIO();
+	if(io.WantCaptureMouse || gGizmoHovered || gGizmoUsing || ImGuizmo::IsOver())
+		return;
+
+	// Cancel: MMB-click (legacy place-mode convention) or Esc.
+	if(CPad::IsMButtonClicked(2) || CPad::IsKeyJustDown(KEY_ESC)){
+		ExitBrushMode();
+		return;
+	}
+
+	rw::V3d hitPos, hitNormal;
+	bool haveHit = GetBrushSurfaceHit(&hitPos, &hitNormal);
+
+	if(!haveHit){
+		sBrushHasLastPaint = false;
+		return;
+	}
+
+	// LMB just pressed — place immediately, start a paint stroke.
+	if(CPad::IsMButtonJustDown(1)){
+		brushBurstAt(hitPos, hitNormal);
+		return;
+	}
+
+	// LMB held and moved — continuous paint, gated by spacing AND optional delay.
+	if(CPad::IsMButtonDown(1) && sBrushHasLastPaint){
+		bool spacingOk = true;
+		if(gBrushSpacing > 0.01f){
+			rw::V3d d = sub(hitPos, sBrushLastPaintPos);
+			float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+			float s2 = gBrushSpacing * gBrushSpacing;
+			spacingOk = d2 >= s2;
+		}
+		bool delayOk = true;
+		if(gBrushDelayMs > 0.1f){
+			double elapsedMs = (ImGui::GetTime() - sBrushLastPaintTime) * 1000.0;
+			delayOk = elapsedMs >= gBrushDelayMs;
+		}
+		if(spacingOk && delayOk)
+			brushBurstAt(hitPos, hitNormal);
+	}
+
+	// LMB released — end stroke.
+	if(!CPad::IsMButtonDown(1))
+		sBrushHasLastPaint = false;
+}
+
 // --- Rect-select (marquee selection) ---
 
 // Called early in Draw(), before Camera.Process, to detect Shift+LMB start
@@ -1327,7 +1572,7 @@ updateRectSelectEarly(void)
 	// Start: Shift+LMB just pressed, not blocked
 	if(!gRectSelectActive && !blockInput &&
 	   CPad::IsShiftDown() && CPad::IsMButtonJustDown(1) &&
-	   !gPlaceMode && !WaterLevel::gWaterEditMode){
+	   !gPlaceMode && !gBrushMode && !WaterLevel::gWaterEditMode){
 		gRectSelectActive = true;
 		sRectSelectDragging = false;
 		sRectStartX = (float)CPad::newMouseState.x;
@@ -1509,6 +1754,12 @@ handleTool(void)
 			return;
 		}
 		return;  // Absorb clicks while in place mode
+	}
+
+	// Brush mode intercepts all clicks (click-to-place + drag-to-paint)
+	if(gBrushMode){
+		handleBrushTool();
+		return;
 	}
 
 	// select

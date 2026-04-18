@@ -3901,6 +3901,13 @@ uiView(void)
 		ImGui::SliderFloat("Wireframe Alpha", &gCollisionWireframeAlpha, 0.0f, 1.0f, "%.2f");
 		ImGui::Checkbox("Render from DFF", &gRenderCollisionFromDff);
 		ImGui::Checkbox("Render Both (COL + DFF)", &gRenderCollisionBoth);
+		ImGui::SeparatorText("Collision Shapes");
+		ImGui::Checkbox("Bounding Box", &gRenderColBoundingBox);
+		ImGui::SameLine();
+		ImGui::Checkbox("Boxes", &gRenderColBoxes);
+		ImGui::SameLine();
+		ImGui::Checkbox("Spheres", &gRenderColSpheres);
+		ImGui::Checkbox("Triangles", &gRenderColTriangles);
 		ImGui::Checkbox("Material Colors", &gRenderColMaterialColors);
 		ImGui::Checkbox("Filled Triangles", &gRenderColFilled);
 		if(gRenderCollisionFromDff || gRenderCollisionBoth){
@@ -5157,6 +5164,28 @@ loadSaveSettings(void)
 			if(parseBoolSetting(value, &boolValue)) gDragFollowGround = boolValue;
 		}else if(strcmp(key, "drag_align_to_surface") == 0){
 			if(parseBoolSetting(value, &boolValue)) gDragAlignToSurface = boolValue;
+		}else if(strcmp(key, "brush_z_offset") == 0){
+			parseFloatSetting(value, &gBrushZOffset);
+		}else if(strcmp(key, "brush_align_to_surface") == 0){
+			if(parseBoolSetting(value, &boolValue)) gBrushAlignToSurface = boolValue;
+		}else if(strcmp(key, "brush_random_yaw") == 0){
+			// Legacy setting (pre-range): map to 0/360 range when enabled.
+			if(parseBoolSetting(value, &boolValue) && boolValue){
+				gBrushYawMin = 0.0f;
+				gBrushYawMax = 360.0f;
+			}
+		}else if(strcmp(key, "brush_yaw_min") == 0){
+			parseFloatSetting(value, &gBrushYawMin);
+		}else if(strcmp(key, "brush_yaw_max") == 0){
+			parseFloatSetting(value, &gBrushYawMax);
+		}else if(strcmp(key, "brush_spacing") == 0){
+			parseFloatSetting(value, &gBrushSpacing);
+		}else if(strcmp(key, "brush_radius") == 0){
+			parseFloatSetting(value, &gBrushRadius);
+		}else if(strcmp(key, "brush_count") == 0){
+			parseIntSetting(value, &gBrushCount);
+		}else if(strcmp(key, "brush_delay_ms") == 0){
+			parseFloatSetting(value, &gBrushDelayMs);
 		}else if(strcmp(key, "editor_camera_name") == 0){
 			parseQuotedStringValue(value, gEditorCameraName, sizeof(gEditorCameraName));
 		}else if(strcmp(key, "editor_model_filter") == 0){
@@ -5360,6 +5389,14 @@ saveSaveSettings(void)
 	fprintf(f, "place_snap_to_ground %d\n", gPlaceSnapToGround ? 1 : 0);
 	fprintf(f, "drag_follow_ground %d\n", gDragFollowGround ? 1 : 0);
 	fprintf(f, "drag_align_to_surface %d\n", gDragAlignToSurface ? 1 : 0);
+	fprintf(f, "brush_z_offset %.9g\n", gBrushZOffset);
+	fprintf(f, "brush_align_to_surface %d\n", gBrushAlignToSurface ? 1 : 0);
+	fprintf(f, "brush_yaw_min %.9g\n", gBrushYawMin);
+	fprintf(f, "brush_yaw_max %.9g\n", gBrushYawMax);
+	fprintf(f, "brush_spacing %.9g\n", gBrushSpacing);
+	fprintf(f, "brush_radius %.9g\n", gBrushRadius);
+	fprintf(f, "brush_count %d\n", gBrushCount);
+	fprintf(f, "brush_delay_ms %.9g\n", gBrushDelayMs);
 	writeQuotedSetting(f, "editor_camera_name", gEditorCameraName);
 	writeQuotedSetting(f, "editor_model_filter", gEditorModelFilter.InputBuf);
 	writeQuotedSetting(f, "editor_txd_filter", gEditorTxdFilter.InputBuf);
@@ -5650,6 +5687,95 @@ uiToolsWindow(void)
 	ImGui::SetItemTooltip("When placing objects, snap to the surface of existing objects under the cursor.");
 	ImGui::Checkbox("Snap to ground", &gPlaceSnapToGround);
 	ImGui::SetItemTooltip("When placing objects, snap to the ground below the cursor.");
+
+	ImGui::Separator();
+
+	// Brush tool
+	ImGui::Text("Brush Tool");
+	{
+		int brushObjId = GetSpawnObjectId();
+		ObjectDef *brushObj = brushObjId >= 0 ? GetObjectDef(brushObjId) : nil;
+
+		if(gBrushMode){
+			ImVec4 active(0.95f, 0.75f, 0.20f, 1.0f);
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.25f, 0.05f, 1.0f));
+			if(ImGui::Button("Exit Brush (Esc)"))
+				ExitBrushMode();
+			ImGui::PopStyleColor();
+			ImGui::SameLine();
+			if(brushObj)
+				ImGui::TextColored(active, "Painting: %s", brushObj->m_name);
+			else
+				ImGui::TextColored(active, "No object selected");
+		}else{
+			ImGui::BeginDisabled(brushObjId < 0);
+			if(ImGui::Button("Start Brush"))
+				EnterBrushMode(brushObjId);
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			if(brushObj)
+				ImGui::TextDisabled("Ready: %s", brushObj->m_name);
+			else
+				ImGui::TextDisabled("Select an object in the Browser first");
+		}
+		ImGui::TextDisabled("LMB = paint   \xC2\xB7   RMB-drag = look around   \xC2\xB7   Esc = cancel");
+
+		ImGui::SetNextItemWidth(120);
+		ImGui::InputFloat("Z offset (m)", &gBrushZOffset, 0.1f, 1.0f, "%.2f");
+		ImGui::SetItemTooltip("Shift along Z after ground snap.\n"
+			"Negative sinks the object into the ground (useful for trees on slopes).\n"
+			"Positive lifts it off the surface.");
+
+		ImGui::Checkbox("Align to surface##brush", &gBrushAlignToSurface);
+		ImGui::SetItemTooltip("Rotate placed objects so their up-axis matches the surface normal.\n"
+			"Use with care — some tree models look better upright on slopes.");
+
+		// Brush size + scatter
+		ImGui::SetNextItemWidth(120);
+		ImGui::InputFloat("Radius (m)", &gBrushRadius, 0.5f, 5.0f, "%.2f");
+		if(gBrushRadius < 0.0f) gBrushRadius = 0.0f;
+		if(gBrushRadius > 500.0f) gBrushRadius = 500.0f;
+		ImGui::SetItemTooltip("Brush disc size. 0 = single object under cursor.\n"
+			"When > 0, each click scatters Count objects inside this radius.");
+
+		ImGui::BeginDisabled(gBrushRadius <= 0.01f);
+		ImGui::SetNextItemWidth(120);
+		ImGui::InputInt("Count / click", &gBrushCount, 1, 5);
+		if(gBrushCount < 1) gBrushCount = 1;
+		if(gBrushCount > 128) gBrushCount = 128;
+		ImGui::SetItemTooltip("Number of objects scattered per click when Radius > 0.\n"
+			"Capped at 128 to keep a single click undoable as one step.");
+		ImGui::EndDisabled();
+
+		// Yaw range
+		float yaw[2] = { gBrushYawMin, gBrushYawMax };
+		ImGui::SetNextItemWidth(180);
+		if(ImGui::InputFloat2("Yaw min/max (\xC2\xB0)", yaw, "%.0f")){
+			gBrushYawMin = yaw[0];
+			gBrushYawMax = yaw[1];
+		}
+		if(gBrushYawMin < -360.0f) gBrushYawMin = -360.0f;
+		if(gBrushYawMax > 360.0f) gBrushYawMax = 360.0f;
+		if(gBrushYawMax < gBrushYawMin) gBrushYawMax = gBrushYawMin;
+		ImGui::SetItemTooltip("Yaw rotation range in degrees.\n"
+			"Both equal = fixed angle (0/0 = no rotation).\n"
+			"Different = uniform random between them (e.g. 0/360 for full random).");
+
+		// Drag pacing
+		ImGui::SetNextItemWidth(120);
+		ImGui::InputFloat("Spacing (m)", &gBrushSpacing, 0.25f, 1.0f, "%.2f");
+		if(gBrushSpacing < 0.0f) gBrushSpacing = 0.0f;
+		ImGui::SetItemTooltip("Minimum world distance between drag-paint bursts.\n"
+			"0 disables the distance gate (delay alone controls the rate).\n"
+			"Single clicks always fire regardless.");
+
+		ImGui::SetNextItemWidth(120);
+		ImGui::InputFloat("Delay (ms)", &gBrushDelayMs, 10.0f, 100.0f, "%.0f");
+		if(gBrushDelayMs < 0.0f) gBrushDelayMs = 0.0f;
+		if(gBrushDelayMs > 10000.0f) gBrushDelayMs = 10000.0f;
+		ImGui::SetItemTooltip("Minimum time between drag-paint bursts, in milliseconds.\n"
+			"0 = no delay. Combines with Spacing — both constraints must pass.");
+	}
 
 	ImGui::Separator();
 
@@ -6228,14 +6354,27 @@ uiBrowserWindow(void)
 				}
 			}
 
-			// Action buttons
+			// Action buttons — Place and Brush are mutually exclusive
 			if(gPlaceMode){
 				if(ImGui::Button("Exit Place Mode"))
 					SpawnExitPlaceMode();
 			}else{
-				if(ImGui::Button("Place"))
+				if(ImGui::Button("Place")){
+					if(gBrushMode) ExitBrushMode();
 					gPlaceMode = true;
+				}
 			}
+			ImGui::SameLine();
+			if(gBrushMode){
+				if(ImGui::Button("Exit Brush"))
+					ExitBrushMode();
+			}else{
+				if(ImGui::Button("Brush"))
+					EnterBrushMode(selId);
+			}
+			ImGui::SetItemTooltip("Paint instances onto surfaces.\n"
+				"Click to place one, drag to paint continuously.\n"
+				"Configure Z offset, surface align and spacing in the Tools window.");
 			ImGui::SameLine();
 			if(IsFavourite(selId)){
 				if(ImGui::Button("Unfavourite"))
@@ -6742,17 +6881,21 @@ gui(void)
 
 	if(CPad::IsKeyJustDown('B')){
 		showBrowserWindow ^= 1;
-		if(!showBrowserWindow && gPlaceMode)
-			SpawnExitPlaceMode();
+		if(!showBrowserWindow){
+			if(gPlaceMode) SpawnExitPlaceMode();
+			if(gBrushMode) ExitBrushMode();
+		}
 	}
 	if(showBrowserWindow){
 		uiBrowserWindow();
 		// ImGui X button can set showBrowserWindow to false
-		if(!showBrowserWindow && gPlaceMode)
-			SpawnExitPlaceMode();
+		if(!showBrowserWindow){
+			if(gPlaceMode) SpawnExitPlaceMode();
+			if(gBrushMode) ExitBrushMode();
+		}
 	}
 
-	// Escape: cancel creation, exit water mode, or exit place mode
+	// Escape: cancel creation, exit water mode, exit brush, or exit place mode
 	if(CPad::IsKeyJustDown(KEY_ESC)){
 		if(WaterLevel::gWaterCreateMode > 0){
 			WaterLevel::CancelCreateMode();
@@ -6760,6 +6903,8 @@ gui(void)
 			WaterLevel::gWaterEditMode = false;
 			WaterLevel::ClearWaterSelection();
 			WaterLevel::gWaterSubMode = 0;
+		}else if(gBrushMode){
+			ExitBrushMode();
 		}else if(gPlaceMode)
 			SpawnExitPlaceMode();
 	}
@@ -6769,8 +6914,8 @@ gui(void)
 		WaterLevel::gWaterEditMode = !WaterLevel::gWaterEditMode;
 		if(WaterLevel::gWaterEditMode){
 			ClearSelection();
-			if(gPlaceMode)
-				SpawnExitPlaceMode();
+			if(gPlaceMode) SpawnExitPlaceMode();
+			if(gBrushMode) ExitBrushMode();
 		}else{
 			WaterLevel::CancelCreateMode();
 			WaterLevel::ClearWaterSelection();
@@ -6820,6 +6965,91 @@ gui(void)
 			ImGui::TextColored(ImVec4(1,1,0,1),
 				"PLACE: %s  [Click=Place | Shift+Click=Multi | RMB/Esc=Cancel]", obj->m_name);
 			ImGui::End();
+		}
+	}
+
+	// Brush mode overlay + on-surface preview marker
+	if(gBrushMode && GetSpawnObjectId() >= 0){
+		ObjectDef *obj = GetObjectDef(GetSpawnObjectId());
+		if(obj){
+			ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 40));
+			ImGui::SetNextWindowBgAlpha(0.6f);
+			ImGui::Begin("##BrushMode", nil,
+				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+				ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+				ImGuiWindowFlags_NoFocusOnAppearing);
+			char sizeBuf[64];
+			if(gBrushRadius > 0.01f)
+				snprintf(sizeBuf, sizeof(sizeBuf), "r=%.1fm x%d", gBrushRadius, gBrushCount);
+			else
+				snprintf(sizeBuf, sizeof(sizeBuf), "single");
+			ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.20f, 1),
+				"BRUSH: %s  [LMB=Paint | RMB=Look | MMB=Pan/Orbit | Esc=Cancel]  %s  z%+.2f%s",
+				obj->m_name, sizeBuf, gBrushZOffset,
+				gBrushAlignToSurface ? "  align" : "");
+			ImGui::End();
+
+			// On-surface preview — only if not over an ImGui panel
+			ImGuiIO &brushIO = ImGui::GetIO();
+			if(!brushIO.WantCaptureMouse){
+				rw::V3d bHit, bNormal;
+				if(GetBrushSurfaceHit(&bHit, &bNormal)){
+					rw::V3d centerPos = bHit;
+					centerPos.z += GetPlacementBaseOffset(GetSpawnObjectId());
+					centerPos.z += gBrushZOffset;
+
+					ImDrawList *dl = ImGui::GetForegroundDrawList();
+					ImU32 outer = IM_COL32(240, 190, 50, 230);
+					ImU32 inner = IM_COL32(255, 220, 100, 70);
+
+					// Center marker: fixed-size crosshair in screen space
+					rw::V3d centerScreen;
+					float csw, csh;
+					if(Sprite::CalcScreenCoors(centerPos, &centerScreen, &csw, &csh, false)){
+						float cr = 4.0f;
+						dl->AddCircleFilled(ImVec2(centerScreen.x, centerScreen.y), cr, outer, 12);
+					}
+
+					// World-radius disc: sample points around the brush circle in world XY,
+					// ground-snap each so it hugs the terrain, project to screen and stroke.
+					if(gBrushRadius > 0.01f){
+						const int segs = 48;
+						ImVec2 pts[segs + 1];
+						int validPts = 0;
+						bool continuous = true;
+						for(int i = 0; i <= segs; i++){
+							float theta = (float)i / (float)segs * 6.28318530718f;
+							rw::V3d wp = bHit;
+							wp.x += gBrushRadius * cosf(theta);
+							wp.y += gBrushRadius * sinf(theta);
+							rw::V3d snapped = wp;
+							GetGroundPlacementSurface(wp, &snapped, nil, true);
+							// lift slightly to avoid z-fighting with ground
+							snapped.z += 0.05f;
+
+							rw::V3d sp;
+							float sw, sh;
+							if(Sprite::CalcScreenCoors(snapped, &sp, &sw, &sh, false))
+								pts[validPts++] = ImVec2(sp.x, sp.y);
+							else
+								continuous = false;
+						}
+						if(validPts > 2){
+							dl->AddPolyline(pts, validPts, outer, continuous ? ImDrawFlags_Closed : 0, 2.0f);
+							// faint inner shade so the disc reads as a filled region
+							dl->AddConvexPolyFilled(pts, validPts, inner);
+						}
+					}else{
+						// radius 0: small screen-space ring around the single-placement point
+						if(Sprite::CalcScreenCoors(centerPos, &centerScreen, &csw, &csh, false)){
+							float r = 14.0f * csw;
+							if(r < 6.0f) r = 6.0f;
+							if(r > 64.0f) r = 64.0f;
+							dl->AddCircle(ImVec2(centerScreen.x, centerScreen.y), r, outer, 32, 1.5f);
+						}
+					}
+				}
+			}
 		}
 	}
 

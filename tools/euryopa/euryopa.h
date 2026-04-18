@@ -147,6 +147,10 @@ extern bool gRenderColMaterialColors;
 extern bool gRenderColFilled;
 extern bool gRenderDffMaterialColors;
 extern float gCollisionDffWireframeDist;
+extern bool gRenderColBoundingBox;
+extern bool gRenderColBoxes;
+extern bool gRenderColSpheres;
+extern bool gRenderColTriangles;
 extern bool gRenderCarrecs;
 extern bool gRenderCarSpawns;
 extern bool gRenderZones;
@@ -405,6 +409,21 @@ extern bool gPlaceSnapToObjects;
 extern bool gPlaceSnapToGround;
 extern bool gDragFollowGround;
 extern bool gDragAlignToSurface;
+
+// Brush tool (paint objects onto surfaces)
+extern bool gBrushMode;
+extern float gBrushZOffset;         // signed; added to surface Z (negative sinks object into ground)
+extern bool gBrushAlignToSurface;   // rotate placed objects to match surface normal
+extern float gBrushYawMin;          // degrees; yaw applied is uniform random in [min,max]
+extern float gBrushYawMax;          // degrees; min==max means no randomization (fixed angle)
+extern float gBrushSpacing;         // min world-space distance between drag-painted placements (meters)
+extern float gBrushRadius;          // brush disc radius (m); 0 = single placement at hit
+extern int gBrushCount;             // number of objects per click (scatter count when radius > 0)
+extern float gBrushDelayMs;         // min time between drag-paint bursts (ms); 0 = disabled
+rw::Quat BuildGroundAlignedRotationFromRotation(const rw::Quat &sourceRotation, rw::V3d groundNormal);
+bool GetBrushSurfaceHit(rw::V3d *hitPos, rw::V3d *hitNormal);
+void EnterBrushMode(int objectId);
+void ExitBrushMode(void);
 extern bool gGizmoSnap;
 extern float gGizmoSnapAngle;
 extern float gGizmoSnapTranslate;
@@ -507,7 +526,9 @@ uint32 GetLatestChangeSeq(void);
 // Object Spawner
 extern bool gPlaceMode;
 void InitLodLookup(void);
-void SpawnPlaceObject(rw::V3d position);
+void SpawnPlaceObject(rw::V3d position, const rw::Quat *orientation = nil);
+int SpawnPlaceObjectNoUndo(rw::V3d position, const rw::Quat *orientation,
+	ObjectInst **outInsts, int outCapacity);
 void SpawnExitPlaceMode(void);
 int GetSpawnObjectId(void);
 void SetSpawnObjectId(int id);
@@ -516,6 +537,7 @@ int GetLodForObject(int id);
 int SnapSelectedToGround(bool alignRotation);
 bool GetGroundPlacementSurface(rw::V3d pos, rw::V3d *hitPos, rw::V3d *hitNormal = nil, bool ignoreSelection = false);
 rw::V3d GetPlacementPosition(void);
+float GetPlacementBaseOffset(int objectId);
 
 // Object Browser categories & favourites
 void InitObjectCategories(void);
