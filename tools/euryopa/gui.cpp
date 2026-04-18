@@ -4645,9 +4645,12 @@ GetEffectTypeName(int type)
 }
 
 void
-uiOneEffect(Effect *e)
+uiOneEffect(Effect *e, ObjectDef *obj)
 {
 	ImGui::Combo("Effect Type", &e->type, fxTypeNames, IM_ARRAYSIZE(fxTypeNames));
+	if(obj){
+		ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Model: %s", obj->m_name);
+	}
 	ImGui::DragFloat3("Position", &e->pos.x, 0.1f);
 
 	rw::RGBAf col;
@@ -4783,6 +4786,7 @@ uiFxTable(ObjectInst *inst)
 static void
 uiFxInfo(ObjectInst *inst)
 {
+	ObjectDef *obj = GetObjectDef(inst->m_objectId);
 	float listWidth = 200.f;
 	ImGui::BeginChild("##left", ImVec2(listWidth, 0), true);
 	uiFxTable(inst);
@@ -4792,7 +4796,7 @@ uiFxInfo(ObjectInst *inst)
 
 	ImGui::BeginChild("##right", ImVec2(0, 0), true);
 	if(Effects::selectedEffect)
-		uiOneEffect(Effects::selectedEffect);
+		uiOneEffect(Effects::selectedEffect, obj);
 	else
 		ImGui::TextDisabled("Select an effect");
 	ImGui::EndChild();
