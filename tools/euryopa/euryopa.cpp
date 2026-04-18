@@ -1767,7 +1767,10 @@ handleTool(void)
 		if(Effects::hoveredEffect){
 			ClearSelection();
 			Effects::selectedEffect = Effects::hoveredEffect;
-			Effects::selectedEffectInst = Effects::hoveredEffectInst;
+			Effects::selectedEffect = Effects::hoveredEffect;
+			if(Effects::hoveredEffectInst){
+				Effects::hoveredEffectInst->Select();
+			}
 			Path::selectedNode = nil;
 			SAPaths::selectedNode = nil;
 			Cars::SelectCarSpawn(-1);

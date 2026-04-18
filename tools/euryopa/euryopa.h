@@ -907,6 +907,7 @@ struct Effect {
 
 namespace Effects {
 extern Effect *hoveredEffect, *guiHoveredEffect;
+extern ObjectInst *hoveredEffectInst;
 extern Effect *selectedEffect;
 extern ObjectInst *selectedEffectInst;
 void AddEffect(Effect e);
