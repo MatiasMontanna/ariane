@@ -1764,11 +1764,17 @@ handleTool(void)
 
 	// select
 	if(CPad::IsMButtonClicked(1) || CPad::IsLButtonClicked()){
-		if(Path::hoveredNode || SAPaths::hoveredNode || Effects::hoveredEffect){
+		if(Effects::hoveredEffect){
+			ClearSelection();
+			Effects::selectedEffect = Effects::hoveredEffect;
+			Path::selectedNode = nil;
+			SAPaths::selectedNode = nil;
+			Cars::SelectCarSpawn(-1);
+		}else if(Path::hoveredNode || SAPaths::hoveredNode){
 			ClearSelection();
 			Path::selectedNode = Path::hoveredNode;
 			SAPaths::selectedNode = SAPaths::hoveredNode;
-			Effects::selectedEffect = Effects::hoveredEffect;
+			Effects::selectedEffect = nil;
 			Cars::SelectCarSpawn(-1);
 		}else if(CPad::IsLButtonClicked()){
 			int carSpawnIdx = Cars::PickCarSpawn();
