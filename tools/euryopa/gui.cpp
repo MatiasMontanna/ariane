@@ -3901,13 +3901,6 @@ uiView(void)
 		ImGui::SliderFloat("Wireframe Alpha", &gCollisionWireframeAlpha, 0.0f, 1.0f, "%.2f");
 		ImGui::Checkbox("Render from DFF", &gRenderCollisionFromDff);
 		ImGui::Checkbox("Render Both (COL + DFF)", &gRenderCollisionBoth);
-		ImGui::SeparatorText("Collision Shapes");
-		ImGui::Checkbox("Bounding Box", &gRenderColBoundingBox);
-		ImGui::SameLine();
-		ImGui::Checkbox("Boxes", &gRenderColBoxes);
-		ImGui::SameLine();
-		ImGui::Checkbox("Spheres", &gRenderColSpheres);
-		ImGui::Checkbox("Triangles", &gRenderColTriangles);
 		ImGui::Checkbox("Material Colors", &gRenderColMaterialColors);
 		ImGui::Checkbox("Filled Triangles", &gRenderColFilled);
 		if(gRenderCollisionFromDff || gRenderCollisionBoth){
@@ -4645,12 +4638,9 @@ GetEffectTypeName(int type)
 }
 
 void
-uiOneEffect(Effect *e, ObjectDef *obj)
+uiOneEffect(Effect *e)
 {
 	ImGui::Combo("Effect Type", &e->type, fxTypeNames, IM_ARRAYSIZE(fxTypeNames));
-	if(obj){
-		ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Model: %s", obj->m_name);
-	}
 	ImGui::DragFloat3("Position", &e->pos.x, 0.1f);
 
 	rw::RGBAf col;
@@ -4716,18 +4706,12 @@ uiOneEffect(Effect *e, ObjectDef *obj)
 		break;
 
 	case FX_ROADSIGN:
-		ImGui::DragFloat2("Size", &e->roadsign.width);
-		{
-			static char buf1[17] = {0}, buf2[17] = {0}, buf3[17] = {0}, buf4[17] = {0};
-			memcpy(buf1, e->roadsign.text[0], 16);
-			memcpy(buf2, e->roadsign.text[1], 16);
-			memcpy(buf3, e->roadsign.text[2], 16);
-			memcpy(buf4, e->roadsign.text[3], 16);
-			if(ImGui::InputText("Line 1", buf1, 17)) memcpy(e->roadsign.text[0], buf1, 16);
-			if(ImGui::InputText("Line 2", buf2, 17)) memcpy(e->roadsign.text[1], buf2, 16);
-			if(ImGui::InputText("Line 3", buf3, 17)) memcpy(e->roadsign.text[2], buf3, 16);
-			if(ImGui::InputText("Line 4", buf4, 17)) memcpy(e->roadsign.text[3], buf4, 16);
-		}
+		ImGui::TextDisabled("Render-only preview");
+		ImGui::Text("Size: %.2f x %.2f", e->roadsign.width, e->roadsign.height);
+		ImGui::Text("Line 1: %.16s", e->roadsign.text[0]);
+		ImGui::Text("Line 2: %.16s", e->roadsign.text[1]);
+		ImGui::Text("Line 3: %.16s", e->roadsign.text[2]);
+		ImGui::Text("Line 4: %.16s", e->roadsign.text[3]);
 		break;
 
 	case FX_TRIGGERPOINT:
@@ -4746,13 +4730,6 @@ uiOneEffect(Effect *e, ObjectDef *obj)
 		ImGui::Text("Direction: %s", e->escalator.goingUp ? "Up" : "Down");
 		break;
 	}
-
-	if(Effects::selectedEffectInst && ImGui::Button("Select parent for Export")){
-		Effects::selectedEffectInst->Select();
-		ImGui::SetWindowFocus("Object Info");
-	}
-	ImGui::SameLine();
-	ImGui::TextDisabled("(use Export DFF button)");
 }
 
 static void
@@ -4799,7 +4776,6 @@ uiFxTable(ObjectInst *inst)
 static void
 uiFxInfo(ObjectInst *inst)
 {
-	ObjectDef *obj = GetObjectDef(inst->m_objectId);
 	float listWidth = 200.f;
 	ImGui::BeginChild("##left", ImVec2(listWidth, 0), true);
 	uiFxTable(inst);
@@ -4809,7 +4785,7 @@ uiFxInfo(ObjectInst *inst)
 
 	ImGui::BeginChild("##right", ImVec2(0, 0), true);
 	if(Effects::selectedEffect)
-		uiOneEffect(Effects::selectedEffect, obj);
+		uiOneEffect(Effects::selectedEffect);
 	else
 		ImGui::TextDisabled("Select an effect");
 	ImGui::EndChild();
@@ -6153,7 +6129,7 @@ uiInstWindow(void)
 		if(ImGui::CollapsingHeader("Object"))
 			uiObjInfo(obj);
 		if(obj->m_numEffects)
-			if(ImGui::CollapsingHeader("Effects", NULL, ImGuiTreeNodeFlags_DefaultOpen))
+			if(ImGui::CollapsingHeader("Effects"))
 				uiFxInfo(inst);
 		if(obj->m_carPathIndex >=0 || obj->m_pedPathIndex >= 0)
 			if(ImGui::CollapsingHeader("Legacy Paths"))

@@ -147,10 +147,6 @@ extern bool gRenderColMaterialColors;
 extern bool gRenderColFilled;
 extern bool gRenderDffMaterialColors;
 extern float gCollisionDffWireframeDist;
-extern bool gRenderColBoundingBox;
-extern bool gRenderColBoxes;
-extern bool gRenderColSpheres;
-extern bool gRenderColTriangles;
 extern bool gRenderCarrecs;
 extern bool gRenderCarSpawns;
 extern bool gRenderZones;
@@ -907,9 +903,7 @@ struct Effect {
 
 namespace Effects {
 extern Effect *hoveredEffect, *guiHoveredEffect;
-extern ObjectInst *hoveredEffectInst;
 extern Effect *selectedEffect;
-extern ObjectInst *selectedEffectInst;
 void AddEffect(Effect e);
 Effect *GetEffect(int idx);
 const char* GetEffectTypeName(int type);

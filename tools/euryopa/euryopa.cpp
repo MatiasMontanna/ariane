@@ -86,10 +86,6 @@ bool gRenderColMaterialColors;
 bool gRenderColFilled;
 bool gRenderDffMaterialColors;
 float gCollisionDffWireframeDist = 100.0f;
-bool gRenderColBoundingBox = true;
-bool gRenderColBoxes = true;
-bool gRenderColSpheres = true;
-bool gRenderColTriangles = true;
 bool gRenderCarrecs;
 bool gRenderCarSpawns;
 bool gRenderZones;
@@ -1763,24 +1759,14 @@ handleTool(void)
 	}
 
 	// select
-	if(CPad::IsMButtonClicked(1) || CPad::IsLButtonClicked()){
-		if(Effects::hoveredEffect){
-			ClearSelection();
-			Effects::selectedEffect = Effects::hoveredEffect;
-			Effects::selectedEffect = Effects::hoveredEffect;
-			if(Effects::hoveredEffectInst){
-				Effects::hoveredEffectInst->Select();
-			}
-			Path::selectedNode = nil;
-			SAPaths::selectedNode = nil;
-			Cars::SelectCarSpawn(-1);
-		}else if(Path::hoveredNode || SAPaths::hoveredNode){
+	if(CPad::IsMButtonClicked(1)){
+		if(Path::hoveredNode || SAPaths::hoveredNode || Effects::hoveredEffect){
 			ClearSelection();
 			Path::selectedNode = Path::hoveredNode;
 			SAPaths::selectedNode = SAPaths::hoveredNode;
-			Effects::selectedEffect = nil;
+			Effects::selectedEffect = Effects::hoveredEffect;
 			Cars::SelectCarSpawn(-1);
-		}else if(CPad::IsLButtonClicked()){
+		}else{
 			int carSpawnIdx = Cars::PickCarSpawn();
 			if(carSpawnIdx >= 0){
 				Cars::SelectCarSpawn(carSpawnIdx);

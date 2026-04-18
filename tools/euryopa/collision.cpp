@@ -289,46 +289,38 @@ RenderColModelWire(CColModel *col, rw::Matrix *xform, bool onlyBounds)
 	int i;
 	CColTriangle *tri;
 
-	if(gRenderColBoundingBox){
-		RenderWireBox(&col->boundingBox, colRed, xform);
-	}
+	RenderWireBox(&col->boundingBox, colRed, xform);
 	if(onlyBounds)
 		return;
-	if(gRenderColBoxes){
-		for(i = 0; i < col->numBoxes; i++)
-			RenderWireBox(&col->boxes[i].box, colWhite, xform);
-	}
-	if(gRenderColSpheres){
-		for(i = 0; i < col->numSpheres; i++)
-			RenderWireSphere(&col->spheres[i].sph, colMagenta, xform);
-	}
-	if(gRenderColTriangles){
-		for(i = 0; i < col->numTriangles; i++){
-			tri = &col->triangles[i];
-			rw::RGBA triCol;
-			if(gRenderColMaterialColors && tri->surface < 179){
-				ColRGB matCol = GetColMaterialColor(tri->surface);
-				triCol = { matCol.r, matCol.g, matCol.b, alpha };
-			}else{
-				triCol = colGreen;
-			}
-			if(col->flags & 0x80){
-				rw::V3d v[3];
-				v[0] = col->compVertices[tri->a].Uncompress();
-				v[1] = col->compVertices[tri->b].Uncompress();
-				v[2] = col->compVertices[tri->c].Uncompress();
-				if(gRenderColFilled)
-					RenderFilledTriangle(&v[0], &v[1], &v[2], triCol, xform);
-				else
-					RenderWireTriangle(&v[0], &v[1], &v[2], triCol, xform);
-			}else{
-				if(gRenderColFilled)
-					RenderFilledTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
-						triCol, xform);
-				else
-					RenderWireTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
-						triCol, xform);
-			}
+	for(i = 0; i < col->numBoxes; i++)
+		RenderWireBox(&col->boxes[i].box, colWhite, xform);
+	for(i = 0; i < col->numSpheres; i++)
+		RenderWireSphere(&col->spheres[i].sph, colMagenta, xform);
+	for(i = 0; i < col->numTriangles; i++){
+		tri = &col->triangles[i];
+		rw::RGBA triCol;
+		if(gRenderColMaterialColors && tri->surface < 179){
+			ColRGB matCol = GetColMaterialColor(tri->surface);
+			triCol = { matCol.r, matCol.g, matCol.b, alpha };
+		}else{
+			triCol = colGreen;
+		}
+		if(col->flags & 0x80){
+			rw::V3d v[3];
+			v[0] = col->compVertices[tri->a].Uncompress();
+			v[1] = col->compVertices[tri->b].Uncompress();
+			v[2] = col->compVertices[tri->c].Uncompress();
+			if(gRenderColFilled)
+				RenderFilledTriangle(&v[0], &v[1], &v[2], triCol, xform);
+			else
+				RenderWireTriangle(&v[0], &v[1], &v[2], triCol, xform);
+		}else{
+			if(gRenderColFilled)
+				RenderFilledTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
+					triCol, xform);
+			else
+				RenderWireTriangle(&col->vertices[tri->a], &col->vertices[tri->b], &col->vertices[tri->c],
+					triCol, xform);
 		}
 	}
 }
