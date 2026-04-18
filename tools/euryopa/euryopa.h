@@ -908,6 +908,7 @@ struct Effect {
 namespace Effects {
 extern Effect *hoveredEffect, *guiHoveredEffect;
 extern Effect *selectedEffect;
+extern ObjectInst *selectedEffectInst;
 void AddEffect(Effect e);
 Effect *GetEffect(int idx);
 const char* GetEffectTypeName(int type);

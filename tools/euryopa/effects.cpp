@@ -207,6 +207,7 @@ static const rw::RGBA white = { 255, 255, 255, 255 };
 
 Effect *hoveredEffect, *guiHoveredEffect;
 Effect *selectedEffect;
+ObjectInst *selectedEffectInst;
 
 static void
 RenderEffect(Effect *e, ObjectInst *inst)
@@ -229,6 +230,7 @@ RenderEffect(Effect *e, ObjectInst *inst)
 	rw::RGBA c = e->col;
 	if(SphereIntersect(sphere, ray) || e == guiHoveredEffect){
 		hoveredEffect = e;
+		hoveredEffectInst = inst;
 		c = cyan;
 	}
 	switch(e->type){
