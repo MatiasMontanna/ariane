@@ -1763,14 +1763,14 @@ handleTool(void)
 	}
 
 	// select
-	if(CPad::IsMButtonClicked(1) || CPad::newMouseState.lbut){
+	if(CPad::IsMButtonClicked(1) || CPad::IsLButtonClicked()){
 		if(Path::hoveredNode || SAPaths::hoveredNode || Effects::hoveredEffect){
 			ClearSelection();
 			Path::selectedNode = Path::hoveredNode;
 			SAPaths::selectedNode = SAPaths::hoveredNode;
 			Effects::selectedEffect = Effects::hoveredEffect;
 			Cars::SelectCarSpawn(-1);
-		}else if(CPad::newMouseState.lbut){
+		}else if(CPad::IsLButtonClicked()){
 			int carSpawnIdx = Cars::PickCarSpawn();
 			if(carSpawnIdx >= 0){
 				Cars::SelectCarSpawn(carSpawnIdx);

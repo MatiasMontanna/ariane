@@ -91,6 +91,12 @@ CPad::IsMButtonClicked(int btn)
 }
 
 bool
+CPad::IsLButtonClicked(void)
+{
+	return clickState == 2 && clickbtn == 1;
+}
+
+bool
 CPad::IsMButtonDown(int btn)
 {
 	if(btn > 0 && btn <= 3)
