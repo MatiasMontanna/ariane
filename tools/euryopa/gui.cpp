@@ -6140,7 +6140,7 @@ uiInstWindow(void)
 		if(ImGui::CollapsingHeader("Object"))
 			uiObjInfo(obj);
 		if(obj->m_numEffects)
-			if(ImGui::CollapsingHeader("Effects"))
+			if(ImGui::CollapsingHeader("Effects", NULL, ImGuiTreeNodeFlags_DefaultOpen))
 				uiFxInfo(inst);
 		if(obj->m_carPathIndex >=0 || obj->m_pedPathIndex >= 0)
 			if(ImGui::CollapsingHeader("Legacy Paths"))
