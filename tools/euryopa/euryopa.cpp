@@ -2533,6 +2533,8 @@ Draw(void)
 		Cars::Render();
 	if(ScriptEntities::gRenderScriptEntities)
 		ScriptEntities::Render();
+	if(Holes::gRenderHoles)
+		Holes::Render();
 	if(gRenderEffects)
 		Effects::Render();
 	if(WaterLevel::gWaterEditMode)
