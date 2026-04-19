@@ -1457,6 +1457,8 @@ bool gRenderHoles = false;
 float gHoleDrawDist = 500.0f;
 float gHoleCubeSize = 3.0f;
 float gHoleZOffset = 0.0f;
+int gHoleGeomType = 0;
+float gHoleColor[4] = {0.5f, 0.5f, 0.5f, 1.0f};
 
 void
 Init(void)
@@ -1532,10 +1534,6 @@ Render(void)
 		if (dist > gHoleDrawDist)
 			continue;
 
-		CSphere sphere;
-		sphere.center = {h.x, h.y, h.z + gHoleZOffset};
-		sphere.radius = gHoleCubeSize;
-
 		rw::RGBA col;
 		switch (h.type) {
 			case 0: col = {80, 80, 80, 200}; break;
@@ -1545,7 +1543,30 @@ Render(void)
 			case 4: col = {128, 128, 128, 200}; break;
 			default: col = {80, 80, 80, 200};
 		}
-		RenderWireSphere(&sphere, col, NULL);
+		if (gHoleColor[3] > 0.0f) {
+			col.red = (uint8)(gHoleColor[0] * 255.0f);
+			col.green = (uint8)(gHoleColor[1] * 255.0f);
+			col.blue = (uint8)(gHoleColor[2] * 255.0f);
+			col.alpha = (uint8)(gHoleColor[3] * 255.0f);
+		}
+
+		rw::V3d pos = {h.x, h.y, h.z + gHoleZOffset};
+		if (gHoleGeomType == 0) {
+			CSphere sphere;
+			sphere.center = pos;
+			sphere.radius = gHoleCubeSize;
+			RenderWireSphere(&sphere, col, NULL);
+		} else if (gHoleGeomType == 1) {
+			CBox box;
+			box.min = {pos.x - gHoleCubeSize, pos.y - gHoleCubeSize, pos.z - gHoleCubeSize};
+			box.max = {pos.x + gHoleCubeSize, pos.y + gHoleCubeSize, pos.z + gHoleCubeSize};
+			RenderWireBox(&box, col, NULL);
+		} else {
+			rw::V3d v1 = {pos.x - gHoleCubeSize, pos.y, pos.z};
+			rw::V3d v2 = {pos.x + gHoleCubeSize, pos.y, pos.z};
+			rw::V3d v3 = {pos.x, pos.y + gHoleCubeSize, pos.z};
+			RenderWireTriangle(&v1, &v2, &v3, col, NULL);
+		}
 	}
 
 	SetRenderState(rw::VERTEXALPHA, 0);

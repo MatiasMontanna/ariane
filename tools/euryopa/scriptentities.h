@@ -154,6 +154,8 @@ namespace Holes {
 	extern float gHoleDrawDist;
 	extern float gHoleCubeSize;
 	extern float gHoleZOffset;
+	extern int gHoleGeomType; // 0=sphere, 1=box, 2=triangle
+	extern float gHoleColor[4];
 
 	void Init(void);
 	void Shutdown(void);
