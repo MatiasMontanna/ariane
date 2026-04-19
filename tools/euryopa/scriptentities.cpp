@@ -1456,6 +1456,7 @@ static std::vector<Hole> gHoles;
 bool gRenderHoles = false;
 float gHoleDrawDist = 500.0f;
 float gHoleCubeSize = 3.0f;
+float gHoleZOffset = 0.0f;
 
 void
 Init(void)
@@ -1532,7 +1533,7 @@ Render(void)
 			continue;
 
 		CSphere sphere;
-		sphere.center = {h.x, h.y, h.z};
+		sphere.center = {h.x, h.y, h.z + gHoleZOffset};
 		sphere.radius = gHoleCubeSize;
 
 		rw::RGBA col;

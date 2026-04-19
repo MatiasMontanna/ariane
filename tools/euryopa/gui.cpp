@@ -4059,6 +4059,7 @@ ImGui::Unindent();
 		ImGui::Indent();
 		ImGui::SliderFloat("Distance", &Holes::gHoleDrawDist, 10.0f, 2000.0f);
 		ImGui::SliderFloat("Cube Size", &Holes::gHoleCubeSize, 0.5f, 20.0f);
+		ImGui::SliderFloat("Z Offset", &Holes::gHoleZOffset, -100.0f, 100.0f);
 		ImGui::Unindent();
 	}
 

@@ -153,6 +153,7 @@ namespace Holes {
 	extern bool gRenderHoles;
 	extern float gHoleDrawDist;
 	extern float gHoleCubeSize;
+	extern float gHoleZOffset;
 
 	void Init(void);
 	void Shutdown(void);
