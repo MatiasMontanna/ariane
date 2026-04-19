@@ -4054,6 +4054,14 @@ ImGui::Unindent();
 		}
 	}
 
+	ImGui::Checkbox("Draw Hole Data", &Holes::gRenderHoles);
+	if(Holes::gRenderHoles){
+		ImGui::Indent();
+		ImGui::SliderFloat("Distance", &Holes::gHoleDrawDist, 10.0f, 2000.0f);
+		ImGui::SliderFloat("Cube Size", &Holes::gHoleCubeSize, 0.5f, 20.0f);
+		ImGui::Unindent();
+	}
+
 	ImGui::Checkbox("Draw Script Entities", &ScriptEntities::gRenderScriptEntities);
 	if(ScriptEntities::gRenderScriptEntities){
 		ImGui::Indent();
