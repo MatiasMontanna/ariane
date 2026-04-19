@@ -1449,27 +1449,28 @@ ScriptEntities::RenderScriptEntityProperties(void)
 	ImGui::End();
 }
 
-/Holes implementation/
-static std::vector<Holes::Hole> gHoles;
+// Holes implementation
+namespace Holes {
+static std::vector<Hole> gHoles;
 
-bool Holes::gRenderHoles = false;
-float Holes::gHoleDrawDist = 500.0f;
-float Holes::gHoleCubeSize = 3.0f;
+bool gRenderHoles = false;
+float gHoleDrawDist = 500.0f;
+float gHoleCubeSize = 3.0f;
 
 void
-Holes::Init(void)
+Init(void)
 {
 	Reload();
 }
 
 void
-Holes::Shutdown(void)
+Shutdown(void)
 {
 	gHoles.clear();
 }
 
 void
-Holes::Reload(void)
+Reload(void)
 {
 	gHoles.clear();
 
@@ -1503,13 +1504,13 @@ Holes::Reload(void)
 }
 
 int
-Holes::GetNumHoles(void)
+GetNumHoles(void)
 {
 	return gHoles.size();
 }
 
-Holes::Hole*
-Holes::GetHole(int idx)
+Hole*
+GetHole(int idx)
 {
 	if (idx >= 0 && idx < (int)gHoles.size())
 		return &gHoles[idx];
@@ -1517,14 +1518,12 @@ Holes::GetHole(int idx)
 }
 
 void
-Holes::Render(void)
+Render(void)
 {
 	if (!gRenderHoles)
 		return;
 
-	rw::SetRenderState(rw::ALPHATESTENABLE, 1);
-	rw::SetRenderState(rw::ALPHATESTREF, 127);
-	rw::SetRenderState(rw::VERTEXALPHA, 1);
+	SetRenderState(rw::VERTEXALPHA, 1);
 
 	for (int i = 0; i < (int)gHoles.size(); i++) {
 		Hole &h = gHoles[i];
@@ -1538,15 +1537,16 @@ Holes::Render(void)
 
 		rw::RGBA col;
 		switch (h.type) {
-			case 0: col = {80, 80, 80, 200}; break;   // Hole
-			case 1: col = {0, 100, 255, 200}; break;  // Water
-			case 2: col = {200, 200, 200, 200}; break; // Steam
-			case 3: col = {255, 80, 0, 200}; break;   // Fire
-			case 4: col = {128, 128, 128, 200}; break; // Smoke
+			case 0: col = {80, 80, 80, 200}; break;
+			case 1: col = {0, 100, 255, 200}; break;
+			case 2: col = {200, 200, 200, 200}; break;
+			case 3: col = {255, 80, 0, 200}; break;
+			case 4: col = {128, 128, 128, 200}; break;
 			default: col = {80, 80, 80, 200};
 		}
 		RenderWireSphere(&sphere, col, NULL);
 	}
 
-	rw::SetRenderState(rw::ALPHATESTENABLE, 0);
+	SetRenderState(rw::VERTEXALPHA, 0);
+}
 }
