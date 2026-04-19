@@ -67,6 +67,8 @@ bool gDoBackfaceCulling;	// init from params
 bool gPlayAnimations = true;
 bool gUseViewerCam;
 bool gDrawTarget = true;
+float gFlyFastMul = 2.0f;
+float gFlySlowMul = 0.5f;
 
 struct IplVisibilityEntry
 {
@@ -1863,6 +1865,7 @@ LoadGame(void)
 	Carrec::Init();
 	Cars::Init();
 	ScriptEntities::Init();
+	Holes::Init();
 	FindVersion();
 	ModloaderInit();
 	switch(gameversion){

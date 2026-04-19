@@ -142,4 +142,24 @@ const char* GetEntityTypeName(ScriptEntityType type);
 
 }
 
+namespace Holes {
+	struct Hole {
+		float x, y, z;
+		float size;
+		int type;
+		char name[64];
+	};
+
+	extern bool gRenderHoles;
+	extern float gHoleDrawDist;
+	extern float gHoleCubeSize;
+
+	void Init(void);
+	void Shutdown(void);
+	void Reload(void);
+	int GetNumHoles(void);
+	Hole* GetHole(int idx);
+	void Render(void);
+}
+
 #endif

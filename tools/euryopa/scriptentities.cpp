@@ -1448,3 +1448,105 @@ ScriptEntities::RenderScriptEntityProperties(void)
 
 	ImGui::End();
 }
+
+/Holes implementation/
+static std::vector<Holes::Hole> gHoles;
+
+bool Holes::gRenderHoles = false;
+float Holes::gHoleDrawDist = 500.0f;
+float Holes::gHoleCubeSize = 3.0f;
+
+void
+Holes::Init(void)
+{
+	Reload();
+}
+
+void
+Holes::Shutdown(void)
+{
+	gHoles.clear();
+}
+
+void
+Holes::Reload(void)
+{
+	gHoles.clear();
+
+	WIN32_FIND_DATA fd;
+	HANDLE h = FindFirstFile("HOLES.DAT", &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		FindClose(h);
+		FILE *f = fopen("HOLES.DAT", "r");
+		if (f) {
+			char line[256];
+			while (fgets(line, sizeof(line), f)) {
+				if (line[0] == '#' || line[0] == '\n' || line[0] == '\r')
+					continue;
+
+				float x = 0, y = 0, z = 0, size = 2.0f;
+				int type = 0;
+				char name[64] = {0};
+
+				int n = sscanf(line, "%f %f %f %f %d %s", &x, &y, &z, &size, &type, name);
+				if (n >= 2) {
+					if (n < 3) z = 0.0f;
+					if (n < 4) size = 2.0f;
+					Hole h = {x, y, z, size, type};
+					strncpy(h.name, name, 63);
+					gHoles.push_back(h);
+				}
+			}
+			fclose(f);
+		}
+	}
+}
+
+int
+Holes::GetNumHoles(void)
+{
+	return gHoles.size();
+}
+
+Holes::Hole*
+Holes::GetHole(int idx)
+{
+	if (idx >= 0 && idx < (int)gHoles.size())
+		return &gHoles[idx];
+	return NULL;
+}
+
+void
+Holes::Render(void)
+{
+	if (!gRenderHoles)
+		return;
+
+	rw::SetRenderState(rw::ALPHATESTENABLE, 1);
+	rw::SetRenderState(rw::ALPHATESTREF, 127);
+	rw::SetRenderState(rw::VERTEXALPHA, 1);
+
+	for (int i = 0; i < (int)gHoles.size(); i++) {
+		Hole &h = gHoles[i];
+		float dist = TheCamera.distanceTo({h.x, h.y, h.z});
+		if (dist > gHoleDrawDist)
+			continue;
+
+		CSphere sphere;
+		sphere.center = {h.x, h.y, h.z};
+		sphere.radius = gHoleCubeSize;
+
+		rw::RGBA col;
+		switch (h.type) {
+			case 0: col = {80, 80, 80, 200}; break;   // Hole
+			case 1: col = {0, 100, 255, 200}; break;  // Water
+			case 2: col = {200, 200, 200, 200}; break; // Steam
+			case 3: col = {255, 80, 0, 200}; break;   // Fire
+			case 4: col = {128, 128, 128, 200}; break; // Smoke
+			default: col = {80, 80, 80, 200};
+		}
+		RenderWireSphere(&sphere, col, NULL);
+	}
+
+	rw::SetRenderState(rw::ALPHATESTENABLE, 0);
+}
