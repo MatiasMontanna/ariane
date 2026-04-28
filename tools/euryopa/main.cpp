@@ -564,7 +564,6 @@ DefinedState(void)
 }
 
 // Simple function to convert a raster to the current platform.
-// TODO: convert custom formats (DXT) properly.
 static rw::Raster*
 CreateFallbackRaster(void)
 {
@@ -588,6 +587,7 @@ ConvertTexRaster(rw::Raster *ras)
 	   ras->platform == PLATFORM_D3D9 && rw::platform == PLATFORM_D3D8)
 		return ras;
 
+#ifndef RW_GL3
 	Image *img = ras->toImage();
 	if(img == nil){
 		log("warning: failed to convert raster from platform %d to %d, using fallback texture\n",
@@ -605,12 +605,23 @@ ConvertTexRaster(rw::Raster *ras)
 		return CreateFallbackRaster();
 	}
 	return ras;
+#else
+	Raster *converted = Raster::convertTexToCurrentPlatform(ras);
+	if(converted == nil){
+		log("warning: failed to create converted raster for platform %d, using fallback texture\n",
+			rw::platform);
+		return CreateFallbackRaster();
+	}
+	return converted;
+#endif
 }
 
 void
 ConvertTxd(rw::TexDictionary *txd)
 {
 	rw::Texture *tex;
+	if(txd == nil)
+		return;
 	FORLIST(lnk, txd->textures){
 		tex = rw::Texture::fromDict(lnk);
 		rw::Raster *ras = tex->raster;

@@ -5,6 +5,9 @@ static TxdDef txdlist[NUMTEXDICTS];
 static int numTxds;
 static int32 txdStoreOffset;	// RW plugin
 static rw::TexDictionary *pushedTxd;
+static const char *txdLookupObjectName;
+static int txdLookupSlot = -1;
+static int missingTextureWarnings;
 
 rw::TexDictionary *defaultTxd;
 
@@ -100,45 +103,97 @@ CreateTxd(int i)
 		td->txd = rw::TexDictionary::create();
 }
 
+static bool
+ReadTxdFromBuffer(TxdDef *td, uint8 *buffer, int size, const char *sourcePath, rw::TexDictionary **outTxd)
+{
+	rw::StreamMemory stream;
+	rw::TexDictionary *txd = nil;
+	const char *source = sourcePath && sourcePath[0] ? sourcePath : "unknown source";
+	bool ok = false;
+
+	if(outTxd)
+		*outTxd = nil;
+	if(buffer == nil || size <= 0){
+		log("warning: failed to read txd %s from %s\n", td->name, source);
+		return false;
+	}
+
+	log("LoadTxd: %s from %s (%d bytes)\n", td->name, source, size);
+	stream.open((uint8*)buffer, size);
+	if(findChunk(&stream, rw::ID_TEXDICTIONARY, nil, nil)){
+		txd = rw::TexDictionary::streamRead(&stream);
+		if(txd){
+			ConvertTxd(txd);
+			ok = true;
+		}else{
+			log("warning: failed to parse txd %s from %s\n", td->name, source);
+		}
+	}else{
+		log("warning: no TXD dictionary chunk for txd %s from %s\n", td->name, source);
+	}
+	stream.close();
+
+	if(ok && outTxd)
+		*outTxd = txd;
+	return ok;
+}
+
 void
 LoadTxd(int i)
 {
-	uint8 *buffer;
-	int size;
-	bool looseFile = false;
-	rw::StreamMemory stream;
+	uint8 *buffer = nil;
+	int size = 0;
+	char sourcePath[1024];
 	TxdDef *td = GetTxdDef(i);
+	if(td == nil)
+		return;
 	if(td->txd)
 		return;
 	if(td->parentId >= 0)
 		LoadTxd(td->parentId);
 
+	sourcePath[0] = '\0';
 	const char *loosePath = ModloaderFindOverride(td->name, "txd");
 	if(loosePath){
 		buffer = ReadLooseFile(loosePath, &size);
-		looseFile = true;
-	}else{
-		if(td->imageIndex < 0){
-			log("warning: no streaming info for txd %s\n", td->name);
-			return;
-		}
-		buffer = ReadFileFromImage(td->imageIndex, &size);
+		strncpy(sourcePath, loosePath, sizeof(sourcePath)-1);
+		sourcePath[sizeof(sourcePath)-1] = '\0';
+		ReadTxdFromBuffer(td, buffer, size, sourcePath, &td->txd);
+		if(buffer)
+			free(buffer);
 	}
 
-	stream.open((uint8*)buffer, size);
-	if(findChunk(&stream, rw::ID_TEXDICTIONARY, nil, nil)){
-		td->txd = rw::TexDictionary::streamRead(&stream);
-		ConvertTxd(td->txd);
-	}else
+	for(int imageIndex = td->imageIndex; td->txd == nil && imageIndex >= 0; ){
+		buffer = ReadFileFromImage(imageIndex, &size);
+		if(!GetCdImageEntrySourcePath(imageIndex, sourcePath, sizeof(sourcePath)))
+			snprintf(sourcePath, sizeof(sourcePath), "image index %d", imageIndex);
+		if(ReadTxdFromBuffer(td, buffer, size, sourcePath, &td->txd))
+			break;
+
+		int previous = -1;
+		if(!GetPreviousCdImageEntryIndex(imageIndex, &previous))
+			break;
+		char previousPath[1024];
+		if(!GetCdImageEntrySourcePath(previous, previousPath, sizeof(previousPath)))
+			snprintf(previousPath, sizeof(previousPath), "image index %d", previous);
+		log("warning: falling back txd %s from %s to previous entry %s\n",
+			td->name, sourcePath[0] ? sourcePath : "unknown source", previousPath);
+		imageIndex = previous;
+	}
+
+	if(td->txd == nil){
+		if(td->imageIndex < 0 && loosePath == nil){
+			log("warning: no streaming info for txd %s\n", td->name);
+		}else{
+			log("warning: using empty txd %s after all sources failed\n", td->name);
+		}
 		td->txd = rw::TexDictionary::create();
+	}
 
 	if(td->parentId >= 0){
 		rw::TexDictionary *partxd = GetTxdDef(td->parentId)->txd;
 		*PLUGINOFFSET(rw::TexDictionary*, td->txd, txdStoreOffset) = partxd;
 	}
-
-	stream.close();
-	if(looseFile) free(buffer);
 }
 
 void
@@ -180,6 +235,56 @@ TxdSetParent(const char *child, const char *parent)
 	GetTxdDef(c)->parentId = p;
 }
 
+void
+SetTxdLookupContext(const char *objectName, int txdSlot)
+{
+	txdLookupObjectName = objectName;
+	txdLookupSlot = txdSlot;
+}
+
+static const char*
+FindTxdNameByDictionary(rw::TexDictionary *txd)
+{
+	for(int i = 0; i < numTxds; i++)
+		if(txdlist[i].txd == txd)
+			return txdlist[i].name;
+	if(txd == defaultTxd)
+		return "default";
+	return "unknown";
+}
+
+static void
+LogMissingTexture(const char *name)
+{
+	char chain[512];
+	size_t used = 0;
+	rw::TexDictionary *txd = rw::TexDictionary::getCurrent();
+
+	if(missingTextureWarnings >= 2000)
+		return;
+	missingTextureWarnings++;
+
+	chain[0] = '\0';
+	while(txd && used < sizeof(chain)-1){
+		const char *txdName = FindTxdNameByDictionary(txd);
+		int written = snprintf(chain + used, sizeof(chain) - used, "%s%s",
+			used ? " -> " : "", txdName);
+		if(written < 0)
+			break;
+		if((size_t)written >= sizeof(chain) - used){
+			used = sizeof(chain)-1;
+			break;
+		}
+		used += written;
+		txd = *PLUGINOFFSET(rw::TexDictionary*, txd, txdStoreOffset);
+	}
+
+	log("warning: missing texture %s while loading object %s txdSlot %d chain [%s]\n",
+		name ? name : "(null)",
+		txdLookupObjectName ? txdLookupObjectName : "(unknown)",
+		txdLookupSlot,
+		chain[0] ? chain : "none");
+}
 
 rw::Texture*
 TxdStoreFindCB(const char *name)
@@ -193,6 +298,7 @@ TxdStoreFindCB(const char *name)
 		if(tex) return tex;
 		txd = *PLUGINOFFSET(rw::TexDictionary*, txd, txdStoreOffset);
 	}
+	LogMissingTexture(name);
 	return nil;
 }
 

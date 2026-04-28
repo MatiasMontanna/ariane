@@ -562,6 +562,8 @@ uint8 *ReadFileFromImage(int i, int *size);
 GameFile *GetGameFileFromImage(int i);
 const char *GetCdImageLogicalName(int i);
 const char *GetCdImageSourcePath(int i);
+bool GetCdImageEntrySourcePath(int i, char *outSourcePath, size_t outSourcePathSize);
+bool GetPreviousCdImageEntryIndex(int i, int *outIndex);
 bool WriteFileToImage(int i, uint8 *data, int size);
 bool BuildModloaderImageEntryExportPath(int i, char *dst, size_t size);
 void RequestObject(int id);
@@ -589,6 +591,7 @@ void LoadTxd(int i);
 void LoadTxd(int i, const char *path);
 void TxdMakeCurrent(int i);
 void TxdSetParent(const char *child, const char *parent);
+void SetTxdLookupContext(const char *objectName, int txdSlot);
 
 
 struct ColFileHeader
@@ -1087,7 +1090,7 @@ void LoadScene(const char *filename);
 void LoadCollisionFile(const char *path);
 rw::TexDictionary *LoadTexDictionary(const char *path);
 BinaryIplSaveResult SaveScene(const char *filename);
-BinaryIplSaveResult SaveBinaryIpls(void);
+BinaryIplSaveResult SaveBinaryIpls(const int32 *skipImages = nil, int numSkipImages = 0);
 AutomaticBackupResult CreateAutomaticBackup(const char *rootDir, int keepCount);
 }
 
