@@ -191,8 +191,7 @@ IsRedirectExt(const char *ext)
 static bool
 IsLooseBasenameOverrideExt(const char *ext)
 {
-	return strcmp(ext, "dff") == 0 || strcmp(ext, "txd") == 0 ||
-	       strcmp(ext, "col") == 0;
+	return strcmp(ext, "dff") == 0 || strcmp(ext, "txd") == 0;
 }
 
 static int
@@ -810,8 +809,8 @@ ModloaderInit(void)
 	// Priority resolution
 
 	// 1) Loose basename overrides: group by (basename, ext), keep highest priority.
-	// Keep IPL excluded: IPL basenames are not globally unique enough for
-	// basename-only matching and can redirect unrelated scenes.
+	// Keep this restricted to DFF/TXD. IPL/COL names are not globally unique enough
+	// for basename-only matching and can redirect unrelated assets/scenes.
 	{
 		std::vector<ModFile> looseCandidates;
 		for(size_t i = 0; i < allModFiles.size(); i++){
