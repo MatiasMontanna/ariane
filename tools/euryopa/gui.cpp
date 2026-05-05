@@ -3107,16 +3107,16 @@ uiMainmenu(void)
 				}
 				ImGui::EndMenu();
 			}
-//=======
+
 			if(ImGui::MenuItem("Destroy Entire Map...")){
 				gOpenDestroyMap = true;
 			}
 			ImGui::SetItemTooltip("Marks every loaded map instance as deleted.\nOptionally clears SA water in the same step.");
-//>>>>>>> remotes/upstream/master
+
 			ImGui::Separator();
-//=======
+
 			// TODO: restore once whole-map export is safe for runtime use.
-//>>>>>>> remotes/upstream/master
+
 			if(ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
 		}
