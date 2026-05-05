@@ -3052,9 +3052,9 @@ uiMainmenu(void)
 				beginEmptyCustomImport();
 			}
 			ImGui::SetItemTooltip("Import a custom DFF/TXD into the editor as a new placeable object.\nAutomatically registers it in your game files, ready to use in game.");
-//<<<<<<< HEAD
+
 			ImGui::Separator();
-//<<<<<<< HEAD
+
 			if(ImGui::BeginMenu(ICON_FA_FILE_EXPORT " Export Data...")){
 				if(ImGui::BeginMenu("Objects")){
 					if(ImGui::MenuItem("As JSON"))
@@ -4312,7 +4312,7 @@ ImGui::Unindent();
  	if(gameversion == GAME_SA)
  		ImGui::Checkbox("Play Animations", &gPlayAnimations);
 
-//<<<<<<< HEAD
+
 	static int render = 0;
 	//ImGui::RadioButton("Render Normal", &render, 0);
 	//ImGui::RadioButton("Render only HD", &render, 1);
@@ -4320,13 +4320,13 @@ ImGui::Unindent();
 	//gRenderOnlyHD = !!(render&1);
 	//gRenderOnlyLod = !!(render&2);
 	ImGui::Checkbox("Auto LOD Transition", &gAutoAnimateLOD);
-//=======
+
 	ImGui::RadioButton("Render Normal", &gRenderMode, 0);
 	ImGui::RadioButton("Render only HD", &gRenderMode, 1);
 	ImGui::RadioButton("Render only LOD", &gRenderMode, 2);
 	gRenderOnlyHD = gRenderMode == 1;
 	gRenderOnlyLod = gRenderMode == 2;
-//>>>>>>> remotes/upstream/master
+
 	ImGui::SliderFloat("Draw Distance", &TheCamera.m_LODmult, 0.5f, 3.0f, "%.3f");
 	ImGui::Checkbox("Render all Timed Objects", &gNoTimeCull);
 	if(params.numAreas)
@@ -6805,7 +6805,6 @@ gui(void)
 	}
 
 	// Copy/Paste (not in water edit mode)
-//<<<<<<< HEAD
 	if(!WaterLevel::gWaterEditMode){
 		// Select all
 		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('A')){
@@ -6827,9 +6826,8 @@ gui(void)
 				}
 			}
 		}
-//=======
+
 	if(allowEditorShortcuts && !WaterLevel::gWaterEditMode){
-//>>>>>>>
 		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')){
 			int before = 0;
 			for(CPtrNode *p = selection.first; p; p = p->next) before++;
