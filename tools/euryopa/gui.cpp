@@ -6955,14 +6955,13 @@ gui(void)
 	}
 
 	if(CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
-	if(showToolsWindow) uiToolsWindow();
-
-	{
+	if(showToolsWindow) uiToolsWindow(){
 		static SAPaths::Node *prevSaNode = nil;
 		gSaNodeJustSelected = SAPaths::selectedNode != nil && SAPaths::selectedNode != prevSaNode;
 		prevSaNode = SAPaths::selectedNode;
-		if(gSaNodeJustSelected)
+		if(gSaNodeJustSelected){
 			showInstanceWindow = true;
+		}
 	}
 	if(!CPad::IsCtrlDown() && !CPad::IsShiftDown() && CPad::IsKeyJustDown('I')) showInstanceWindow ^= 1;
 	if(showInstanceWindow) uiInstWindow();
@@ -7035,9 +7034,9 @@ gui(void)
 	}
 
 	// Water editor window
-	if(WaterLevel::gWaterEditMode)
+	if(WaterLevel::gWaterEditMode){
 		uiWaterWindow();
-
+	}
 	if(showHelpWindow) uiHelpWindow();
 	if(showDemoWindow){
 		ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiCond_FirstUseEver);
@@ -7205,5 +7204,4 @@ gui(void)
 		gSettingsAutosaveSeconds = 0.0f;
 	}
 
-//	uiTest();
 }
