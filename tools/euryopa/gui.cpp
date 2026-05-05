@@ -6733,6 +6733,11 @@ gui(void)
 	UpdaterDrawGui();
 	automaticBackupTick();
 
+	bool imguiKeyboardActive = ImGui::GetIO().WantCaptureKeyboard ||
+		ImGui::GetIO().WantTextInput ||
+		ImGui::GetActiveID() != 0;
+	bool allowEditorShortcuts = !imguiKeyboardActive && !gCopyableTextCopiedThisFrame;
+
 	// Ctrl+D duplicate in water mode
 	if(WaterLevel::gWaterEditMode && CPad::IsCtrlDown() && CPad::IsKeyJustDown('D')){
 		int count = WaterLevel::GetNumSelectedPolys();
