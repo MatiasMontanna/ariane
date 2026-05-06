@@ -2018,10 +2018,9 @@ InputTextReadonly(const char *label, const char *value)
 		fieldWidth = 80.0f;
 	ImGui::SetNextItemWidth(fieldWidth);
 	ImGui::InputText("##value", buf, N,
-	ImGui::InputText(label, buf, N,
 		ImGuiInputTextFlags_ReadOnly |
 		ImGuiInputTextFlags_AutoSelectAll);
-		if((ImGui::IsItemActive() || ImGui::IsItemFocused()) &&
+	if((ImGui::IsItemActive() || ImGui::IsItemFocused()) &&
 	   IsCopyShortcutPressed()){
 		SetEditorClipboardText(value);
 		gCopyableTextCopiedThisFrame = true;
