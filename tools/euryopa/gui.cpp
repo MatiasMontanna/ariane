@@ -68,6 +68,7 @@ enum BrowserTabId
 	BROWSER_TAB_FAVOURITES
 };
 static int gBrowserActiveTab = BROWSER_TAB_CATEGORIES;
+static bool gCopyableTextCopiedThisFrame;
 
 struct SavedIplVisibilityState
 {
@@ -2001,9 +2002,35 @@ InputTextReadonly(const char *label, const char *value)
 		value = "";
 	strncpy(buf, value, N - 1);
 	buf[N - 1] = '\0';
+
+	const char *labelEnd = strstr(label, "##");
+	if(labelEnd == nil)
+		labelEnd = label + strlen(label);
+
+	ImGui::PushID(label);
+	if(labelEnd > label){
+		ImGui::TextUnformatted(label, labelEnd);
+		ImGui::SameLine(120.0f);
+	}
+	float copyButtonWidth = ImGui::GetFrameHeight();
+	float fieldWidth = ImGui::GetContentRegionAvail().x - copyButtonWidth - ImGui::GetStyle().ItemSpacing.x;
+	if(fieldWidth < 80.0f)
+		fieldWidth = 80.0f;
+	ImGui::SetNextItemWidth(fieldWidth);
+	ImGui::InputText("##value", buf, N,
 	ImGui::InputText(label, buf, N,
 		ImGuiInputTextFlags_ReadOnly |
 		ImGuiInputTextFlags_AutoSelectAll);
+		if((ImGui::IsItemActive() || ImGui::IsItemFocused()) &&
+	   IsCopyShortcutPressed()){
+		SetEditorClipboardText(value);
+		gCopyableTextCopiedThisFrame = true;
+	}
+	ImGui::SameLine();
+	if(ImGui::SmallButton(ICON_FA_COPY))
+		SetEditorClipboardText(value);
+	ImGui::PopID();
+	ImGui::SetItemTooltip("Copy");
 }
 
 static const char *CUSTOM_IMPORT_MANIFEST_LOGICAL_PATH = "ariane_custom.txt";
@@ -6726,6 +6753,7 @@ gui(void)
 		loadSaveSettings();
 		camloaded = true;
 	}
+	gCopyableTextCopiedThisFrame = false;
 
 	Path::guiHoveredNode = nil;
 	uiMainmenu();
