@@ -1076,6 +1076,24 @@ GetSpawnObjectId(void)
 	return spawnObjectId;
 }
 
+static bool
+pathsEqualCiNormalized(const char *a, const char *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	while(*a || *b){
+		char ca = *a++;
+		char cb = *b++;
+		if(ca == '\\') ca = '/';
+		if(cb == '\\') cb = '/';
+		if(ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
+		if(cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
+		if(ca != cb)
+			return false;
+	}
+	return true;
+}
+
 void
 SetCustomPlacementIpl(const char *logicalPath, const char *sourcePath, bool addToDat)
 {
@@ -1099,7 +1117,7 @@ SetCustomPlacementIpl(const char *logicalPath, const char *sourcePath, bool addT
 		BuildModloaderLogicalExportPath(logicalPath, resolvedSource, sizeof(resolvedSource));
 	}
 
-	bool sameLogical = LogicalPathEquals(currentCustomIplPath, normalizedLogical);
+	bool sameLogical = strcmp(currentCustomIplPath, normalizedLogical) == 0;
 	bool sameSource = strcmp(currentCustomIplSourcePath, resolvedSource) == 0;
 	if(!sameLogical || !sameSource || currentCustomIplAppendToDat != addToDat)
 		customIplFile = nil;
@@ -1116,7 +1134,7 @@ SetSpawnObjectId(int id)
 {
 	spawnObjectId = id;
 	ObjectDef *obj = GetObjectDef(id);
-	if(obj && obj->m_file && LogicalPathEquals(obj->m_file->name, CUSTOM_IMPORT_IDE_PATH))
+	if(obj && obj->m_file && pathsEqualCiNormalized(obj->m_file->name, CUSTOM_IMPORT_IDE_PATH))
 		SetCustomPlacementIpl(CUSTOM_IMPORT_IPL_PATH, nil, false);
 	else
 		SetCustomPlacementIpl(DEFAULT_CUSTOM_IPL_PATH, nil, true);
@@ -1217,9 +1235,7 @@ GetMaxIplIndexForFile(GameFile *file)
 	CPtrNode *p;
 	for(p = instances.first; p; p = p->next){
 		ObjectInst *other = (ObjectInst*)p->item;
-		if(other->m_file && file &&
-		   LogicalPathEquals(other->m_file->name, file->name) &&
-		   other->m_imageIndex < 0){
+		if(other->m_file == file && other->m_imageIndex < 0){
 			if(other->m_iplIndex > maxIplIndex)
 				maxIplIndex = other->m_iplIndex;
 		}
