@@ -1105,7 +1105,7 @@ instanceBelongsToStreamingFamily(ObjectInst *inst, const char *scenePath)
 		return false;
 
 	if(inst->m_imageIndex < 0)
-		return strcmp(inst->m_file->name, scenePath) == 0;
+		return LogicalPathEquals(inst->m_file->name, scenePath);
 
 	if(!buildStreamingFamilyPrefix(scenePath, prefix, sizeof(prefix)))
 		return false;
@@ -1163,7 +1163,7 @@ sceneNeedsSave(const char *scenePath)
 		ObjectInst *inst = (ObjectInst*)p->item;
 		if(inst == nil || inst->m_file == nil || inst->m_imageIndex >= 0)
 			continue;
-		if(strcmp(inst->m_file->name, scenePath) != 0)
+		if(!LogicalPathEquals(inst->m_file->name, scenePath))
 			continue;
 		if(textInstNeedsSave(inst))
 			return true;
@@ -1192,7 +1192,7 @@ saveWouldNeedStreamingBinaryDiskWrite(void)
 
 		bool alreadyChecked = false;
 		for(int i = 0; i < numCheckedScenes; i++)
-			if(strcmp(checkedScenes[i], inst->m_file->name) == 0){
+			if(LogicalPathEquals(checkedScenes[i], inst->m_file->name)){
 				alreadyChecked = true;
 				break;
 			}
@@ -1312,7 +1312,7 @@ buildStreamingBinarySaveSummary(StreamingBinarySaveSummary *summary)
 
 		bool alreadyChecked = false;
 		for(int i = 0; i < numCheckedScenes; i++)
-			if(strcmp(checkedScenes[i], inst->m_file->name) == 0){
+			if(LogicalPathEquals(checkedScenes[i], inst->m_file->name)){
 				alreadyChecked = true;
 				break;
 			}
@@ -1516,7 +1516,7 @@ saveAllIpls(void)
 		// Check if we already saved this file
 		bool found = false;
 		for(int i = 0; i < numChecked; i++)
-			if(strcmp(checked[i], inst->m_file->name) == 0){
+			if(LogicalPathEquals(checked[i], inst->m_file->name)){
 				found = true;
 				break;
 			}
@@ -1596,7 +1596,7 @@ saveAllIpls(void)
 		if(inst->m_imageIndex < 0){
 			bool textWasSaved = false;
 			for(int i = 0; i < numSaved; i++)
-				if(strcmp(saved[i], inst->m_file->name) == 0){
+				if(LogicalPathEquals(saved[i], inst->m_file->name)){
 					textWasSaved = true;
 					break;
 				}
@@ -1782,7 +1782,7 @@ hotReloadIpls(void)
 
 		bool found = false;
 		for(int i = 0; i < numNames; i++){
-			if(strcmp(iplNames[i], inst->m_file->name) == 0){
+			if(LogicalPathEquals(iplNames[i], inst->m_file->name)){
 				found = true;
 				break;
 			}
@@ -1991,6 +1991,32 @@ static void
 EndEditorDialog(void)
 {
 	ImGui::End();
+}
+
+static void
+SetEditorClipboardText(const char *text)
+{
+	if(text == nil)
+		text = "";
+	ImGui::SetClipboardText(text);
+#ifdef __APPLE__
+	FILE *pipe = popen("/usr/bin/pbcopy", "w");
+	if(pipe){
+		fwrite(text, 1, strlen(text), pipe);
+		pclose(pipe);
+	}
+#endif
+}
+
+static bool
+IsCopyShortcutPressed(void)
+{
+	bool imguiCopy = ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C) ||
+		ImGui::IsKeyChordPressed(ImGuiMod_Super | ImGuiKey_C);
+	bool padCommand = CPad::IsCtrlDown() ||
+		CPad::IsKeyDown(KEY_LSUPER) ||
+		CPad::IsKeyDown(KEY_RSUPER);
+	return imguiCopy || (padCommand && CPad::IsKeyJustDown('C'));
 }
 
 template <size_t N>
@@ -2910,7 +2936,9 @@ spawnCustomImportedObject(int objectId)
 	int maxIplIndex = -1;
 	for(CPtrNode *p = instances.first; p; p = p->next){
 		ObjectInst *other = (ObjectInst*)p->item;
-		if(other->m_file == file && other->m_imageIndex < 0 && other->m_iplIndex > maxIplIndex)
+		if(other->m_file && file &&
+		   LogicalPathEquals(other->m_file->name, file->name) &&
+		   other->m_imageIndex < 0 && other->m_iplIndex > maxIplIndex)
 			maxIplIndex = other->m_iplIndex;
 	}
 
@@ -2982,20 +3010,6 @@ uiMainmenu(void)
 					Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
 			}
 			ImGui::SetItemTooltip("Saves all modified objects in their respective placement files (.ipl).");
-			if(ImGui::MenuItem("Select All", "Ctrl+A")){
-				ClearSelection();
-				int count = 0;
-				for(CPtrNode *p = instances.first; p; p = p->next){
-					ObjectInst *inst = (ObjectInst*)p->item;
-					if(!inst->m_isDeleted){
-						inst->Select();
-						count++;
-					}
-				}
-				if(count > 0)
-					Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
-			}
-			ImGui::SetItemTooltip("Selects all objects in the current map.");
 			if(ImGui::MenuItem(ICON_FA_GAMEPAD " Test in Game", "Ctrl+G")){
 				testInGame();
 			}
@@ -3024,71 +3038,7 @@ uiMainmenu(void)
 				beginEmptyCustomImport();
 			}
 			ImGui::SetItemTooltip("Import a custom DFF/TXD into the editor as a new placeable object.\nAutomatically registers it in your game files, ready to use in game.");
-//<<<<<<< HEAD
-			ImGui::Separator();
-//<<<<<<< HEAD
-			if(ImGui::BeginMenu(ICON_FA_FILE_EXPORT " Export Data...")){
-				if(ImGui::BeginMenu("Objects")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("objects.json", EXPORT_OBJECTS, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("objects.csv", EXPORT_OBJECTS, 1);
-					ImGui::EndMenu();
-				}
-				if(ImGui::BeginMenu("Ped Paths")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("ped_paths.json", EXPORT_PED_PATHS, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("ped_paths.csv", EXPORT_PED_PATHS, 1);
-					ImGui::EndMenu();
-				}
-				if(ImGui::BeginMenu("Car Paths")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("car_paths.json", EXPORT_CAR_PATHS, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("car_paths.csv", EXPORT_CAR_PATHS, 1);
-					ImGui::EndMenu();
-				}
-				if(ImGui::BeginMenu("Map Zones")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("map_zones.json", EXPORT_MAP_ZONES, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("map_zones.csv", EXPORT_MAP_ZONES, 1);
-					ImGui::EndMenu();
-				}
-				if(ImGui::BeginMenu("Navig Zones")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("navig_zones.json", EXPORT_NAVIG_ZONES, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("navig_zones.csv", EXPORT_NAVIG_ZONES, 1);
-					ImGui::EndMenu();
-				}
-				if(ImGui::BeginMenu("Attrib Zones")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("attrib_zones.json", EXPORT_ATTRIB_ZONES, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("attrib_zones.csv", EXPORT_ATTRIB_ZONES, 1);
-					ImGui::EndMenu();
-				}
-				if(ImGui::BeginMenu("2dfx Effects")){
-					if(ImGui::MenuItem("As JSON"))
-						ExportData("2dfx_effects.json", EXPORT_2DFX, 0);
-					if(ImGui::MenuItem("As CSV"))
-						ExportData("2dfx_effects.csv", EXPORT_2DFX, 1);
-					ImGui::EndMenu();
-				}
-				ImGui::EndMenu();
-			}
-//=======
-			if(ImGui::MenuItem("Destroy Entire Map...")){
-				gOpenDestroyMap = true;
-			}
-			ImGui::SetItemTooltip("Marks every loaded map instance as deleted.\nOptionally clears SA water in the same step.");
-//>>>>>>> remotes/upstream/master
-			ImGui::Separator();
-//=======
 			// TODO: restore once whole-map export is safe for runtime use.
-//>>>>>>> remotes/upstream/master
 			if(ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
 		}
@@ -3889,7 +3839,6 @@ uiTimeWeather(void)
 
 	if(params.daynightPipe){
 		ImGui::SliderFloat("Day/Night Balance", &gDayNightBalance, 0.0f, 1.0f, "%.2f");
-		ImGui::Checkbox("Auto Day/Night", &gAutoAnimateDayNight);
 		if(gameplatform != PLATFORM_XBOX)
 			ImGui::SliderFloat("Wet Road Effect", &gWetRoadEffect, 0.0f, 1.0f, "%.2f");
 	}
@@ -3932,23 +3881,6 @@ static void
 uiView(void)
 {
 	ImGui::Checkbox("Draw Collisions", &gRenderCollision);
-	if(gRenderCollision){
-		ImGui::Indent();
-		ImGui::SliderFloat("Wireframe Alpha", &gCollisionWireframeAlpha, 0.0f, 1.0f, "%.2f");
-		ImGui::Checkbox("Render from DFF", &gRenderCollisionFromDff);
-		ImGui::Checkbox("Render Both (COL + DFF)", &gRenderCollisionBoth);
-		ImGui::Checkbox("Material Colors", &gRenderColMaterialColors);
-		ImGui::Checkbox("Filled Triangles", &gRenderColFilled);
-		if(gRenderCollisionFromDff || gRenderCollisionBoth){
-			ImGui::Checkbox("DFF Material Colors", &gRenderDffMaterialColors);
-		}
-		if(gRenderCollisionFromDff || gRenderCollisionBoth){
-			ImGui::Indent();
-			ImGui::SliderFloat("DFF Wireframe Distance", &gCollisionDffWireframeDist, 10.0f, 500.0f, "%.0f");
-			ImGui::Unindent();
-		}
-		ImGui::Unindent();
-	}
 	if(params.timecycle == GAME_SA)
 		ImGui::Checkbox("Draw TimeCycle boxes", &gRenderTimecycleBoxes);
 	ImGui::Checkbox("Draw Zones", &gRenderZones);
@@ -3973,21 +3905,6 @@ uiView(void)
 	}
 	ImGui::Checkbox("Render 2dfx Lights", &gRenderLightEffects);
 	ImGui::Checkbox("Show 2dfx Markers", &gRenderEffects);
-	ImGui::SeparatorText("World Labels");
-	ImGui::Checkbox("Show Object Area ID", &gRenderAreaIdLabels);
-	if(gRenderAreaIdLabels)
-		ImGui::Checkbox("Color by Area ID", &gAreaIdColorByValue);
-	ImGui::Checkbox("Show 2dfx Properties", &gRender2dfxLabels);
-	ImGui::Checkbox("Show Map Zone Labels", &gRenderMapZoneLabels);
-	ImGui::Checkbox("Show Navig Zone Labels", &gRenderNavigZoneLabels);
-	ImGui::Checkbox("Show Attrib Zone Labels", &gRenderAttribZoneLabels);
-	if(gRenderAreaIdLabels || gRender2dfxLabels || gRenderMapZoneLabels || gRenderNavigZoneLabels || gRenderAttribZoneLabels){
-		if(gRenderAreaIdLabels || gRender2dfxLabels)
-			ImGui::SliderFloat("Object Label Distance", &gWorldLabelDrawDist, 0.0f, 2000.0f, "%.0f");
-		if(gRenderMapZoneLabels || gRenderNavigZoneLabels || gRenderAttribZoneLabels)
-			ImGui::SliderFloat("Zone Label Distance", &gZoneLabelDrawDist, 0.0f, 2000.0f, "%.0f");
-		ImGui::SliderFloat("Text Far Clip", &gTextFarClip, 50.0f, 5000.0f, "%.0f");
-	}
 	ImGui::SeparatorText("Legacy Paths");
 	ImGui::Checkbox("Draw Legacy Car Paths", &gRenderLegacyCarPaths);
 	ImGui::Checkbox("Draw Legacy Ped Paths", &gRenderLegacyPedPaths);
@@ -4017,288 +3934,29 @@ uiView(void)
 		}
 		ImGui::Checkbox("Draw SA Area Grid", &gRenderSaAreaGrid);
 		ImGui::SetItemTooltip("Show the 8x8 area grid boundaries (750 unit cells).\nNodes cannot be moved across these boundaries.");
-		ImGui::SeparatorText("Carrec");
-		ImGui::Checkbox("Draw Carrecs", &gRenderCarrecs);
-		if(gRenderCarrecs){
-			ImGui::Indent();
-			ImGui::Checkbox("As Lines", &Carrec::gRenderAsLines);
-			ImGui::SetItemTooltip("Render .rrr file positions as orange lines\n\n.rrr file format (32 bytes per node):\n- Offset 0: time (INT32, ms)\n- Offset 4-8: velocity XYZ (INT16)\n- Offset 10-15: orientation (INT8)\n- Offset 16-19: steering, gas, brake, handbrake\n- Offset 20-31: position XYZ (FLOAT)");
-			ImGui::Checkbox("As Cubes", &Carrec::gRenderAsCubes);
-			ImGui::SetItemTooltip("Render .rrr file positions as orange cubes");
-			ImGui::SeparatorText("Render Properties");
-			ImGui::Checkbox("Position", &Carrec::gRenderPosition);
-			ImGui::SameLine();
-			ImGui::Checkbox("Velocity", &Carrec::gRenderVelocity);
-			ImGui::SameLine();
-			ImGui::Checkbox("Time", &Carrec::gRenderTime);
-			ImGui::SameLine();
-			ImGui::Checkbox("Steering", &Carrec::gRenderSteering);
-			ImGui::Checkbox("Render Last Node", &Carrec::gRenderLastNode);
-			ImGui::SetItemTooltip("Uncheck to not render the last position/cube\nAlso skips positions at (0,0,0)");
-			ImGui::Checkbox("Unique Colors", &Carrec::gRenderUniqueColors);
-			ImGui::SetItemTooltip("Render each .rrr file with a different color");
-			ImGui::Checkbox("Labels", &Carrec::gRenderLabels);
-			ImGui::SetItemTooltip("Show .rrr filename at first position");
-			if(ImGui::CollapsingHeader("Carrec Paths")){
-				if(ImGui::Button("All"))
-					Carrec::SetAllPaths(true);
-				ImGui::SameLine();
-				if(ImGui::Button("None"))
-					Carrec::SetAllPaths(false);
-				ImGui::SameLine();
-				ImGui::Text("(%d)", Carrec::GetNumPaths());
-				int numPaths = Carrec::GetNumPaths();
-				for(int i = 0; i < numPaths; i++){
-					CarrecPath *path = Carrec::GetPath(i);
-					if(path)
-						ImGui::Checkbox(path->name, &path->enabled);
-				}
-			}
-			ImGui::Unindent();
-		}
-		if(Cars::HasCarSpawns()){
-			ImGui::SeparatorText("Car Spawns");
-			ImGui::Checkbox("Draw Car Spawns", &gRenderCarSpawns);
-			if(gRenderCarSpawns){
-				ImGui::Indent();
-				ImGui::Checkbox("As Cubes", &Cars::gRenderAsCubes);
-				ImGui::SameLine();
-				ImGui::Checkbox("Angle", &Cars::gRenderAngle);
-				ImGui::SeparatorText("Properties");
-				ImGui::Checkbox("Vehicle ID", &Cars::gRenderVehicleId);
-				ImGui::SameLine();
-				ImGui::Checkbox("Primary Color", &Cars::gRenderPrimaryColor);
-				ImGui::SameLine();
-				ImGui::Checkbox("Secondary Color", &Cars::gRenderSecondaryColor);
-				ImGui::Checkbox("Force Spawn", &Cars::gRenderForceSpawn);
-				ImGui::SameLine();
-				ImGui::Checkbox("Alarm Prob", &Cars::gRenderAlarmProb);
-				ImGui::SameLine();
-				ImGui::Checkbox("Locked Prob", &Cars::gRenderLockedProb);
-				ImGui::Checkbox("Unknown 1", &Cars::gRenderUnknown1);
-				ImGui::SameLine();
-				ImGui::Checkbox("Unknown 2", &Cars::gRenderUnknown2);
-				ImGui::Checkbox("File Name", &Cars::gRenderFileName);
-				if(ImGui::Button("Export CSV")){
-					Cars::ExportCSV();
-				}
-ImGui::Unindent();
+	}
+
+
+	ImGui::Checkbox("Draw Water", &gRenderWater);
+	if(params.water == GAME_SA){
+		ImGui::SameLine();
+		if(ImGui::Button("Edit Water (H)")){
+			if(!WaterLevel::gWaterEditMode){
+				WaterLevel::gWaterEditMode = true;
+				ClearSelection();
+				if(gPlaceMode)
+					SpawnExitPlaceMode();
 			}
 		}
 	}
+	if(gameversion == GAME_SA)
+		ImGui::Checkbox("Play Animations", &gPlayAnimations);
 
-	ImGui::Checkbox("Draw Hole Data", &Holes::gRenderHoles);
-	if(Holes::gRenderHoles){
-		ImGui::Indent();
-		ImGui::SliderFloat("Distance", &Holes::gHoleDrawDist, 10.0f, 2000.0f);
-		ImGui::SliderFloat("Cube Size", &Holes::gHoleCubeSize, 0.5f, 20.0f);
-		ImGui::SliderFloat("Z Offset", &Holes::gHoleZOffset, -100.0f, 100.0f);
-		ImGui::Combo("Geometry", &Holes::gHoleGeomType, "Sphere\0Box\0Triangle\0");
-		ImGui::ColorEdit4("Color", Holes::gHoleColor);
-		ImGui::Unindent();
-	}
-
-	ImGui::Checkbox("Draw Script Entities", &ScriptEntities::gRenderScriptEntities);
-	if(ScriptEntities::gRenderScriptEntities){
-		ImGui::Indent();
-		ImGui::Checkbox("Select Entities", &ScriptEntities::gSelectScriptEntities);
-		ImGui::SameLine();
-		if(ScriptEntities::gSelectedScriptEntity >= 0){
-			ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Selected: %d", ScriptEntities::gSelectedScriptEntity);
-			ImGui::SameLine();
-			if(ImGui::SmallButton("Deselect")){
-				ScriptEntities::DeselectScriptEntity();
-			}
-		}
-		ImGui::Text("Entities: %d | Files: %d", ScriptEntities::GetNumEntities(), ScriptEntities::GetNumFiles());
-		if(ImGui::Button("Reload Scripts")){
-			ScriptEntities::Reload();
-		}
-		ImGui::SeparatorText("Files");
-		int numFiles = ScriptEntities::GetNumFiles();
-		if(numFiles == 0){
-			ImGui::TextDisabled("No script files found");
-		}else{
-			if(ImGui::Button("Enable All")){
-				for(int i = 0; i < numFiles; i++){
-					ScriptEntities::SetFileEnabled(i, true);
-				}
-			}
-			ImGui::SameLine();
-			if(ImGui::Button("Disable All")){
-				for(int i = 0; i < numFiles; i++){
-					ScriptEntities::SetFileEnabled(i, false);
-				}
-			}
-			float listHeight = ImGui::GetContentRegionAvail().y * 0.35f;
-			if(listHeight < 100.0f) listHeight = 100.0f;
-			if(listHeight > 300.0f) listHeight = 300.0f;
-			if(ImGui::BeginChild("##script_files", ImVec2(0, listHeight), true)){
-				for(int i = 0; i < numFiles; i++){
-					ScriptFile* sf = ScriptEntities::GetFile(i);
-					if(!sf) continue;
-					ImGui::PushID(i);
-					ImGui::Checkbox(sf->filename, &sf->enabled);
-					ImGui::SameLine();
-					ImGui::TextDisabled("(%d)", sf->numEntities);
-					ImGui::PopID();
-				}
-			}
-			ImGui::EndChild();
-		}
-		ImGui::SeparatorText("Entity List");
-		float entityListHeight = ImGui::GetContentRegionAvail().y * 0.35f;
-		if(entityListHeight < 100.0f) entityListHeight = 100.0f;
-		if(entityListHeight > 400.0f) entityListHeight = 400.0f;
-		if(ImGui::BeginChild("##script_entities", ImVec2(0, entityListHeight), true)){
-			for(int i = 0; i < numFiles; i++){
-				ScriptFile* sf = ScriptEntities::GetFile(i);
-				if(!sf) continue;
-				if(!sf->enabled) continue;
-				if(sf->numEntities == 0) continue;
-				if(ImGui::CollapsingHeader(sf->filename, ImGuiTreeNodeFlags_DefaultOpen)){
-					for(int j = 0; j < sf->numEntities; j++){
-						ScriptEntity* ent = ScriptEntities::GetEntityByFileAndIndex(i, j);
-						if(!ent) continue;
-						int globalIndex = sf->entityIndices[j];
-						ImGui::PushID(i * 10000 + j);
-						if(ScriptEntities::gSelectScriptEntities && ImGui::Selectable("##sel", globalIndex == ScriptEntities::gSelectedScriptEntity, ImGuiSelectableFlags_None, ImVec2(5, 0))){
-							ScriptEntities::SelectScriptEntity(globalIndex);
-						}
-						ImGui::SameLine();
-						ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "[%s]", ScriptEntities::GetEntityTypeName(ent->type));
-						ImGui::SameLine();
-						if(ent->modelName[0]){
-							ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "%s", ent->modelName);
-							ImGui::SameLine();
-						}
-						ImGui::Text("L%d: %.0f, %.0f, %.0f", ent->lineNum, ent->x, ent->y, ent->z);
-						ImGui::SameLine();
-						if(ImGui::SmallButton("Tele")){
-							ScriptEntities::TeleportToEntity(globalIndex);
-						}
-						ImGui::PopID();
-					}
-				}
-			}
-		}
-		ImGui::EndChild();
-		ImGui::SeparatorText("Vehicles");
-		ImGui::Checkbox("Cars", &ScriptEntities::gRenderScriptCars);
-		ImGui::SameLine();
-		ImGui::Checkbox("Gang Cars", &ScriptEntities::gRenderScriptGangCars);
-		ImGui::SameLine();
-		ImGui::Checkbox("Remote Cars", &ScriptEntities::gRenderScriptRemoteCars);
-		ImGui::Checkbox("Boats", &ScriptEntities::gRenderScriptBoats);
-		ImGui::SameLine();
-		ImGui::Checkbox("Trains", &ScriptEntities::gRenderScriptTrains);
-		ImGui::SameLine();
-		ImGui::Checkbox("Helis/Planes", &ScriptEntities::gRenderScriptHelis);
-		ImGui::SeparatorText("Characters");
-		ImGui::Checkbox("Peds", &ScriptEntities::gRenderScriptPeds);
-		ImGui::SameLine();
-		ImGui::Checkbox("Players", &ScriptEntities::gRenderScriptPlayers);
-		ImGui::SameLine();
-		ImGui::Checkbox("Spawns", &ScriptEntities::gRenderScriptSpawns);
-		ImGui::SeparatorText("Objects");
-		ImGui::Checkbox("Objects", &ScriptEntities::gRenderScriptObjects);
-		ImGui::SameLine();
-		ImGui::Checkbox("Doors", &ScriptEntities::gRenderScriptDoors);
-		ImGui::Checkbox("Garages", &ScriptEntities::gRenderScriptGarages);
-		ImGui::SameLine();
-		ImGui::Checkbox("Zones", &ScriptEntities::gRenderScriptZones);
-		ImGui::SameLine();
-		ImGui::Checkbox("Markers", &ScriptEntities::gRenderScriptMarkers);
-		ImGui::SeparatorText("Pickups & Effects");
-		ImGui::Checkbox("Pickups", &ScriptEntities::gRenderScriptPickups);
-		ImGui::SameLine();
-		ImGui::Checkbox("Blips", &ScriptEntities::gRenderScriptBlips);
-		ImGui::SameLine();
-		ImGui::Checkbox("FX", &ScriptEntities::gRenderScriptFx);
-		ImGui::Checkbox("Fires", &ScriptEntities::gRenderScriptFires);
-		ImGui::SameLine();
-		ImGui::Checkbox("Explosions", &ScriptEntities::gRenderScriptExplosions);
-		ImGui::SameLine();
-		ImGui::Checkbox("Projectiles", &ScriptEntities::gRenderScriptProjectiles);
-		ImGui::Checkbox("Searchlights", &ScriptEntities::gRenderScriptSearchlights);
-		ImGui::SameLine();
-		ImGui::Checkbox("Coronas/Lights", &ScriptEntities::gRenderScriptCoronas);
-		ImGui::SeparatorText("Script Locations");
-		ImGui::Checkbox("Checkpoints", &ScriptEntities::gRenderScriptCheckpoints);
-		ImGui::SameLine();
-		ImGui::Checkbox("Generators", &ScriptEntities::gRenderScriptGenerators);
-		ImGui::SameLine();
-		ImGui::Checkbox("Locations", &ScriptEntities::gRenderScriptLocates);
-		ImGui::Checkbox("Teleports", &ScriptEntities::gRenderScriptTeleports);
-		ImGui::SameLine();
-		ImGui::Checkbox("Cameras", &ScriptEntities::gRenderScriptCameras);
-		ImGui::SameLine();
-		ImGui::Checkbox("Routes/Paths", &ScriptEntities::gRenderScriptRoutes);
-		ImGui::Checkbox("Path Points", &ScriptEntities::gRenderScriptPathPoints);
-		ImGui::SameLine();
-		ImGui::Checkbox("Weather", &ScriptEntities::gRenderScriptWeathers);
-		ImGui::SeparatorText("Script Actions");
-		ImGui::Checkbox("Audio/Sound", &ScriptEntities::gRenderScriptAudio);
-		ImGui::SameLine();
-		ImGui::Checkbox("Draw/Visual", &ScriptEntities::gRenderScriptDraw);
-		ImGui::SameLine();
-		ImGui::Checkbox("Tasks", &ScriptEntities::gRenderScriptTasks);
-		ImGui::Checkbox("Damage/Health", &ScriptEntities::gRenderScriptDamage);
-		ImGui::SameLine();
-		ImGui::Checkbox("Mission Entities", &ScriptEntities::gRenderScriptMission);
-		ImGui::SeparatorText("Options");
-		ImGui::Checkbox("Show Text", &ScriptEntities::gRenderScriptText);
-		ImGui::SetNextItemWidth(80);
-		ImGui::InputFloat("Cube Distance", &ScriptEntities::gScriptCubeDistance, 50.0f, 100.0f, "%.0f");
-		ImGui::SetNextItemWidth(80);
-		ImGui::InputFloat("Text Distance", &ScriptEntities::gScriptLabelDistance, 10.0f, 50.0f, "%.0f");
-		ImGui::SetNextItemWidth(80);
-		ImGui::InputInt("Max Labels", &ScriptEntities::gMaxScriptLabels, 10, 50);
-		if (ScriptEntities::gMaxScriptLabels < 1) ScriptEntities::gMaxScriptLabels = 1;
-		if (ScriptEntities::gMaxScriptLabels > 1000) ScriptEntities::gMaxScriptLabels = 1000;
-		ImGui::SetNextItemWidth(80);
-		ImGui::InputFloat("Cube Size", &ScriptEntities::gScriptCubeSize, 0.1f, 0.5f, "%.1f");
-		ImGui::SeparatorText("Labels");
-		ImGui::Checkbox("File Name", &ScriptEntities::gRenderScriptFileName);
-		ImGui::SameLine();
-		ImGui::Checkbox("Model Name", &ScriptEntities::gRenderScriptModelName);
-		ImGui::SameLine();
-		ImGui::Checkbox("Line #", &ScriptEntities::gRenderScriptLineNumber);
-		ImGui::SameLine();
-		ImGui::Checkbox("Comment", &ScriptEntities::gRenderScriptComment);
-		if(ScriptEntities::gSelectedScriptEntity >= 0){
-			ImGui::Separator();
-			ImGui::Text("Selected Entity Properties:");
-			ImGui::SetNextItemWidth(80);
-			ImGui::InputFloat("X", &ScriptEntities::GetEntity(ScriptEntities::gSelectedScriptEntity)->x, 0.5f, 1.0f, "%.2f");
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(80);
-			ImGui::InputFloat("Y", &ScriptEntities::GetEntity(ScriptEntities::gSelectedScriptEntity)->y, 0.5f, 1.0f, "%.2f");
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(80);
-			ImGui::InputFloat("Z", &ScriptEntities::GetEntity(ScriptEntities::gSelectedScriptEntity)->z, 0.5f, 1.0f, "%.2f");
-		}
-		ImGui::Unindent();
-	}
-
- 	if(gameversion == GAME_SA)
- 		ImGui::Checkbox("Play Animations", &gPlayAnimations);
-
-//<<<<<<< HEAD
-	static int render = 0;
-	//ImGui::RadioButton("Render Normal", &render, 0);
-	//ImGui::RadioButton("Render only HD", &render, 1);
-	//ImGui::RadioButton("Render only LOD", &render, 2);
-	//gRenderOnlyHD = !!(render&1);
-	//gRenderOnlyLod = !!(render&2);
-	ImGui::Checkbox("Auto LOD Transition", &gAutoAnimateLOD);
-//=======
 	ImGui::RadioButton("Render Normal", &gRenderMode, 0);
 	ImGui::RadioButton("Render only HD", &gRenderMode, 1);
 	ImGui::RadioButton("Render only LOD", &gRenderMode, 2);
 	gRenderOnlyHD = gRenderMode == 1;
 	gRenderOnlyLod = gRenderMode == 2;
-//>>>>>>> remotes/upstream/master
 	ImGui::SliderFloat("Draw Distance", &TheCamera.m_LODmult, 0.5f, 3.0f, "%.3f");
 	ImGui::Checkbox("Render all Timed Objects", &gNoTimeCull);
 	if(params.numAreas)
@@ -4366,6 +4024,7 @@ uiRendering(void)
 			if(ImGui::Selectable(getAASamplesLabel(samples), selected)){
 				if(gRequestedAASamples != samples){
 					gRequestedAASamples = samples;
+					sk::requestedMultiSamplingLevels = samples;
 					SaveEditorSettingsNow();
 					Toast(TOAST_SAVE, "Anti-aliasing set to %s. Restart Ariane to apply it.",
 						getAASamplesLabel(samples));
@@ -4674,14 +4333,12 @@ static const char *fxTypeNames[] = {
 };
 static const char *flareTypeNames[] = { "None", "Sun", "Headlight" };
 
-namespace Effects {
-const char*
+static const char*
 GetEffectTypeName(int type)
 {
 	if(type < 0 || type >= (int)IM_ARRAYSIZE(fxTypeNames))
 		return "Unknown";
 	return fxTypeNames[type];
-}
 }
 
 void
@@ -4806,7 +4463,7 @@ uiFxTable(ObjectInst *inst)
 		ImGui::SameLine();
 
 		char label[64];
-		snprintf(label, sizeof(label), "%s##eff%d", Effects::GetEffectTypeName(e->type), i);
+		snprintf(label, sizeof(label), "%s##eff%d", GetEffectTypeName(e->type), i);
 
 		if(ImGui::Selectable(label, e == Effects::selectedEffect, ImGuiSelectableFlags_None, ImVec2(0, 0)))
 			Effects::selectedEffect = e;
@@ -5290,6 +4947,7 @@ loadSaveSettings(void)
 	normalizePersistentSettings();
 	gRequestedAASamples = sanitizeAASamples(gRequestedAASamples,
 		rw::Engine::getMaxMultiSamplingLevels());
+	sk::requestedMultiSamplingLevels = gRequestedAASamples;
 
 	RefreshIplVisibilityEntries();
 	for(size_t i = 0; i < gSavedIplVisibilityStates.size(); i++){
@@ -6198,68 +5856,6 @@ uiInstWindow(void)
 			if(ImGui::CollapsingHeader("Legacy Paths"))
 				uiPathInfo(inst);
 	}else{
-		static int lastCarSpawnIndex = -1;
-		int currentCarSpawnIndex = Cars::GetSelectedCarSpawnIndex();
-		if(currentCarSpawnIndex >= 0){
-			if(ImGui::CollapsingHeader("Car Spawn")){
-				CarSpawn *car = Cars::GetSelectedCarSpawn();
-				if(car){
-					ImGui::Text("Position: (%.2f, %.2f, %.2f)", car->x, car->y, car->z);
-					ImGui::Text("Angle: %.2f", car->angle);
-					ImGui::Separator();
-
-					static int editVehicleId;
-					static int editPrimaryColor;
-					static int editSecondaryColor;
-					static int editForceSpawn;
-					static int editAlarmProb;
-					static int editLockedProb;
-					static int editUnknown1;
-					static int editUnknown2;
-
-					if(currentCarSpawnIndex != lastCarSpawnIndex){
-						editVehicleId = car->vehicleId;
-						editPrimaryColor = car->primaryColor;
-						editSecondaryColor = car->secondaryColor;
-						editForceSpawn = car->forceSpawn;
-						editAlarmProb = car->alarmProb;
-						editLockedProb = car->lockedProb;
-						editUnknown1 = car->unknown1;
-						editUnknown2 = car->unknown2;
-						lastCarSpawnIndex = currentCarSpawnIndex;
-					}
-
-					ImGui::InputInt("Vehicle ID", &editVehicleId);
-					ImGui::InputInt("Primary Color", &editPrimaryColor);
-					ImGui::InputInt("Secondary Color", &editSecondaryColor);
-					ImGui::InputInt("Force Spawn", &editForceSpawn);
-					ImGui::InputInt("Alarm Prob", &editAlarmProb);
-					ImGui::InputInt("Locked Prob", &editLockedProb);
-					ImGui::InputInt("Unknown 1", &editUnknown1);
-					ImGui::InputInt("Unknown 2", &editUnknown2);
-
-					ImGui::Separator();
-
-					if(ImGui::Button("Apply Changes")){
-						Cars::SetSelectedCarSpawnProperty(0, editVehicleId);
-						Cars::SetSelectedCarSpawnProperty(1, editPrimaryColor);
-						Cars::SetSelectedCarSpawnProperty(2, editSecondaryColor);
-						Cars::SetSelectedCarSpawnProperty(3, editForceSpawn);
-						Cars::SetSelectedCarSpawnProperty(4, editAlarmProb);
-						Cars::SetSelectedCarSpawnProperty(5, editLockedProb);
-						Cars::SetSelectedCarSpawnProperty(6, editUnknown1);
-						Cars::SetSelectedCarSpawnProperty(7, editUnknown2);
-						Toast(TOAST_SAVE, "Car spawn properties updated");
-					}
-					ImGui::SameLine();
-					if(ImGui::Button("Save All")){
-						Cars::SaveAllCarSpawns();
-					}
-					ImGui::TextDisabled("File: %s", car->iplName);
-				}
-			}
-		}
-
 		if(Path::selectedNode)// && Path::selectedNode->isDetached())
 		if(ImGui::CollapsingHeader("Legacy Paths"))
 			uiPathInfo(nil);
@@ -6398,9 +5994,11 @@ uiBrowserWindow(void)
 			}
 
 			// Info line
-			ImGui::TextColored(ImVec4(0,1,0,1), "%s (ID: %d)", sel->m_name, sel->m_id);
-			ImGui::SameLine();
-			ImGui::TextDisabled("%.0f", sel->GetLargestDrawDist());
+			ImGui::TextColored(ImVec4(0,1,0,1), "ID: %d", sel->m_id);
+			InputTextReadonly<MODELNAMELEN>("Model##BrowserSelected", sel->m_name);
+			TxdDef *txd = GetTxdDef(sel->m_txdSlot);
+			InputTextReadonly<MODELNAMELEN>("TXD##BrowserSelected", txd ? txd->name : "");
+			ImGui::TextDisabled("Draw distance: %.0f", sel->GetLargestDrawDist());
 			int lodId = GetLodForObject(selId);
 			if(lodId >= 0){
 				ObjectDef *lod = GetObjectDef(lodId);
@@ -6766,7 +6364,7 @@ gui(void)
 	bool allowEditorShortcuts = !imguiKeyboardActive && !gCopyableTextCopiedThisFrame;
 
 	// Ctrl+D duplicate in water mode
-	if(WaterLevel::gWaterEditMode && CPad::IsCtrlDown() && CPad::IsKeyJustDown('D')){
+	if(allowEditorShortcuts && WaterLevel::gWaterEditMode && CPad::IsCtrlDown() && CPad::IsKeyJustDown('D')){
 		int count = WaterLevel::GetNumSelectedPolys();
 		if(count > 0){
 			WaterLevel::DuplicateSelectedWaterPolys();
@@ -6776,26 +6374,6 @@ gui(void)
 
 	// Copy/Paste (not in water edit mode)
 	if(allowEditorShortcuts && !WaterLevel::gWaterEditMode){
-		// Select all
-		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('A')){
-			if(!WaterLevel::gWaterEditMode){
-				ClearSelection();
-				int count = 0;
-				for(CPtrNode *p = instances.first; p; p = p->next){
-					ObjectInst *inst = (ObjectInst*)p->item;
-					if(!inst->m_isDeleted){
-						inst->Select();
-						count++;
-					}
-				}
-				if(count > 0){
-					if(count > 64)
-						Toast(TOAST_UNDO_REDO, "Selected %d instance(s) (gizmo limited to 64)", count);
-					else
-						Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
-				}
-			}
-		}
 		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')){
 			int before = 0;
 			for(CPtrNode *p = selection.first; p; p = p->next) before++;
@@ -6815,7 +6393,7 @@ gui(void)
 		}
 	}
 
-	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')) gUseViewerCam = !gUseViewerCam;
+	if(allowEditorShortcuts && !CPad::IsCtrlDown() && CPad::IsKeyJustDown('C')) gUseViewerCam = !gUseViewerCam;
 
 	// Prefabs
 	if(CPad::IsCtrlDown() && CPad::IsShiftDown() && CPad::IsKeyJustDown('E')){
