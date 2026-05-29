@@ -4,6 +4,9 @@
 #include "object_categories.h"
 #include <cmath>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 bool ReadCdImageEntryByLogicalPath(const char *logicalPath, std::vector<uint8> &data,
@@ -987,24 +990,30 @@ DeleteSelected(void)
 {
 	// Collect all instances that will be deleted (including LOD cascades)
 	// First, gather the selected ones
-	ObjectInst *toDelete[MAX_BATCH_OBJECTS];
-	int numToDelete = 0;
+	std::vector<ObjectInst*> toDelete;
+	bool capped = false;
 	CPtrNode *p, *next;
 	for(p = selection.first; p; p = next){
 		next = p->next;
 		ObjectInst *inst = (ObjectInst*)p->item;
-		if(!inst->m_isDeleted && numToDelete < MAX_BATCH_OBJECTS)
-			toDelete[numToDelete++] = inst;
+		if(!inst->m_isDeleted){
+			if((int)toDelete.size() >= MAX_BATCH_OBJECTS){
+				capped = true;
+				break;
+			}
+			toDelete.push_back(inst);
+		}
 	}
-	if(numToDelete == 0) return;
+	if(toDelete.empty()) return;
+	if(capped)
+		Toast(TOAST_DELETE, "Delete limited to first %d selected instance(s)", MAX_BATCH_OBJECTS);
 
 	// Now delete them and collect ALL that got deleted (including LOD cascade)
-	ObjectInst *allDeleted[MAX_BATCH_OBJECTS];
 	int numAllDeleted = 0;
 
 	// Snapshot which are already deleted
 	// Then delete, and find newly deleted ones
-	for(int i = 0; i < numToDelete; i++)
+	for(int i = 0; i < (int)toDelete.size(); i++)
 		toDelete[i]->Delete();
 
 	// Scan for all instances that are now deleted to record in undo
@@ -1019,7 +1028,7 @@ DeleteSelected(void)
 
 	// Simpler: just record what we explicitly asked to delete,
 	// the cascade is handled by Undelete() automatically
-	UndoRecordDelete(toDelete, numToDelete);
+	UndoRecordDelete(toDelete.data(), (int)toDelete.size());
 }
 
 int
@@ -1045,7 +1054,9 @@ DeleteAllInstances(void)
 
 // Object Spawner state
 bool gPlaceMode;
+bool gPrefabPlaceMode;
 static int spawnObjectId = -1;
+static char prefabPlacePath[1024];
 static GameFile *customIplFile = nil;
 static const char *DEFAULT_CUSTOM_IPL_PATH = "data\\maps\\custom.ipl";
 static const char *CUSTOM_IMPORT_IDE_PATH = "data/maps/ariane/custom.ide";
@@ -1223,7 +1234,7 @@ GetOrCreateCustomIplFile(void)
 		free(customIplFile->sourcePath);
 		customIplFile->sourcePath = strdup(currentCustomIplSourcePath);
 	}
-	if(currentCustomIplAppendToDat)
+	if(currentCustomIplAppendToDat && gSaveDestination != SAVE_DESTINATION_MODLOADER)
 		AppendIplToDat(currentCustomIplPath);
 	return customIplFile;
 }
@@ -1390,6 +1401,30 @@ SpawnExitPlaceMode(void)
 	spawnObjectId = -1;
 }
 
+void
+EnterPrefabPlaceMode(const char *path)
+{
+	if(path == nil || path[0] == '\0')
+		return;
+	strncpy(prefabPlacePath, path, sizeof(prefabPlacePath));
+	prefabPlacePath[sizeof(prefabPlacePath)-1] = '\0';
+	gPrefabPlaceMode = true;
+	gPlaceMode = false;
+}
+
+void
+ExitPrefabPlaceMode(void)
+{
+	gPrefabPlaceMode = false;
+	prefabPlacePath[0] = '\0';
+}
+
+const char*
+GetPrefabPlacePath(void)
+{
+	return prefabPlacePath;
+}
+
 // Object Browser categories
 static int categoryLookup[NUMOBJECTDEFS];
 
@@ -1508,6 +1543,81 @@ GetInstanceDiffFlags(ObjectInst *inst)
 	return flags;
 }
 
+struct PrefabEntry {
+	int objectId;
+	char modelName[MODELNAMELEN];
+	float relX, relY, relZ;
+	float rotX, rotY, rotZ, rotW;
+	int area;
+	int lodRef;
+};
+
+static bool
+ReadPrefabEntries(const char *path, PrefabEntry *entries, int maxEntries, int *numEntriesOut, bool showToasts)
+{
+	FILE *f = fopen(path, "r");
+	if(f == nil){
+		log("ReadPrefabEntries: failed to open %s\n", path);
+		return false;
+	}
+
+	char line[512];
+	int version = 0, game = -1, count = 0;
+	while(fgets(line, sizeof(line), f)){
+		if(strncmp(line, "ARIANE_PREFAB", 13) == 0)
+			sscanf(line, "ARIANE_PREFAB %d", &version);
+		else if(strncmp(line, "game", 4) == 0)
+			sscanf(line, "game %d", &game);
+		else if(strncmp(line, "count", 5) == 0){
+			sscanf(line, "count %d", &count);
+			break;
+		}
+	}
+
+	if(version < 1 || count <= 0){
+		fclose(f);
+		log("ReadPrefabEntries: invalid prefab header in %s\n", path);
+		return false;
+	}
+
+	if(game >= 0 && game != (int)params.map){
+		fclose(f);
+		if(showToasts)
+			Toast(TOAST_SPAWN, "Prefab is for a different game");
+		return false;
+	}
+
+	if(count > maxEntries){
+		if(showToasts)
+			Toast(TOAST_SPAWN, "Prefab too large (%d instances, max %d)", count, maxEntries);
+		count = maxEntries;
+	}
+
+	int numEntries = 0;
+	while(numEntries < count && fgets(line, sizeof(line), f)){
+		PrefabEntry *e = &entries[numEntries];
+		memset(e, 0, sizeof(*e));
+		e->lodRef = -1;
+		int n = sscanf(line, "%d , %29s %f , %f , %f , %f , %f , %f , %f , %d , %d",
+			&e->objectId, e->modelName, &e->relX, &e->relY, &e->relZ,
+			&e->rotX, &e->rotY, &e->rotZ, &e->rotW,
+			&e->area, &e->lodRef);
+		if(n >= 9){
+			char *comma = strchr(e->modelName, ',');
+			if(comma) *comma = '\0';
+			if(n < 11) e->lodRef = -1;
+			numEntries++;
+		}
+	}
+	fclose(f);
+
+	if(numEntries == 0)
+		return false;
+	if(numEntriesOut)
+		*numEntriesOut = numEntries;
+	return true;
+}
+
 // 3D Preview — uses Scene camera with swapped framebuffers (librw pattern)
 rw::Texture *gPreviewTexture;
 static rw::Raster *previewColorRaster;
@@ -1516,6 +1626,421 @@ static bool previewInited;
 static bool previewInitFailed;
 
 #define PREVIEW_SIZE 256
+#define OBJECT_THUMBNAIL_SIZE 96
+#define OBJECT_THUMBNAIL_SLOTS 64
+#define OBJECT_THUMBNAILS_PER_FRAME 3
+#define PREFAB_THUMBNAIL_SIZE 128
+#define PREFAB_THUMBNAIL_SLOTS 32
+#define PREFAB_THUMBNAILS_PER_FRAME 1
+
+struct ObjectThumbnailSlot
+{
+	int objectId;
+	bool ready;
+	uint32 lastUsed;
+	int lastRequestedFrame;
+	rw::Raster *colorRaster;
+	rw::Raster *depthRaster;
+	rw::Texture *texture;
+};
+
+static ObjectThumbnailSlot objectThumbnailSlots[OBJECT_THUMBNAIL_SLOTS];
+static uint32 objectThumbnailUseSeq;
+static bool objectThumbnailSlotsInited;
+static bool objectThumbnailInitFailed;
+
+struct PrefabThumbnailSlot
+{
+	char path[512];
+	bool ready;
+	uint32 lastUsed;
+	int lastRequestedFrame;
+	rw::Raster *colorRaster;
+	rw::Raster *depthRaster;
+	rw::Texture *texture;
+};
+
+static PrefabThumbnailSlot prefabThumbnailSlots[PREFAB_THUMBNAIL_SLOTS];
+static uint32 prefabThumbnailUseSeq;
+static bool prefabThumbnailInitFailed;
+
+static void
+initObjectThumbnailSlots(void)
+{
+	if(objectThumbnailSlotsInited)
+		return;
+	for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS; i++)
+		objectThumbnailSlots[i].objectId = -1;
+	objectThumbnailSlotsInited = true;
+}
+
+static void
+destroyObjectThumbnailSlot(ObjectThumbnailSlot *slot)
+{
+	if(slot->texture){
+		slot->texture->raster = nil;
+		slot->texture->destroy();
+		slot->texture = nil;
+	}
+	if(slot->colorRaster){ slot->colorRaster->destroy(); slot->colorRaster = nil; }
+	if(slot->depthRaster){ slot->depthRaster->destroy(); slot->depthRaster = nil; }
+	slot->objectId = -1;
+	slot->ready = false;
+	slot->lastUsed = 0;
+	slot->lastRequestedFrame = 0;
+}
+
+static void
+destroyPrefabThumbnailSlot(PrefabThumbnailSlot *slot)
+{
+	if(slot->texture){
+		slot->texture->raster = nil;
+		slot->texture->destroy();
+		slot->texture = nil;
+	}
+	if(slot->colorRaster){ slot->colorRaster->destroy(); slot->colorRaster = nil; }
+	if(slot->depthRaster){ slot->depthRaster->destroy(); slot->depthRaster = nil; }
+	slot->path[0] = '\0';
+	slot->ready = false;
+	slot->lastUsed = 0;
+	slot->lastRequestedFrame = 0;
+}
+
+static bool
+initObjectThumbnailSlot(ObjectThumbnailSlot *slot)
+{
+	if(slot->texture && slot->colorRaster && slot->depthRaster)
+		return true;
+	if(objectThumbnailInitFailed)
+		return false;
+
+	destroyObjectThumbnailSlot(slot);
+	slot->colorRaster = rw::Raster::create(OBJECT_THUMBNAIL_SIZE, OBJECT_THUMBNAIL_SIZE, 0, rw::Raster::CAMERATEXTURE);
+	if(slot->colorRaster == nil){
+		objectThumbnailInitFailed = true;
+		return false;
+	}
+	slot->depthRaster = rw::Raster::create(OBJECT_THUMBNAIL_SIZE, OBJECT_THUMBNAIL_SIZE, 0, rw::Raster::ZBUFFER);
+	if(slot->depthRaster == nil){
+		objectThumbnailInitFailed = true;
+		return false;
+	}
+	slot->texture = rw::Texture::create(slot->colorRaster);
+	if(slot->texture == nil){
+		objectThumbnailInitFailed = true;
+		return false;
+	}
+	slot->texture->setFilter(rw::Texture::LINEAR);
+	slot->objectId = -1;
+	slot->ready = false;
+	slot->lastUsed = 0;
+	slot->lastRequestedFrame = 0;
+	return true;
+}
+
+static bool
+initPrefabThumbnailSlot(PrefabThumbnailSlot *slot)
+{
+	if(slot->texture && slot->colorRaster && slot->depthRaster)
+		return true;
+	if(prefabThumbnailInitFailed)
+		return false;
+
+	char path[512];
+	strncpy(path, slot->path, sizeof(path));
+	path[sizeof(path)-1] = '\0';
+	destroyPrefabThumbnailSlot(slot);
+	strncpy(slot->path, path, sizeof(slot->path));
+	slot->path[sizeof(slot->path)-1] = '\0';
+
+	slot->colorRaster = rw::Raster::create(PREFAB_THUMBNAIL_SIZE, PREFAB_THUMBNAIL_SIZE, 0, rw::Raster::CAMERATEXTURE);
+	if(slot->colorRaster == nil){
+		prefabThumbnailInitFailed = true;
+		return false;
+	}
+	slot->depthRaster = rw::Raster::create(PREFAB_THUMBNAIL_SIZE, PREFAB_THUMBNAIL_SIZE, 0, rw::Raster::ZBUFFER);
+	if(slot->depthRaster == nil){
+		prefabThumbnailInitFailed = true;
+		return false;
+	}
+	slot->texture = rw::Texture::create(slot->colorRaster);
+	if(slot->texture == nil){
+		prefabThumbnailInitFailed = true;
+		return false;
+	}
+	slot->texture->setFilter(rw::Texture::LINEAR);
+	slot->ready = false;
+	slot->lastUsed = 0;
+	slot->lastRequestedFrame = 0;
+	return true;
+}
+
+static void
+BuildPreviewMatrix(rw::Matrix *matrix, const rw::Quat &rotation, const rw::V3d &translation)
+{
+	if(isSA() && std::fabs(rotation.x) <= 0.05f && std::fabs(rotation.y) <= 0.05f){
+		float w = rotation.w;
+		if(w < -1.0f) w = -1.0f;
+		if(w > 1.0f) w = 1.0f;
+		float heading = acosf(w) * (rotation.z < 0.0f ? 2.0f : -2.0f);
+		float s = sinf(heading);
+		float c = cosf(heading);
+
+		matrix->setIdentity();
+		matrix->right = { c, s, 0.0f };
+		matrix->up = { -s, c, 0.0f };
+		matrix->at = { 0.0f, 0.0f, 1.0f };
+		matrix->flags = rw::Matrix::TYPEORTHONORMAL;
+	}else
+		matrix->rotate(conj(rotation), rw::COMBINEREPLACE);
+	matrix->translate(&translation, rw::COMBINEPOSTCONCAT);
+}
+
+static bool
+renderObjectToRaster(int objectId, rw::Raster *colorRaster, rw::Raster *depthRaster, int size, float angle)
+{
+	ObjectDef *obj = GetObjectDef(objectId);
+	if(obj == nil)
+		return false;
+	if(!obj->IsLoaded()){
+		RequestObject(objectId);
+		return false;
+	}
+
+	rw::Atomic *atm = nil;
+	rw::Clump *clump = nil;
+	if(obj->m_type == ObjectDef::ATOMIC && obj->m_atomics[0]){
+		atm = obj->m_atomics[0]->clone();
+		rw::Frame *f = rw::Frame::create();
+		if(f)
+			atm->setFrame(f);
+		else{
+			atm->destroy();
+			atm = nil;
+		}
+	}else if(obj->m_type == ObjectDef::CLUMP && obj->m_clump)
+		clump = obj->m_clump->clone();
+	if(atm == nil && clump == nil)
+		return false;
+
+	float radius = 5.0f;
+	if(obj->m_colModel)
+		radius = obj->m_colModel->boundingSphere.radius;
+	if(radius < 1.0f) radius = 1.0f;
+	float dist = radius * 2.5f;
+
+	rw::V3d target = { 0.0f, 0.0f, 0.0f };
+	if(obj->m_colModel)
+		target = obj->m_colModel->boundingSphere.center;
+	rw::V3d eye = { target.x + dist*cosf(angle), target.y + dist*sinf(angle), target.z + dist*0.4f };
+	rw::V3d up = { 0.0f, 0.0f, -1.0f };
+	rw::V3d dir = normalize(sub(target, eye));
+
+	rw::Camera *cam = Scene.camera;
+	rw::Raster *savedFB = cam->frameBuffer;
+	rw::Raster *savedZB = cam->zBuffer;
+	float savedNear = cam->nearPlane;
+	float savedFar = cam->farPlane;
+	float savedFog = cam->fogPlane;
+	rw::Frame *camFrame = cam->getFrame();
+	rw::Matrix savedMatrix = camFrame->matrix;
+
+	cam->frameBuffer = colorRaster;
+	cam->zBuffer = depthRaster;
+	cam->setNearPlane(0.1f);
+	cam->setFarPlane(1000.0f);
+	cam->fogPlane = 900.0f;
+	cam->setFOV(55.0f, 1.0f);
+	camFrame->matrix.pos = eye;
+	camFrame->matrix.lookAt(dir, up);
+	camFrame->updateObjects();
+
+	rw::RGBA clearCol = { 34, 34, 34, 255 };
+	cam->clear(&clearCol, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
+	cam->beginUpdate();
+
+	rw::SetRenderState(rw::FOGENABLE, 0);
+	rw::SetRenderState(rw::ZTESTENABLE, 1);
+	rw::SetRenderState(rw::ZWRITEENABLE, 1);
+	pAmbient->setColor(0.7f, 0.7f, 0.7f);
+	pDirect->setColor(0.5f, 0.5f, 0.5f);
+
+	rw::Matrix ident;
+	ident.setIdentity();
+	if(atm){
+		atm->getFrame()->transform(&ident, rw::COMBINEREPLACE);
+		atm->render();
+	}else if(clump){
+		clump->getFrame()->transform(&ident, rw::COMBINEREPLACE);
+		clump->render();
+	}
+
+	cam->endUpdate();
+
+	cam->frameBuffer = savedFB;
+	cam->zBuffer = savedZB;
+	cam->setNearPlane(savedNear);
+	cam->setFarPlane(savedFar);
+	cam->fogPlane = savedFog;
+	cam->setFOV(TheCamera.m_fov, TheCamera.m_aspectRatio);
+	camFrame->matrix = savedMatrix;
+	camFrame->updateObjects();
+
+	if(atm){ atm->getFrame()->destroy(); atm->destroy(); }
+	if(clump){ clump->destroy(); }
+	Timecycle::SetLights();
+	return true;
+}
+
+static bool
+renderPrefabToRaster(const char *path, rw::Raster *colorRaster, rw::Raster *depthRaster, int size)
+{
+	PrefabEntry entries[256];
+	int numEntries = 0;
+	if(!ReadPrefabEntries(path, entries, 256, &numEntries, false))
+		return false;
+
+	bool anyMissing = false;
+	for(int i = 0; i < numEntries; i++){
+		ObjectDef *obj = GetObjectDef(entries[i].objectId);
+		if(obj == nil)
+			continue;
+		if(!obj->IsLoaded()){
+			RequestObject(entries[i].objectId);
+			anyMissing = true;
+		}
+	}
+	if(anyMissing)
+		return false;
+
+	rw::V3d minPt = { 1.0e30f, 1.0e30f, 1.0e30f };
+	rw::V3d maxPt = { -1.0e30f, -1.0e30f, -1.0e30f };
+	int numBounds = 0;
+	for(int i = 0; i < numEntries; i++){
+		ObjectDef *obj = GetObjectDef(entries[i].objectId);
+		if(obj == nil)
+			continue;
+		float radius = obj->m_colModel ? obj->m_colModel->boundingSphere.radius : 1.0f;
+		if(radius < 1.0f) radius = 1.0f;
+		rw::V3d center = { entries[i].relX, entries[i].relY, entries[i].relZ };
+		if(obj->m_colModel)
+			center = add(center, obj->m_colModel->boundingSphere.center);
+		minPt.x = min(minPt.x, center.x - radius);
+		minPt.y = min(minPt.y, center.y - radius);
+		minPt.z = min(minPt.z, center.z - radius);
+		maxPt.x = max(maxPt.x, center.x + radius);
+		maxPt.y = max(maxPt.y, center.y + radius);
+		maxPt.z = max(maxPt.z, center.z + radius);
+		numBounds++;
+	}
+	if(numBounds == 0)
+		return false;
+
+	rw::V3d target = scale(add(minPt, maxPt), 0.5f);
+	float radius = 1.0f;
+	for(int i = 0; i < numEntries; i++){
+		ObjectDef *obj = GetObjectDef(entries[i].objectId);
+		if(obj == nil)
+			continue;
+		float objRadius = obj->m_colModel ? obj->m_colModel->boundingSphere.radius : 1.0f;
+		rw::V3d center = { entries[i].relX, entries[i].relY, entries[i].relZ };
+		if(obj->m_colModel)
+			center = add(center, obj->m_colModel->boundingSphere.center);
+		float dist = length(sub(center, target)) + objRadius;
+		if(dist > radius)
+			radius = dist;
+	}
+	if(radius < 2.0f) radius = 2.0f;
+
+	uint32 hash = 2166136261u;
+	for(const char *s = path; *s; s++)
+		hash = (hash ^ (uint8)*s) * 16777619u;
+	float angle = 0.65f + (hash % 19) * 0.045f;
+	float dist = radius * 2.8f;
+	rw::V3d eye = { target.x + dist*cosf(angle), target.y + dist*sinf(angle), target.z + dist*0.45f };
+	rw::V3d up = { 0.0f, 0.0f, -1.0f };
+	rw::V3d dir = normalize(sub(target, eye));
+
+	rw::Camera *cam = Scene.camera;
+	rw::Raster *savedFB = cam->frameBuffer;
+	rw::Raster *savedZB = cam->zBuffer;
+	float savedNear = cam->nearPlane;
+	float savedFar = cam->farPlane;
+	float savedFog = cam->fogPlane;
+	rw::Frame *camFrame = cam->getFrame();
+	rw::Matrix savedMatrix = camFrame->matrix;
+
+	cam->frameBuffer = colorRaster;
+	cam->zBuffer = depthRaster;
+	cam->setNearPlane(0.1f);
+	cam->setFarPlane(max(1000.0f, radius * 8.0f));
+	cam->fogPlane = max(900.0f, radius * 7.0f);
+	cam->setFOV(58.0f, 1.0f);
+	camFrame->matrix.pos = eye;
+	camFrame->matrix.lookAt(dir, up);
+	camFrame->updateObjects();
+
+	rw::RGBA clearCol = { 34, 34, 34, 255 };
+	cam->clear(&clearCol, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
+	cam->beginUpdate();
+
+	rw::SetRenderState(rw::FOGENABLE, 0);
+	rw::SetRenderState(rw::ZTESTENABLE, 1);
+	rw::SetRenderState(rw::ZWRITEENABLE, 1);
+	pAmbient->setColor(0.72f, 0.72f, 0.72f);
+	pDirect->setColor(0.52f, 0.52f, 0.52f);
+
+	for(int i = 0; i < numEntries; i++){
+		ObjectDef *obj = GetObjectDef(entries[i].objectId);
+		if(obj == nil)
+			continue;
+
+		rw::Atomic *atm = nil;
+		rw::Clump *clump = nil;
+		if(obj->m_type == ObjectDef::ATOMIC && obj->m_atomics[0]){
+			atm = obj->m_atomics[0]->clone();
+			rw::Frame *f = rw::Frame::create();
+			if(f)
+				atm->setFrame(f);
+			else{
+				atm->destroy();
+				atm = nil;
+			}
+		}else if(obj->m_type == ObjectDef::CLUMP && obj->m_clump)
+			clump = obj->m_clump->clone();
+		if(atm == nil && clump == nil)
+			continue;
+
+		rw::Quat rotation = { entries[i].rotX, entries[i].rotY, entries[i].rotZ, entries[i].rotW };
+		rw::V3d translation = { entries[i].relX, entries[i].relY, entries[i].relZ };
+		rw::Matrix matrix;
+		BuildPreviewMatrix(&matrix, rotation, translation);
+		if(atm){
+			atm->getFrame()->transform(&matrix, rw::COMBINEREPLACE);
+			atm->render();
+		}else{
+			clump->getFrame()->transform(&matrix, rw::COMBINEREPLACE);
+			clump->render();
+		}
+
+		if(atm){ atm->getFrame()->destroy(); atm->destroy(); }
+		if(clump){ clump->destroy(); }
+	}
+
+	cam->endUpdate();
+
+	cam->frameBuffer = savedFB;
+	cam->zBuffer = savedZB;
+	cam->setNearPlane(savedNear);
+	cam->setFarPlane(savedFar);
+	cam->fogPlane = savedFog;
+	cam->setFOV(TheCamera.m_fov, TheCamera.m_aspectRatio);
+	camFrame->matrix = savedMatrix;
+	camFrame->updateObjects();
+
+	Timecycle::SetLights();
+	return true;
+}
 
 void
 InitPreviewRenderer(void)
@@ -1534,6 +2059,16 @@ InitPreviewRenderer(void)
 void
 ShutdownPreviewRenderer(void)
 {
+	initObjectThumbnailSlots();
+	for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS; i++)
+		destroyObjectThumbnailSlot(&objectThumbnailSlots[i]);
+	objectThumbnailUseSeq = 0;
+	objectThumbnailInitFailed = false;
+	for(int i = 0; i < PREFAB_THUMBNAIL_SLOTS; i++)
+		destroyPrefabThumbnailSlot(&prefabThumbnailSlots[i]);
+	prefabThumbnailUseSeq = 0;
+	prefabThumbnailInitFailed = false;
+
 	if(gPreviewTexture){
 		gPreviewTexture->raster = nil;
 		gPreviewTexture->destroy();
@@ -1542,6 +2077,142 @@ ShutdownPreviewRenderer(void)
 	if(previewColorRaster){ previewColorRaster->destroy(); previewColorRaster = nil; }
 	if(previewDepthRaster){ previewDepthRaster->destroy(); previewDepthRaster = nil; }
 	previewInited = false;
+}
+
+rw::Texture*
+GetObjectThumbnailTexture(int objectId)
+{
+	initObjectThumbnailSlots();
+	if(objectId < 0 || GetObjectDef(objectId) == nil)
+		return nil;
+
+	int requestFrame = ImGui::GetFrameCount();
+	for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS; i++){
+		ObjectThumbnailSlot *slot = &objectThumbnailSlots[i];
+		if(slot->objectId == objectId){
+			slot->lastUsed = ++objectThumbnailUseSeq;
+			slot->lastRequestedFrame = requestFrame;
+			return slot->ready ? slot->texture : nil;
+		}
+	}
+
+	ObjectThumbnailSlot *slot = nil;
+	for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS; i++)
+		if(objectThumbnailSlots[i].objectId < 0){
+			slot = &objectThumbnailSlots[i];
+			break;
+		}
+	if(slot == nil){
+		for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS; i++){
+			if(objectThumbnailSlots[i].lastRequestedFrame == requestFrame)
+				continue;
+			if(slot == nil || objectThumbnailSlots[i].lastUsed < slot->lastUsed)
+				slot = &objectThumbnailSlots[i];
+		}
+		if(slot == nil)
+			return nil;
+	}
+
+	slot->objectId = objectId;
+	slot->ready = false;
+	slot->lastUsed = ++objectThumbnailUseSeq;
+	slot->lastRequestedFrame = requestFrame;
+	return nil;
+}
+
+void
+RenderRequestedObjectThumbnails(void)
+{
+	initObjectThumbnailSlots();
+	if(objectThumbnailInitFailed)
+		return;
+
+	int attempted = 0;
+	for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS && attempted < OBJECT_THUMBNAILS_PER_FRAME; i++){
+		ObjectThumbnailSlot *slot = &objectThumbnailSlots[i];
+		if(slot->objectId < 0 || slot->ready)
+			continue;
+		attempted++;
+		int objectId = slot->objectId;
+		if(!initObjectThumbnailSlot(slot))
+			return;
+		slot->objectId = objectId;
+		float angle = 0.8f + (objectId % 11) * 0.08f;
+		if(renderObjectToRaster(objectId, slot->colorRaster, slot->depthRaster, OBJECT_THUMBNAIL_SIZE, angle)){
+			slot->ready = true;
+		}else{
+			ObjectDef *obj = GetObjectDef(objectId);
+			if(obj == nil)
+				slot->objectId = -1;
+		}
+	}
+}
+
+rw::Texture*
+GetPrefabThumbnailTexture(const char *path)
+{
+	if(path == nil || path[0] == '\0')
+		return nil;
+
+	int requestFrame = ImGui::GetFrameCount();
+	for(int i = 0; i < PREFAB_THUMBNAIL_SLOTS; i++){
+		PrefabThumbnailSlot *slot = &prefabThumbnailSlots[i];
+		if(slot->path[0] != '\0' && strcmp(slot->path, path) == 0){
+			slot->lastUsed = ++prefabThumbnailUseSeq;
+			slot->lastRequestedFrame = requestFrame;
+			return slot->ready ? slot->texture : nil;
+		}
+	}
+
+	PrefabThumbnailSlot *slot = nil;
+	for(int i = 0; i < PREFAB_THUMBNAIL_SLOTS; i++)
+		if(prefabThumbnailSlots[i].path[0] == '\0'){
+			slot = &prefabThumbnailSlots[i];
+			break;
+		}
+	if(slot == nil){
+		for(int i = 0; i < PREFAB_THUMBNAIL_SLOTS; i++){
+			if(prefabThumbnailSlots[i].lastRequestedFrame == requestFrame)
+				continue;
+			if(slot == nil || prefabThumbnailSlots[i].lastUsed < slot->lastUsed)
+				slot = &prefabThumbnailSlots[i];
+		}
+		if(slot == nil)
+			return nil;
+	}
+
+	strncpy(slot->path, path, sizeof(slot->path));
+	slot->path[sizeof(slot->path)-1] = '\0';
+	slot->ready = false;
+	slot->lastUsed = ++prefabThumbnailUseSeq;
+	slot->lastRequestedFrame = requestFrame;
+	return nil;
+}
+
+void
+RenderRequestedPrefabThumbnails(void)
+{
+	if(prefabThumbnailInitFailed)
+		return;
+
+	int attempted = 0;
+	for(int i = 0; i < PREFAB_THUMBNAIL_SLOTS && attempted < PREFAB_THUMBNAILS_PER_FRAME; i++){
+		PrefabThumbnailSlot *slot = &prefabThumbnailSlots[i];
+		if(slot->path[0] == '\0' || slot->ready)
+			continue;
+		attempted++;
+		char path[512];
+		strncpy(path, slot->path, sizeof(path));
+		path[sizeof(path)-1] = '\0';
+		if(!initPrefabThumbnailSlot(slot))
+			return;
+		strncpy(slot->path, path, sizeof(slot->path));
+		slot->path[sizeof(slot->path)-1] = '\0';
+		if(renderPrefabToRaster(path, slot->colorRaster, slot->depthRaster, PREFAB_THUMBNAIL_SIZE))
+			slot->ready = true;
+		else if(!doesFileExist(path))
+			slot->path[0] = '\0';
+	}
 }
 
 void
@@ -1566,7 +2237,7 @@ RenderPreviewObject(int objectId)
 
 	if(previewCloneId != objectId){
 		if(previewAtm){ previewAtm->getFrame()->destroy(); previewAtm->destroy(); previewAtm = nil; }
-		if(previewClump){ previewClump->getFrame()->destroy(); previewClump->destroy(); previewClump = nil; }
+		if(previewClump){ previewClump->destroy(); previewClump = nil; }
 		previewCloneId = objectId;
 
 		if(obj->m_type == ObjectDef::ATOMIC && obj->m_atomics[0]){
@@ -1656,9 +2327,8 @@ RenderPreviewObject(int objectId)
 }
 
 // Clipboard
-#define MAX_CLIPBOARD MAX_BATCH_OBJECTS
-static ObjectInst *clipboard[MAX_CLIPBOARD];
-static int clipboardCount;
+static std::vector<ObjectInst*> clipboard;
+static bool clipboardIsCut;
 
 // Undo/Redo system
 #define MAX_UNDO 128
@@ -1708,14 +2378,18 @@ static void
 pushUndo(UndoAction *a)
 {
 	// If we're not at the top, discard redo history
+	for(int i = undoPos; i < undoCount; i++)
+		undoStack[i] = UndoAction();
 	undoCount = undoPos;
 	if(undoCount >= MAX_UNDO){
 		// Shift everything down
-		memmove(&undoStack[0], &undoStack[1], (MAX_UNDO-1)*sizeof(UndoAction));
+		for(int i = 1; i < MAX_UNDO; i++)
+			undoStack[i-1] = std::move(undoStack[i]);
+		undoStack[MAX_UNDO-1] = UndoAction();
 		undoCount--;
 		undoPos--;
 	}
-	undoStack[undoCount] = *a;
+	undoStack[undoCount] = std::move(*a);
 	undoCount++;
 	undoPos = undoCount;
 }
@@ -1723,8 +2397,7 @@ pushUndo(UndoAction *a)
 void
 UndoRecordMove(ObjectInst *inst, rw::V3d oldPos, ObjectInst *lodInst, rw::V3d lodOldPos)
 {
-	UndoAction a;
-	memset(&a, 0, sizeof(a));
+	UndoAction a = {};
 	a.type = UNDO_MOVE;
 	a.inst = inst;
 	a.oldPos = oldPos;
@@ -1739,8 +2412,7 @@ UndoRecordMove(ObjectInst *inst, rw::V3d oldPos, ObjectInst *lodInst, rw::V3d lo
 void
 UndoRecordRotate(ObjectInst *inst, rw::Quat oldRot)
 {
-	UndoAction a;
-	memset(&a, 0, sizeof(a));
+	UndoAction a = {};
 	a.type = UNDO_ROTATE;
 	a.inst = inst;
 	a.oldRot = oldRot;
@@ -1751,24 +2423,20 @@ UndoRecordRotate(ObjectInst *inst, rw::Quat oldRot)
 void
 UndoRecordDelete(ObjectInst **insts, int num)
 {
-	UndoAction a;
-	memset(&a, 0, sizeof(a));
+	UndoAction a = {};
 	a.type = UNDO_DELETE;
-	a.numDeleted = num > MAX_BATCH_OBJECTS ? MAX_BATCH_OBJECTS : num;
-	for(int i = 0; i < a.numDeleted; i++)
-		a.deletedInsts[i] = insts[i];
+	a.numDeleted = num;
+	a.deletedInsts.assign(insts, insts + num);
 	pushUndo(&a);
 }
 
 void
 UndoRecordPaste(ObjectInst **insts, int num)
 {
-	UndoAction a;
-	memset(&a, 0, sizeof(a));
+	UndoAction a = {};
 	a.type = UNDO_PASTE;
-	a.numPasted = num > MAX_BATCH_OBJECTS ? MAX_BATCH_OBJECTS : num;
-	for(int i = 0; i < a.numPasted; i++)
-		a.pastedInsts[i] = insts[i];
+	a.numPasted = num;
+	a.pastedInsts.assign(insts, insts + num);
 	pushUndo(&a);
 }
 
@@ -1778,12 +2446,10 @@ UndoRecordTransformBatch(UndoTransform *transforms, int num)
 	if(num <= 0)
 		return;
 
-	UndoAction a;
-	memset(&a, 0, sizeof(a));
+	UndoAction a = {};
 	a.type = UNDO_TRANSFORM_BATCH;
-	a.numTransforms = num > MAX_BATCH_OBJECTS ? MAX_BATCH_OBJECTS : num;
-	for(int i = 0; i < a.numTransforms; i++)
-		a.transforms[i] = transforms[i];
+	a.numTransforms = num;
+	a.transforms.assign(transforms, transforms + num);
 	pushUndo(&a);
 }
 
@@ -1894,22 +2560,59 @@ AddInstance(void)
 void
 CopySelected(void)
 {
-	clipboardCount = 0;
+	clipboard.clear();
+	clipboardIsCut = false;
 	CPtrNode *p;
+	bool capped = false;
 	for(p = selection.first; p; p = p->next){
 		ObjectInst *inst = (ObjectInst*)p->item;
-		if(!inst->m_isDeleted && clipboardCount < MAX_CLIPBOARD)
-			clipboard[clipboardCount++] = inst;
+		if(!inst->m_isDeleted){
+			if((int)clipboard.size() >= MAX_BATCH_OBJECTS){
+				capped = true;
+				break;
+			}
+			clipboard.push_back(inst);
+		}
 	}
-	if(clipboardCount > 0)
-		log("Copied %d instance(s)\n", clipboardCount);
+	if(capped)
+		Toast(TOAST_COPY_PASTE, "Copy limited to first %d selected instance(s)", MAX_BATCH_OBJECTS);
+	if(!clipboard.empty())
+		log("Copied %d instance(s)\n", (int)clipboard.size());
+}
+
+void
+CutSelected(void)
+{
+	clipboard.clear();
+	clipboardIsCut = false;
+	CPtrNode *p;
+	bool capped = false;
+	for(p = selection.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		if(!inst->m_isDeleted){
+			if((int)clipboard.size() >= MAX_BATCH_OBJECTS){
+				capped = true;
+				break;
+			}
+			clipboard.push_back(inst);
+		}
+	}
+	if(capped)
+		Toast(TOAST_COPY_PASTE, "Cut limited to first %d selected instance(s)", MAX_BATCH_OBJECTS);
+	if(clipboard.empty())
+		return;
+
+	clipboardIsCut = true;
+	DeleteSelected();
+	log("Cut %d instance(s)\n", (int)clipboard.size());
 }
 
 static ObjectInst*
-cloneInstance(ObjectInst *src, GameFile *dstFile, int iplIndex, rw::V3d offset)
+cloneInstanceWithObjectId(ObjectInst *src, GameFile *dstFile, int iplIndex, rw::V3d offset,
+	int objectId, bool preserveBigBuildingState)
 {
 	ObjectInst *inst = AddInstance();
-	inst->m_objectId = src->m_objectId;
+	inst->m_objectId = objectId;
 	inst->m_area = src->m_area;
 	inst->m_rotation = src->m_rotation;
 	inst->m_translation.x = src->m_translation.x + offset.x;
@@ -1919,7 +2622,7 @@ cloneInstance(ObjectInst *src, GameFile *dstFile, int iplIndex, rw::V3d offset)
 	inst->m_isUnderWater = src->m_isUnderWater;
 	inst->m_isTunnel = src->m_isTunnel;
 	inst->m_isTunnelTransition = src->m_isTunnelTransition;
-	inst->m_isBigBuilding = src->m_isBigBuilding;
+	inst->m_isBigBuilding = preserveBigBuildingState ? src->m_isBigBuilding : false;
 	inst->m_lodId = -1;
 	inst->m_lod = nil;
 	inst->m_numChildren = 0;
@@ -1934,10 +2637,23 @@ cloneInstance(ObjectInst *src, GameFile *dstFile, int iplIndex, rw::V3d offset)
 	inst->m_wasSavedDeleted = false;
 	inst->m_gameEntityExists = false;
 	StampChangeSeq(inst);
+	ObjectDef *obj = GetObjectDef(objectId);
+	if(!preserveBigBuildingState && obj && obj->m_isBigBuilding)
+		inst->SetupBigBuilding();
 	inst->UpdateMatrix();
+	if(obj && !obj->IsLoaded()){
+		RequestObject(objectId);
+		LoadAllRequestedObjects();
+	}
 	inst->CreateRwObject();
 	InsertInstIntoSectors(inst);
 	return inst;
+}
+
+static ObjectInst*
+cloneInstance(ObjectInst *src, GameFile *dstFile, int iplIndex, rw::V3d offset)
+{
+	return cloneInstanceWithObjectId(src, dstFile, iplIndex, offset, src->m_objectId, true);
 }
 
 static GameFile*
@@ -1946,100 +2662,249 @@ findPasteDestinationFile(ObjectInst *src)
 	if(src == nil)
 		return nil;
 
-	if(src->m_imageIndex < 0)
-		return src->m_file;
-
-	// Prefer the linked text LOD file when it exists.
-	if(src->m_lod && src->m_lod->m_imageIndex < 0 && src->m_lod->m_file)
-		return src->m_lod->m_file;
-
-	// Streaming instances loaded alongside a text IPL share the same
-	// visibility/filter key. Reuse that scene so pasted copies land in a
-	// writable text IPL instead of an IMG entry name like foo_stream0.
-	if(src->m_iplFilterKey[0] != '\0'){
-		for(CPtrNode *p = instances.first; p; p = p->next){
-			ObjectInst *other = (ObjectInst*)p->item;
-			if(other == nil || other->m_imageIndex >= 0 || other->m_file == nil)
-				continue;
-			if(strcmp(other->m_iplFilterKey, src->m_iplFilterKey) == 0)
-				return other->m_file;
-		}
-	}
-
-	// Some streamed models have no loaded text anchor at all.
-	// Put pasted copies into the custom placement IPL instead of writing a
-	// bogus text file with the binary scene name.
+	// A paste creates a new placement. Keep it out of the source map IPL so
+	// copying one original-map object does not force a full replacement export
+	// of that area's IPL.
 	return GetOrCreateCustomIplFile();
 }
 
-void
+static bool
+sameIplFamily(ObjectInst *a, ObjectInst *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	if(a->m_iplFilterKey[0] != '\0' && b->m_iplFilterKey[0] != '\0' &&
+	   strcmp(a->m_iplFilterKey, b->m_iplFilterKey) == 0)
+		return true;
+	if(a->m_file && b->m_file && LogicalPathEquals(a->m_file->name, b->m_file->name))
+		return true;
+	return false;
+}
+
+static float
+instanceDistanceSq(ObjectInst *a, ObjectInst *b)
+{
+	rw::V3d d = sub(a->m_translation, b->m_translation);
+	return dot(d, d);
+}
+
+static int
+getAssociatedLodObjectId(ObjectInst *src)
+{
+	if(src == nil || !isSA())
+		return -1;
+	int lodObjId = GetLodForObject(src->m_objectId);
+	if(lodObjId < 0 || lodObjId == src->m_objectId || GetObjectDef(lodObjId) == nil)
+		return -1;
+	return lodObjId;
+}
+
+static ObjectInst*
+findNearbyAssociatedLod(ObjectInst *src, int lodObjId)
+{
+	if(src == nil || lodObjId < 0)
+		return nil;
+
+	ObjectInst *bestSameFamily = nil;
+	ObjectInst *bestAnyFamily = nil;
+	float bestSameFamilyDistSq = 1.0e30f;
+	float bestAnyFamilyDistSq = 1.0e30f;
+
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *other = (ObjectInst*)p->item;
+		if(other == nil || other == src || other->m_isDeleted)
+			continue;
+		if(other->m_objectId != lodObjId)
+			continue;
+
+		float distSq = instanceDistanceSq(src, other);
+		if(sameIplFamily(src, other) && distSq < bestSameFamilyDistSq){
+			bestSameFamily = other;
+			bestSameFamilyDistSq = distSq;
+		}
+		if(distSq < bestAnyFamilyDistSq){
+			bestAnyFamily = other;
+			bestAnyFamilyDistSq = distSq;
+		}
+	}
+
+	// LOD pairs normally sit at the same placement. Keep the fallback close
+	// enough to avoid borrowing a repeated LOD model from another zone.
+	if(bestSameFamily && bestSameFamilyDistSq <= sq(250.0f))
+		return bestSameFamily;
+	if(bestAnyFamily && bestAnyFamilyDistSq <= sq(25.0f))
+		return bestAnyFamily;
+	return nil;
+}
+
+static ObjectInst*
+findPasteSourceLod(ObjectInst *src, int *lodObjIdOut, bool *usedAssociationOut)
+{
+	if(lodObjIdOut)
+		*lodObjIdOut = -1;
+	if(usedAssociationOut)
+		*usedAssociationOut = false;
+	if(src == nil || !isSA())
+		return nil;
+	if(src->m_lod && !src->m_lod->m_isDeleted)
+		return src->m_lod;
+
+	int lodObjId = getAssociatedLodObjectId(src);
+	if(lodObjIdOut)
+		*lodObjIdOut = lodObjId;
+	if(lodObjId < 0)
+		return nil;
+
+	ObjectInst *lod = findNearbyAssociatedLod(src, lodObjId);
+	if(lod && usedAssociationOut)
+		*usedAssociationOut = true;
+	return lod;
+}
+
+static rw::V3d
+getClipboardPasteOffset(ObjectInst **toPaste, int numToPaste)
+{
+	rw::V3d anchor = { 0.0f, 0.0f, 0.0f };
+	int numAnchors = 0;
+
+	for(int i = 0; i < numToPaste; i++){
+		ObjectInst *inst = toPaste[i];
+		if(inst == nil || inst->m_isDeleted)
+			continue;
+		anchor.x += inst->m_translation.x;
+		anchor.y += inst->m_translation.y;
+		anchor.z += inst->m_translation.z;
+		numAnchors++;
+	}
+
+	if(numAnchors == 0)
+		return { 10.0f, 0.0f, 0.0f };
+
+	float invCount = 1.0f / (float)numAnchors;
+	anchor.x *= invCount;
+	anchor.y *= invCount;
+	anchor.z *= invCount;
+
+	rw::V3d pastePos = TheCamera.m_target;
+	rw::V3d groundHit;
+	if(gPlaceSnapToGround && GetGroundPlacementSurface(pastePos, &groundHit, nil, true))
+		pastePos = groundHit;
+
+	return sub(pastePos, anchor);
+}
+
+static int
+PasteCutClipboard(void)
+{
+	std::vector<ObjectInst*> restored;
+
+	ClearSelection();
+	for(int i = 0; i < (int)clipboard.size(); i++){
+		ObjectInst *inst = clipboard[i];
+		if(inst == nil)
+			continue;
+		if(inst->m_isDeleted)
+			inst->Undelete();
+		inst->Select();
+		restored.push_back(inst);
+	}
+
+	if(!restored.empty()){
+		UndoRecordPaste(restored.data(), (int)restored.size());
+		log("Restored %d cut instance(s)\n", (int)restored.size());
+	}
+	clipboardIsCut = false;
+	return (int)restored.size();
+}
+
+int
 PasteClipboard(void)
 {
-	if(clipboardCount == 0) return;
+	if(clipboard.empty()) return 0;
+	if(clipboardIsCut)
+		return PasteCutClipboard();
 
-	rw::V3d offset = { 10.0f, 0.0f, 0.0f };
-
-	ObjectInst *pasted[MAX_CLIPBOARD * 2];
-	int numPasted = 0;
+	std::vector<ObjectInst*> pasted;
 
 	// Deduplicate: skip LODs that are already the m_lod of another
 	// clipboard entry (they'll be auto-copied with their HD parent)
-	ObjectInst *toPaste[MAX_CLIPBOARD];
-	int numToPaste = 0;
+	std::vector<ObjectInst*> toPaste;
+	std::unordered_set<ObjectInst*> lodsCopiedWithParent;
+	lodsCopiedWithParent.reserve(clipboard.size());
 
-	for(int i = 0; i < clipboardCount; i++){
-		bool isLodOfAnother = false;
-		for(int j = 0; j < clipboardCount; j++){
-			if(i != j && clipboard[j]->m_lod == clipboard[i]){
-				isLodOfAnother = true;
-				break;
-			}
-		}
-		if(!isLodOfAnother)
-			toPaste[numToPaste++] = clipboard[i];
+	for(int i = 0; i < (int)clipboard.size(); i++){
+		ObjectInst *lod = findPasteSourceLod(clipboard[i], nil, nil);
+		if(lod)
+			lodsCopiedWithParent.insert(lod);
 	}
+	for(int i = 0; i < (int)clipboard.size(); i++)
+		if(lodsCopiedWithParent.find(clipboard[i]) == lodsCopiedWithParent.end())
+			toPaste.push_back(clipboard[i]);
+
+	rw::V3d offset = getClipboardPasteOffset(toPaste.data(), (int)toPaste.size());
 
 	ClearSelection();
 
-	for(int i = 0; i < numToPaste; i++){
+	int recoveredLods = 0;
+	int generatedLods = 0;
+	std::unordered_map<GameFile*, int> maxIplIndexByFile;
+
+	for(int i = 0; i < (int)toPaste.size(); i++){
 		ObjectInst *src = toPaste[i];
-		ObjectInst *srcLod = src->m_lod;
+		int associatedLodObjId = -1;
+		bool usedAssociatedSource = false;
+		ObjectInst *srcLod = findPasteSourceLod(src, &associatedLodObjId, &usedAssociatedSource);
 
 		GameFile *dstFile = findPasteDestinationFile(src);
 
-		// Find the max m_iplIndex for this file (text IPL instances only)
-		int maxIplIndex = -1;
-		CPtrNode *p;
-		for(p = instances.first; p; p = p->next){
-			ObjectInst *other = (ObjectInst*)p->item;
-			if(other->m_file == dstFile && other->m_imageIndex < 0){
-				if(other->m_iplIndex > maxIplIndex)
-					maxIplIndex = other->m_iplIndex;
+		std::unordered_map<GameFile*, int>::iterator maxIt = maxIplIndexByFile.find(dstFile);
+		if(maxIt == maxIplIndexByFile.end()){
+			int maxIplIndex = -1;
+			CPtrNode *p;
+			for(p = instances.first; p; p = p->next){
+				ObjectInst *other = (ObjectInst*)p->item;
+				if(other->m_file == dstFile && other->m_imageIndex < 0){
+					if(other->m_iplIndex > maxIplIndex)
+						maxIplIndex = other->m_iplIndex;
+				}
 			}
+			maxIt = maxIplIndexByFile.insert(std::make_pair(dstFile, maxIplIndex)).first;
 		}
 
 		// Paste LOD first (if any) so we have its iplIndex for the HD's lodId
 		ObjectInst *newLod = nil;
 		if(isSA() && srcLod && !srcLod->m_isDeleted){
-			newLod = cloneInstance(srcLod, dstFile, ++maxIplIndex, offset);
-			pasted[numPasted++] = newLod;
+			newLod = cloneInstance(srcLod, dstFile, ++maxIt->second, offset);
+			pasted.push_back(newLod);
+			if(usedAssociatedSource)
+				recoveredLods++;
+		}else if(isSA() && associatedLodObjId >= 0){
+			newLod = cloneInstanceWithObjectId(src, dstFile, ++maxIt->second, offset,
+				associatedLodObjId, false);
+			pasted.push_back(newLod);
+			generatedLods++;
 		}
 
 		// Paste HD
-		ObjectInst *newHd = cloneInstance(src, dstFile, ++maxIplIndex, offset);
+		ObjectInst *newHd = cloneInstance(src, dstFile, ++maxIt->second, offset);
 
 		// Link LOD
 		if(newLod)
 			finalizeLinkedLod(newHd, newLod);
 
 		newHd->Select();
-		pasted[numPasted++] = newHd;
+		pasted.push_back(newHd);
 	}
 
-	if(numPasted > 0){
-		UndoRecordPaste(pasted, numPasted);
-		log("Pasted %d instance(s)\n", numPasted);
+	if(!pasted.empty()){
+		UndoRecordPaste(pasted.data(), (int)pasted.size());
+		log("Pasted %d instance(s)\n", (int)pasted.size());
+		if(recoveredLods > 0)
+			log("Recovered %d LOD link(s) from nearby associated instances\n", recoveredLods);
+			if(generatedLods > 0)
+				log("Generated %d associated LOD instance(s) during paste\n", generatedLods);
 	}
+	return (int)pasted.size();
 }
 
 int
@@ -2222,83 +3087,13 @@ ExportSelectedTxds(const char *dir, int *numFailed)
 	return exported;
 }
 
-struct PrefabEntry {
-	int objectId;
-	char modelName[MODELNAMELEN];
-	float relX, relY, relZ;
-	float rotX, rotY, rotZ, rotW;
-	int area;
-	int lodRef;
-};
-
 int
-ImportPrefab(const char *path)
+ImportPrefabAt(const char *path, rw::V3d spawnPos)
 {
-	FILE *f = fopen(path, "r");
-	if(f == nil){
-		log("ImportPrefab: failed to open %s\n", path);
-		return 0;
-	}
-
-	char line[512];
-	int version = 0, game = -1, count = 0;
-
-	// Parse header
-	while(fgets(line, sizeof(line), f)){
-		if(strncmp(line, "ARIANE_PREFAB", 13) == 0){
-			sscanf(line, "ARIANE_PREFAB %d", &version);
-		}else if(strncmp(line, "game", 4) == 0){
-			sscanf(line, "game %d", &game);
-		}else if(strncmp(line, "count", 5) == 0){
-			sscanf(line, "count %d", &count);
-			break;
-		}
-	}
-
-	if(version < 1 || count <= 0){
-		fclose(f);
-		log("ImportPrefab: invalid prefab header in %s\n", path);
-		return 0;
-	}
-
-	if(game >= 0 && game != (int)params.map){
-		fclose(f);
-		Toast(TOAST_SPAWN, "Prefab is for a different game");
-		return 0;
-	}
-
-	if(count > 256){
-		Toast(TOAST_SPAWN, "Prefab too large (%d instances, max 256)", count);
-		count = 256;
-	}
-
-	// Parse entries
-	PrefabEntry *entries = new PrefabEntry[count];
+	PrefabEntry entries[256];
 	int numEntries = 0;
-
-	while(numEntries < count && fgets(line, sizeof(line), f)){
-		PrefabEntry *e = &entries[numEntries];
-		int n = sscanf(line, "%d , %29s %f , %f , %f , %f , %f , %f , %f , %d , %d",
-			&e->objectId, e->modelName, &e->relX, &e->relY, &e->relZ,
-			&e->rotX, &e->rotY, &e->rotZ, &e->rotW,
-			&e->area, &e->lodRef);
-		if(n >= 9){
-			// Strip trailing comma from modelName if present
-			char *comma = strchr(e->modelName, ',');
-			if(comma) *comma = '\0';
-			if(n < 11) e->lodRef = -1;
-			numEntries++;
-		}
-	}
-	fclose(f);
-
-	if(numEntries == 0){
-		delete[] entries;
+	if(!ReadPrefabEntries(path, entries, 256, &numEntries, true))
 		return 0;
-	}
-
-	// Spawn position: in front of camera
-	rw::V3d spawnPos = add(TheCamera.m_position, scale(TheCamera.m_at, 50.0f));
 
 	GameFile *file = GetOrCreateCustomIplFile();
 	int maxIdx = GetMaxIplIndexForFile(file);
@@ -2306,7 +3101,8 @@ ImportPrefab(const char *path)
 	// Pass 1: create all instances
 	ObjectInst *created[256];
 	ObjectInst *pasted[256];
-	int numCreated = 0;
+	for(int i = 0; i < 256; i++)
+		created[i] = nil;
 	int numPasted = 0;
 
 	for(int i = 0; i < numEntries; i++){
@@ -2397,9 +3193,37 @@ ImportPrefab(const char *path)
 		UndoRecordPaste(pasted, numPasted > 64 ? 64 : numPasted);
 	}
 
-	delete[] entries;
 	log("ImportPrefab: placed %d instance(s) from %s\n", numPasted, path);
 	return numPasted;
+}
+
+int
+ImportPrefab(const char *path)
+{
+	rw::V3d spawnPos = add(TheCamera.m_position, scale(TheCamera.m_at, 50.0f));
+	return ImportPrefabAt(path, spawnPos);
+}
+
+void
+RenderPrefabPlacementGhost(const char *path, rw::V3d spawnPos)
+{
+	PrefabEntry entries[256];
+	int numEntries = 0;
+	if(path == nil || path[0] == '\0')
+		return;
+	if(!ReadPrefabEntries(path, entries, 256, &numEntries, false))
+		return;
+
+	rw::RGBA col = { 80, 180, 255, 95 };
+	for(int i = 0; i < numEntries; i++){
+		PrefabEntry *e = &entries[i];
+		rw::V3d pos;
+		pos.x = spawnPos.x + e->relX;
+		pos.y = spawnPos.y + e->relY;
+		pos.z = spawnPos.z + e->relZ;
+		rw::Quat rot = { e->rotX, e->rotY, e->rotZ, e->rotW };
+		RenderPlacementGhost(e->objectId, pos, rot, col);
+	}
 }
 
 int numSectorsX, numSectorsY;

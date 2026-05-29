@@ -5,6 +5,7 @@
 #include <rw.h>
 #include <skeleton.h>
 #include "imgui/ImGuizmo.h"
+#include <vector>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -430,8 +431,9 @@ extern float gGizmoSnapTranslate;
 // Rect-select (marquee selection)
 extern bool gRectSelectActive;	// true when LMB is consumed by rect-select (blocks camera)
 
-// Batch operation limit (undo, delete, snap, gizmo drag, clipboard, etc.)
-#define MAX_BATCH_OBJECTS 512
+// Practical cap for expensive selection operations. The selection list itself
+// is uncapped, but operations that allocate temporary buffers stop here.
+#define MAX_BATCH_OBJECTS 20000
 
 // Undo/Redo
 enum UndoType {
@@ -469,13 +471,13 @@ struct UndoAction {
 	rw::V3d lodOldPos;
 	rw::V3d lodNewPos;
 	// For DELETE: list of deleted instances (inst + LOD cascade)
-	ObjectInst *deletedInsts[MAX_BATCH_OBJECTS];
+	std::vector<ObjectInst*> deletedInsts;
 	int numDeleted;
 	// For PASTE: list of pasted instances (to delete on undo)
-	ObjectInst *pastedInsts[MAX_BATCH_OBJECTS];
+	std::vector<ObjectInst*> pastedInsts;
 	int numPasted;
 	// For batch transform actions (snap to ground, etc.)
-	UndoTransform transforms[MAX_BATCH_OBJECTS];
+	std::vector<UndoTransform> transforms;
 	int numTransforms;
 };
 
@@ -489,11 +491,18 @@ void Redo(void);
 
 // Copy/Paste
 void CopySelected(void);
-void PasteClipboard(void);
+void CutSelected(void);
+int PasteClipboard(void);
 
 // Prefabs
 int ExportPrefab(const char *path);
 int ImportPrefab(const char *path);
+int ImportPrefabAt(const char *path, rw::V3d spawnPos);
+extern bool gPrefabPlaceMode;
+void EnterPrefabPlaceMode(const char *path);
+void ExitPrefabPlaceMode(void);
+const char *GetPrefabPlacePath(void);
+void RenderPrefabPlacementGhost(const char *path, rw::V3d spawnPos);
 int ExportSelectedDffs(const char *dir, int *numFailed);
 int ExportSelectedTxds(const char *dir, int *numFailed);
 
@@ -536,6 +545,7 @@ void SetCustomPlacementIpl(const char *logicalPath, const char *sourcePath, bool
 int GetLodForObject(int id);
 int SnapSelectedToGround(bool alignRotation);
 bool GetGroundPlacementSurface(rw::V3d pos, rw::V3d *hitPos, rw::V3d *hitNormal = nil, bool ignoreSelection = false);
+bool GetPlacementSurfaceHit(rw::V3d *hitPos, rw::V3d *hitNormal);
 rw::V3d GetPlacementPosition(void);
 float GetPlacementBaseOffset(int objectId);
 
@@ -551,6 +561,11 @@ void ToggleFavourite(int id);
 void InitPreviewRenderer(void);
 void ShutdownPreviewRenderer(void);
 void RenderPreviewObject(int objectId);
+void RenderPlacementGhost(int objectId, rw::V3d position, rw::Quat rotation, rw::RGBA color);
+void RenderRequestedObjectThumbnails(void);
+rw::Texture *GetObjectThumbnailTexture(int objectId);
+void RenderRequestedPrefabThumbnails(void);
+rw::Texture *GetPrefabThumbnailTexture(const char *path);
 extern rw::Texture *gPreviewTexture;
 void HandleCustomImportDrop(const char *path);
 

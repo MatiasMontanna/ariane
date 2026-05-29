@@ -126,32 +126,46 @@ static int firstID, lastID;
 void
 LoadObject(char *line)
 {
-	int id;
+	int id = -1;
 	char model[MODELNAMELEN];
 	char txd[MODELNAMELEN];
-	int numAtomics;
-	float dist[3];
-	int flags;
+	int numAtomics = 1;
+	float dist[3] = { 0.0f, 0.0f, 0.0f };
+	int flags = 0;
 	int n;
 
 	// SA format
-	numAtomics = 1;
 	n = sscanf(line, "%d %s %s %f %d", &id, model, txd, dist, &flags);
-	if(gameversion != GAME_SA || n != 5 || dist[0] < 4){
+	if(gameversion == GAME_SA){
+		if(n == 4){
+			// Some mods leave editor notes where the flags field should be.
+			flags = 0;
+		}else if(n != 5){
+			log("warning: invalid SA object definition ignored: %s\n", line);
+			return;
+		}
+	}else{
 		// III and VC format
-		sscanf(line, "%d %s %s %d", &id, model, txd, &numAtomics);
+		n = sscanf(line, "%d %s %s %d", &id, model, txd, &numAtomics);
+		if(n != 4 || numAtomics < 1 || numAtomics > 3){
+			log("warning: invalid object definition ignored: %s\n", line);
+			return;
+		}
 		switch(numAtomics){
 		case 1:
-			sscanf(line, "%d %s %s %d %f %d",
-			       &id, model, txd, &numAtomics, dist, &flags);
+			n = sscanf(line, "%d %s %s %d %f %d",
+			           &id, model, txd, &numAtomics, dist, &flags);
+			if(n != 6) return;
 			break;
 		case 2:
-			sscanf(line, "%d %s %s %d %f %f %d",
-			       &id, model, txd, &numAtomics, dist, dist+1, &flags);
+			n = sscanf(line, "%d %s %s %d %f %f %d",
+			           &id, model, txd, &numAtomics, dist, dist+1, &flags);
+			if(n != 7) return;
 			break;
 		case 3:
-			sscanf(line, "%d %s %s %d %f %f %f %d",
-			       &id, model, txd, &numAtomics, dist, dist+1, dist+2, &flags);
+			n = sscanf(line, "%d %s %s %d %f %f %f %d",
+			           &id, model, txd, &numAtomics, dist, dist+1, dist+2, &flags);
+			if(n != 8) return;
 			break;
 		}
 	}
@@ -399,6 +413,42 @@ LoadTXDParent(char *line)
 static std::vector<ObjectInst*> tmpInsts;
 static int iplInstCounter;  // tracks instance index within current IPL file
 
+static char*
+SkipCommentPrefix(char *line)
+{
+	while(*line == '#')
+		line++;
+	return skipWhite(line);
+}
+
+static bool
+LooksLikeObjectInstanceLine(char *line)
+{
+	using namespace rw;
+
+	FileObjectInstance fi;
+	char model[MODELNAMELEN];
+	float area, sx, sy, sz;
+	if(isSA()){
+		return sscanf(line, "%d %s %d  %f %f %f  %f %f %f %f  %d",
+		              &fi.objectId, model, &fi.area,
+		              &fi.position.x, &fi.position.y, &fi.position.z,
+		              &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w,
+		              &fi.lod) == 11;
+	}
+	if(sscanf(line, "%d %s %f  %f %f %f  %f %f %f  %f %f %f %f",
+	          &fi.objectId, model, &area,
+	          &fi.position.x, &fi.position.y, &fi.position.z,
+	          &sx, &sy, &sz,
+	          &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w) == 13)
+		return true;
+	return sscanf(line, "%d %s  %f %f %f  %f %f %f  %f %f %f %f",
+	              &fi.objectId, model,
+	              &fi.position.x, &fi.position.y, &fi.position.z,
+	              &sx, &sy, &sz,
+	              &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w) == 12;
+}
+
 void
 LoadObjectInstance(char *line)
 {
@@ -406,12 +456,15 @@ LoadObjectInstance(char *line)
 
 	// Deleted instance (commented out) - keep index slot for streaming IPL compatibility
 	if(line[0] == '#'){
-		tmpInsts.push_back(nil);
-		iplInstCounter++;
+		if(LooksLikeObjectInstanceLine(SkipCommentPrefix(line))){
+			tmpInsts.push_back(nil);
+			iplInstCounter++;
+		}
 		return;
 	}
 
-	FileObjectInstance fi;
+	FileObjectInstance fi = {};
+	fi.lod = -1;
 
 	char model[MODELNAMELEN];
 	float areaf;
@@ -419,11 +472,17 @@ LoadObjectInstance(char *line)
 	int n;
 
 	if(isSA()){
-		sscanf(line, "%d %s %d  %f %f %f  %f %f %f %f  %d",
-		       &fi.objectId, model, &fi.area,
-		       &fi.position.x, &fi.position.y, &fi.position.z,
-		       &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w,
-		       &fi.lod);
+		n = sscanf(line, "%d %s %d  %f %f %f  %f %f %f %f  %d",
+		           &fi.objectId, model, &fi.area,
+		           &fi.position.x, &fi.position.y, &fi.position.z,
+		           &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w,
+		           &fi.lod);
+		if(n != 11){
+			log("warning: invalid object instance ignored: %s\n", line);
+			tmpInsts.push_back(nil);
+			iplInstCounter++;
+			return;
+		}
 	}else{
 		n = sscanf(line, "%d %s %f  %f %f %f  %f %f %f  %f %f %f %f",
 		       &fi.objectId, model, &areaf,
@@ -431,11 +490,15 @@ LoadObjectInstance(char *line)
 		       &sx, &sy, &sz,
 		       &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w);
 		if(n != 13){
-			sscanf(line, "%d %s  %f %f %f  %f %f %f  %f %f %f %f",
-			       &fi.objectId, model,
-			       &fi.position.x, &fi.position.y, &fi.position.z,
-			       &sx, &sy, &sz,
-			       &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w);
+			n = sscanf(line, "%d %s  %f %f %f  %f %f %f  %f %f %f %f",
+			           &fi.objectId, model,
+			           &fi.position.x, &fi.position.y, &fi.position.z,
+			           &sx, &sy, &sz,
+			           &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w);
+			if(n != 12){
+				log("warning: invalid object instance ignored: %s\n", line);
+				return;
+			}
 			areaf = 0.0f;
 		}
 		fi.area = areaf;
@@ -679,6 +742,10 @@ SetupBigBuildings(void)
 			lodinst = tmpInsts[inst->m_lodId];
 			if(lodinst == nil){
 				inst->m_lod = nil;	// LOD was deleted
+			}else if(lodinst == inst){
+				log("warning: object instance %d uses itself as LOD in %s\n",
+				    inst->m_iplIndex, currentFile ? currentFile->name : "(unknown)");
+				inst->m_lod = nil;
 			}else{
 				inst->m_lod = lodinst;
 				lodinst->m_numChildren++;
@@ -736,6 +803,73 @@ LoadScene(const char *filename)
 
 void LoadMapZones(const char *filename) { LoadDataFile(filename, zoneDesc); }
 
+static void
+ExtractFilenameParts(const char *path, char *basename, size_t basenameSize, char *ext, size_t extSize)
+{
+	const char *slash, *dot;
+	size_t basenameLen, extLen;
+
+	if(basenameSize > 0)
+		basename[0] = '\0';
+	if(extSize > 0)
+		ext[0] = '\0';
+	if(path == nil)
+		return;
+
+	slash = strrchr(path, '/');
+	const char *backslash = strrchr(path, '\\');
+	if(slash == nil || (backslash && backslash > slash))
+		slash = backslash;
+	slash = slash ? slash + 1 : path;
+
+	dot = strrchr(slash, '.');
+	if(dot == nil || dot == slash)
+		dot = slash + strlen(slash);
+
+	basenameLen = dot - slash;
+	if(basenameSize > 0){
+		if(basenameLen >= basenameSize)
+			basenameLen = basenameSize-1;
+		for(size_t i = 0; i < basenameLen; i++){
+			char c = slash[i];
+			if(c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+			basename[i] = c;
+		}
+		basename[basenameLen] = '\0';
+	}
+
+	if(*dot == '.')
+		dot++;
+	else
+		dot = "";
+	extLen = strlen(dot);
+	if(extSize > 0){
+		if(extLen >= extSize)
+			extLen = extSize-1;
+		for(size_t i = 0; i < extLen; i++){
+			char c = dot[i];
+			if(c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+			ext[i] = c;
+		}
+		ext[extLen] = '\0';
+	}
+}
+
+static const char*
+ResolveTexDictionaryPath(const char *path)
+{
+	char basename[64], ext[8];
+	const char *resolved = ModloaderGetSourcePath(path);
+	if(resolved)
+		return resolved;
+
+	ExtractFilenameParts(path, basename, sizeof(basename), ext, sizeof(ext));
+	resolved = ModloaderFindOverride(basename, ext);
+	if(resolved)
+		return resolved;
+
+	return getPath(path);
+}
 
 rw::TexDictionary*
 LoadTexDictionary(const char *path)
@@ -744,7 +878,7 @@ LoadTexDictionary(const char *path)
 
 	StreamFile stream;
 	TexDictionary *txd = nil;
-	if(stream.open(getPath(path), "rb")){
+	if(stream.open(ResolveTexDictionaryPath(path), "rb")){
 		if(findChunk(&stream, rw::ID_TEXDICTIONARY, nil, nil)){
 			txd = TexDictionary::streamRead(&stream);
 			ConvertTxd(txd);
@@ -1083,6 +1217,79 @@ struct PendingSaveFile
 };
 
 static bool
+IsDefaultCustomIplLogicalPath(const char *path)
+{
+	return LogicalPathEquals(path, "data/maps/custom.ipl");
+}
+
+static bool
+LineExistsTrimmed(const std::string &text, const char *line)
+{
+	const char *start = text.c_str();
+	const char *end = start + text.size();
+	size_t lineLen = strlen(line);
+
+	while(start < end){
+		const char *lineStart = start;
+		const char *lineEnd = start;
+		while(lineEnd < end && *lineEnd != '\n' && *lineEnd != '\r')
+			lineEnd++;
+		const char *nextLine = lineEnd;
+		while(lineStart < lineEnd && isspace((unsigned char)*lineStart))
+			lineStart++;
+		while(lineEnd > lineStart && isspace((unsigned char)*(lineEnd-1)))
+			lineEnd--;
+		if((size_t)(lineEnd - lineStart) == lineLen &&
+		   strncmp(lineStart, line, lineLen) == 0)
+			return true;
+		while(nextLine < end && (*nextLine == '\n' || *nextLine == '\r'))
+			nextLine++;
+		start = nextLine;
+	}
+	return false;
+}
+
+static bool
+QueueModloaderCustomIplManifestSave(std::vector<PendingSaveFile> &pendingFiles)
+{
+	const char *manifestLogicalPath = "ariane_custom.txt";
+	const char *manifestLine = "IPL data/maps/custom.ipl";
+	char manifestPath[1024];
+
+	if(!BuildModloaderLogicalExportPath(manifestLogicalPath, manifestPath, sizeof(manifestPath)))
+		return false;
+
+	std::string out;
+	FILE *f = fopen(manifestPath, "rb");
+	if(f){
+		char buf[1024];
+		size_t n;
+		while((n = fread(buf, 1, sizeof(buf), f)) > 0)
+			out.append(buf, n);
+		fclose(f);
+	}
+	if(!LineExistsTrimmed(out, manifestLine)){
+		if(!out.empty() && out[out.size()-1] != '\n' && out[out.size()-1] != '\r')
+			out += "\n";
+		out += manifestLine;
+		out += "\n";
+	}
+
+	for(size_t i = 0; i < pendingFiles.size(); i++){
+		if(pendingFiles[i].finalPath == manifestPath){
+			pendingFiles[i].data.assign(out.begin(), out.end());
+			return true;
+		}
+	}
+
+	PendingSaveFile pending;
+	pending.finalPath = manifestPath;
+	pending.data.assign(out.begin(), out.end());
+	pendingFiles.push_back(pending);
+	return true;
+}
+
+static bool
 CommitPendingSaveFiles(std::vector<PendingSaveFile> &files)
 {
 	for(size_t i = 0; i < files.size(); i++){
@@ -1202,6 +1409,116 @@ AppendInstLine(std::string &out, ObjectInst *inst, int lodIdx, bool deleted)
 		out.append(linebuf, (size_t)written);
 }
 
+struct TextLodIndexState
+{
+	std::vector<std::pair<ObjectInst*, int>> instOutputIndices;
+	std::vector<int> oldOutputIndices;
+};
+
+static int
+FindTextOutputIndexForInst(const TextLodIndexState &state, ObjectInst *inst)
+{
+	for(size_t i = 0; i < state.instOutputIndices.size(); i++)
+		if(state.instOutputIndices[i].first == inst)
+			return state.instOutputIndices[i].second;
+	return -1;
+}
+
+static int
+FindAssociatedTextLodOutputIndex(ObjectInst *inst, const TextLodIndexState &state)
+{
+	if(inst == nil || !isSA())
+		return -1;
+
+	int lodObjId = GetLodForObject(inst->m_objectId);
+	if(lodObjId < 0 || lodObjId == inst->m_objectId)
+		return -1;
+
+	int bestIndex = -1;
+	float bestDistSq = 1.0e30f;
+	for(size_t i = 0; i < state.instOutputIndices.size(); i++){
+		ObjectInst *other = state.instOutputIndices[i].first;
+		if(other == nil || other == inst || other->m_isDeleted)
+			continue;
+		if(other->m_objectId != lodObjId)
+			continue;
+
+		float dx = inst->m_translation.x - other->m_translation.x;
+		float dy = inst->m_translation.y - other->m_translation.y;
+		float dz = inst->m_translation.z - other->m_translation.z;
+		float distSq = dx*dx + dy*dy + dz*dz;
+		if(distSq < bestDistSq){
+			bestDistSq = distSq;
+			bestIndex = state.instOutputIndices[i].second;
+		}
+	}
+
+	if(bestIndex >= 0 && bestDistSq <= sq(250.0f))
+		return bestIndex;
+	return -1;
+}
+
+static void
+BuildTextLodIndexState(ObjectInst **insts, int numInsts, bool compactDeletes,
+                       TextLodIndexState &state)
+{
+	int maxOldIndex = -1;
+	int outputIndex = 0;
+
+	state.instOutputIndices.clear();
+	state.oldOutputIndices.clear();
+
+	for(int i = 0; i < numInsts; i++)
+		if(insts[i] && insts[i]->m_iplIndex > maxOldIndex)
+			maxOldIndex = insts[i]->m_iplIndex;
+	if(maxOldIndex >= 0)
+		state.oldOutputIndices.assign(maxOldIndex + 1, -1);
+
+	for(int i = 0; i < numInsts; i++){
+		ObjectInst *inst = insts[i];
+		if(inst == nil)
+			continue;
+		if(compactDeletes && inst->m_isDeleted)
+			continue;
+		if(inst->m_isDeleted)
+			continue;
+
+		state.instOutputIndices.push_back(std::make_pair(inst, outputIndex));
+		if(inst->m_iplIndex >= 0 && inst->m_iplIndex < (int)state.oldOutputIndices.size())
+			state.oldOutputIndices[inst->m_iplIndex] = outputIndex;
+		outputIndex++;
+	}
+}
+
+static int
+ResolveTextOutputLodIndex(ObjectInst *inst, const TextLodIndexState &state)
+{
+	if(inst == nil || inst->m_isDeleted)
+		return inst ? inst->m_lodId : -1;
+
+	int selfIndex = FindTextOutputIndexForInst(state, inst);
+
+	if(inst->m_lod && !inst->m_lod->m_isDeleted){
+		int idx = FindTextOutputIndexForInst(state, inst->m_lod);
+		if(idx >= 0)
+			return idx;
+	}
+
+	if(inst->m_lodId >= 0 && inst->m_lodId < (int)state.oldOutputIndices.size()){
+		int idx = state.oldOutputIndices[inst->m_lodId];
+		if(idx >= 0 && idx != selfIndex)
+			return idx;
+	}
+
+	if(inst->m_lodId >= 0){
+		int associatedIdx = FindAssociatedTextLodOutputIndex(inst, state);
+		if(associatedIdx >= 0 && associatedIdx != selfIndex)
+			return associatedIdx;
+	}
+
+	return -1;
+}
+
 static bool
 BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, bool compactDeletes,
                        std::string &out)
@@ -1209,8 +1526,10 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 	FILE *fin;
 	ObjectInst *inst;
 	char realpath[1024];
+	TextLodIndexState lodIndexState;
 
 	out.clear();
+	BuildTextLodIndexState(insts, numInsts, compactDeletes, lodIndexState);
 	ResolveSceneReadPath(filename, realpath, sizeof(realpath));
 	fin = fopen(realpath, "rb");
 	if(fin){
@@ -1230,7 +1549,8 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 						inst = insts[i];
 						if(compactDeletes && inst->m_isDeleted)
 							continue;
-						AppendInstLine(out, inst, inst->m_lodId, !compactDeletes && inst->m_isDeleted);
+						AppendInstLine(out, inst, ResolveTextOutputLodIndex(inst, lodIndexState),
+						               !compactDeletes && inst->m_isDeleted);
 					}
 					instWritten = true;
 				}else
@@ -1250,7 +1570,8 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 				inst = insts[i];
 				if(compactDeletes && inst->m_isDeleted)
 					continue;
-				AppendInstLine(out, inst, inst->m_lodId, !compactDeletes && inst->m_isDeleted);
+				AppendInstLine(out, inst, ResolveTextOutputLodIndex(inst, lodIndexState),
+				               !compactDeletes && inst->m_isDeleted);
 			}
 			out += "end\n";
 		}
@@ -1260,7 +1581,8 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 			inst = insts[i];
 			if(compactDeletes && inst->m_isDeleted)
 				continue;
-			AppendInstLine(out, inst, inst->m_lodId, !compactDeletes && inst->m_isDeleted);
+			AppendInstLine(out, inst, ResolveTextOutputLodIndex(inst, lodIndexState),
+			               !compactDeletes && inst->m_isDeleted);
 		}
 		out += "end\n";
 	}
@@ -1310,6 +1632,10 @@ QueueSceneFileSave(const char *filename, ObjectInst **insts, int numInsts, bool 
 	pending.finalPath = exportPath;
 	pending.data.assign(out.begin(), out.end());
 	pendingFiles.push_back(pending);
+	if(gSaveDestination == SAVE_DESTINATION_MODLOADER &&
+	   IsDefaultCustomIplLogicalPath(filename) &&
+	   !QueueModloaderCustomIplManifestSave(pendingFiles))
+		return false;
 	return true;
 }
 

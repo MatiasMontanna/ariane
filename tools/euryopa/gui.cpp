@@ -23,6 +23,7 @@ static bool showEditorWindow;
 static bool showInstanceWindow;
 static bool showLogWindow;
 static bool showHelpWindow;
+static bool showShortcutsWindow;
 
 static bool showTimeWeatherWindow;
 static bool showViewWindow;
@@ -54,18 +55,28 @@ static ImGuiTextFilter gBrowserCategoryFilter;
 static ImGuiTextFilter gBrowserIdeFilter;
 static ImGuiTextFilter gBrowserSearchFilter;
 static ImGuiTextFilter gBrowserFavFilter;
+static ImGuiTextFilter gBrowserPrefabFilter;
 static int gBrowserSelectedCategory = -1;
 static char gBrowserSelectedIde[256];
+static bool gBrowserThumbnailView = true;
 static bool gBrowserTabRestorePending;
+static bool gBrowserPrefabListDirty = true;
+static const int MAX_BROWSER_PREFABS = 128;
+static char gBrowserPrefabFiles[MAX_BROWSER_PREFABS][256];
+static char gBrowserPrefabPaths[MAX_BROWSER_PREFABS][512];
+static int gBrowserNumPrefabs;
+static int gBrowserSelectedPrefab = -1;
 static int gDiffFilter;
 static int gRenderMode;
+static const int MAX_INTERIOR_AREA_CODE = 255;
 
 enum BrowserTabId
 {
 	BROWSER_TAB_CATEGORIES,
 	BROWSER_TAB_IDE,
 	BROWSER_TAB_SEARCH,
-	BROWSER_TAB_FAVOURITES
+	BROWSER_TAB_FAVOURITES,
+	BROWSER_TAB_PREFABS
 };
 static int gBrowserActiveTab = BROWSER_TAB_CATEGORIES;
 static bool gCopyableTextCopiedThisFrame;
@@ -515,7 +526,7 @@ normalizePersistentSettings(void)
 	currentHour = ((currentHour % 24) + 24) % 24;
 	currentMinute = ((currentMinute % 60) + 60) % 60;
 	if(params.numAreas > 0)
-		currentArea = clamp(currentArea, 0, params.numAreas-1);
+		currentArea = clamp(currentArea, 0, MAX_INTERIOR_AREA_CODE);
 	else
 		currentArea = 0;
 	if(params.numWeathers > 0){
@@ -1382,7 +1393,172 @@ buildStreamingBinarySaveBlockedDetails(const StreamingBinarySaveSummary *summary
 static const char*
 getSaveDestinationLabel(void)
 {
-	return gSaveDestination == SAVE_DESTINATION_MODLOADER ? "modloader/Ariane" : "original files";
+	return gSaveDestination == SAVE_DESTINATION_MODLOADER ? "modloader/Ariane export" : "loaded source files";
+}
+
+static bool
+physicalPathsEqualCiNormalized(const char *a, const char *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	while(*a || *b){
+		char ca = *a++;
+		char cb = *b++;
+		if(ca == '\\') ca = '/';
+		if(cb == '\\') cb = '/';
+		if(ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
+		if(cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
+		if(ca != cb)
+			return false;
+	}
+	return true;
+}
+
+struct ModloaderExportShadowSummary
+{
+	int numText;
+	int numBinary;
+	char sampleLogical[256];
+	char sampleCurrent[1024];
+	char sampleExport[1024];
+};
+
+static bool
+imageIndexInList(int32 imageIndex, const int32 *images, int numImages)
+{
+	for(int i = 0; i < numImages; i++)
+		if(images[i] == imageIndex)
+			return true;
+	return false;
+}
+
+static void
+recordModloaderExportShadow(ModloaderExportShadowSummary *summary, const char *logicalPath,
+                            const char *currentPath, const char *exportPath, bool binary)
+{
+	if(summary == nil)
+		return;
+	if(binary)
+		summary->numBinary++;
+	else
+		summary->numText++;
+	if(summary->sampleLogical[0] == '\0'){
+		if(logicalPath){
+			strncpy(summary->sampleLogical, logicalPath, sizeof(summary->sampleLogical)-1);
+			summary->sampleLogical[sizeof(summary->sampleLogical)-1] = '\0';
+		}
+		if(currentPath){
+			strncpy(summary->sampleCurrent, currentPath, sizeof(summary->sampleCurrent)-1);
+			summary->sampleCurrent[sizeof(summary->sampleCurrent)-1] = '\0';
+		}
+		if(exportPath){
+			strncpy(summary->sampleExport, exportPath, sizeof(summary->sampleExport)-1);
+			summary->sampleExport[sizeof(summary->sampleExport)-1] = '\0';
+		}
+	}
+}
+
+static bool
+buildModloaderExportShadowSummary(ModloaderExportShadowSummary *summary)
+{
+	if(summary == nil)
+		return false;
+	memset(summary, 0, sizeof(*summary));
+
+	if(gSaveDestination != SAVE_DESTINATION_MODLOADER || !ModloaderIsActive())
+		return false;
+
+	const char *checkedScenes[512];
+	int numCheckedScenes = 0;
+	int32 checkedImages[512];
+	int numCheckedImages = 0;
+
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		if(inst == nil || inst->m_file == nil)
+			continue;
+
+		if(inst->m_imageIndex >= 0){
+			if(!binaryInstNeedsDiskSave(inst))
+				continue;
+			if(imageIndexInList(inst->m_imageIndex, checkedImages, numCheckedImages))
+				continue;
+			if(numCheckedImages < 512)
+				checkedImages[numCheckedImages++] = inst->m_imageIndex;
+
+			char exportPath[1024];
+			char entryFilename[64];
+			if(!BuildModloaderImageEntryExportPath(inst->m_imageIndex, exportPath, sizeof(exportPath)))
+				continue;
+			GameFile *file = GetGameFileFromImage(inst->m_imageIndex);
+			if(file == nil || file->name == nil)
+				continue;
+			if(snprintf(entryFilename, sizeof(entryFilename), "%s.ipl", file->name) >= (int)sizeof(entryFilename))
+				continue;
+			const char *archiveName = GetCdImageLogicalName(inst->m_imageIndex);
+			const char *winningPath = ModloaderFindImageEntryOverride(archiveName, entryFilename);
+			if(winningPath && !physicalPathsEqualCiNormalized(winningPath, exportPath))
+				recordModloaderExportShadow(summary, entryFilename, winningPath, exportPath, true);
+			continue;
+		}
+
+		bool alreadyChecked = false;
+		for(int i = 0; i < numCheckedScenes; i++)
+			if(LogicalPathEquals(checkedScenes[i], inst->m_file->name)){
+				alreadyChecked = true;
+				break;
+			}
+		if(alreadyChecked)
+			continue;
+		if(numCheckedScenes < 512)
+			checkedScenes[numCheckedScenes++] = inst->m_file->name;
+		if(!sceneNeedsSave(inst->m_file->name))
+			continue;
+
+		char exportPath[1024];
+		if(!BuildModloaderLogicalExportPath(inst->m_file->name, exportPath, sizeof(exportPath)))
+			continue;
+		const char *winningPath = ModloaderGetSourcePath(inst->m_file->name);
+		if(winningPath && !physicalPathsEqualCiNormalized(winningPath, exportPath))
+			recordModloaderExportShadow(summary, inst->m_file->name, winningPath, exportPath, false);
+	}
+
+	return summary->numText > 0 || summary->numBinary > 0;
+}
+
+static bool
+warnModloaderExportShadowedBeforeSave(const char *actionName)
+{
+	ModloaderExportShadowSummary summary;
+	if(!buildModloaderExportShadowSummary(&summary))
+		return false;
+
+#ifdef _WIN32
+	char message[2600];
+	snprintf(message, sizeof(message),
+		"%s is set to export copies into modloader/Ariane.\n\n"
+		"The edited map data is currently loaded from another modloader source, so this can create a second IPL with the same logical path.\n\n"
+		"Affected files: %d text + %d streamed IPL override(s).\n\n"
+		"Example logical file:\n%s\n\n"
+		"Game currently uses:\n%s\n\n"
+		"Ariane will export to:\n%s\n\n"
+		"If you want to edit the active mod, switch Save Target to \"Loaded source files\" instead.\n\n"
+		"Continue exporting to modloader/Ariane?",
+		actionName,
+		summary.numText, summary.numBinary,
+		summary.sampleLogical[0] ? summary.sampleLogical : "(unknown)",
+		summary.sampleCurrent[0] ? summary.sampleCurrent : "(unknown)",
+		summary.sampleExport[0] ? summary.sampleExport : "(unknown)");
+	if(MessageBoxA(nil, message, "Ariane", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES){
+		Toast(TOAST_SAVE, "%s cancelled: switch Save Target to Loaded source files to edit the active mod", actionName);
+		return true;
+	}
+#else
+	Toast(TOAST_SAVE,
+	      "%s warning: modloader/Ariane export can be shadowed by the active mod (%d text + %d streamed)",
+	      actionName, summary.numText, summary.numBinary);
+#endif
+	return false;
 }
 
 static bool
@@ -1493,6 +1669,8 @@ saveAllIpls(void)
 {
 	if(warnStreamingBinarySaveBlockedByRunningGame("Save"))
 		return false;
+	if(warnModloaderExportShadowedBeforeSave("Save"))
+		return false;
 
 	// Collect unique IPL filenames from all instances
 	CPtrNode *p;
@@ -1586,7 +1764,7 @@ saveAllIpls(void)
 		}
 		if(shadowedText || shadowedBinary)
 			Toast(TOAST_SAVE,
-			      "Saved to modloader/Ariane, but %d text + %d streamed override(s) are still shadowed at runtime",
+			      "Exported to modloader/Ariane, but %d text + %d streamed override(s) are still shadowed at runtime",
 			      shadowedText, shadowedBinary);
 	}
 
@@ -2122,8 +2300,10 @@ uiDestroyMapPopup(void)
 
 	ImGui::Separator();
 	ImGui::Text("Current save target: %s", getSaveDestinationLabel());
-	if(gSaveDestination != SAVE_DESTINATION_MODLOADER)
-		ImGui::TextWrapped("Original game files stay untouched until you save. Enable Save to Modloader before saving if you want the empty map as a modloader override.");
+	if(gSaveDestination == SAVE_DESTINATION_MODLOADER)
+		ImGui::TextWrapped("This writes an override copy under modloader/Ariane. If another modloader mod wins the same IPL path, the game can still use that other mod.");
+	else
+		ImGui::TextWrapped("This writes back to the file Ariane loaded. For modloader maps, that can be the active mod's IPL instead of a vanilla file.");
 
 	if(ImGui::Button("Destroy", ImVec2(140, 0))){
 		destroyEntireMap(gDestroyMapIncludeWater && params.water == GAME_SA);
@@ -3005,6 +3185,7 @@ uiMainmenu(void)
 				if(saveAllIpls())
 					Toast(TOAST_SAVE, "Saved all IPL files to %s", getSaveDestinationLabel());
 			}
+
 			ImGui::SetItemTooltip("Saves all modified objects in their respective placement files (.ipl).");
 			if(ImGui::MenuItem("Select All", "Ctrl+A")){
 				ClearSelection();
@@ -3020,17 +3201,31 @@ uiMainmenu(void)
 					Toast(TOAST_UNDO_REDO, "Selected %d instance(s)", count);
 			}
 			ImGui::SetItemTooltip("Selects all objects in the current map.");
+//=======
+			ImGui::SetItemTooltip("Saves all modified objects in their respective placement files (.ipl).\nCurrent target: %s.", getSaveDestinationLabel());
+
 			if(ImGui::MenuItem(ICON_FA_GAMEPAD " Test in Game", "Ctrl+G")){
 				testInGame();
 			}
 			ImGui::SetItemTooltip("Launches your game and spawns you to the current camera position.\nRequires ariane.asi installed in your game folder.");
-			if(ImGui::MenuItem("Save to Modloader", nil,
-			                   gSaveDestination == SAVE_DESTINATION_MODLOADER)){
-				gSaveDestination = gSaveDestination == SAVE_DESTINATION_MODLOADER ?
-					SAVE_DESTINATION_ORIGINAL_FILES : SAVE_DESTINATION_MODLOADER;
-				saveSaveSettings();
+			char saveTargetMenuLabel[128];
+			snprintf(saveTargetMenuLabel, sizeof(saveTargetMenuLabel), "Save Target: %s", getSaveDestinationLabel());
+			if(ImGui::BeginMenu(saveTargetMenuLabel)){
+				if(ImGui::MenuItem("Loaded source files", nil,
+				                   gSaveDestination == SAVE_DESTINATION_ORIGINAL_FILES)){
+					gSaveDestination = SAVE_DESTINATION_ORIGINAL_FILES;
+					saveSaveSettings();
+				}
+				ImGui::SetItemTooltip("Write back to the files Ariane loaded.\nFor modloader maps, this usually edits the active mod's IPL.");
+				if(ImGui::MenuItem("Export copy to modloader/Ariane", nil,
+				                   gSaveDestination == SAVE_DESTINATION_MODLOADER)){
+					gSaveDestination = SAVE_DESTINATION_MODLOADER;
+					saveSaveSettings();
+				}
+				ImGui::SetItemTooltip("Write copies to modloader/Ariane/.\nThis does not necessarily edit the modloader mod currently used by the game.");
+				ImGui::EndMenu();
 			}
-			ImGui::SetItemTooltip("When enabled, saves go to modloader/Ariane/ instead of\noverwriting original game files.");
+			ImGui::SetItemTooltip("Choose whether Save writes back to loaded files or exports an override copy to modloader/Ariane.");
 			if(ImGui::MenuItem(ICON_FA_BOLT " Hot Reload", "Ctrl+R")){
 				hotReloadIpls();
 			}
@@ -3116,19 +3311,20 @@ uiMainmenu(void)
 			if(ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit", "Alt+F4")) sk::globals.quit = 1;
 			ImGui::EndMenu();
 		}
-		if(ImGui::BeginMenu(ICON_FA_WINDOW_MAXIMIZE " Window")){
-			if(ImGui::MenuItem(ICON_FA_CLOUD_SUN " Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
-			if(ImGui::MenuItem(ICON_FA_EYE " View", "V", showViewWindow)) { showViewWindow ^= 1; }
-			if(ImGui::MenuItem(ICON_FA_PAINTBRUSH " Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
+			if(ImGui::BeginMenu(ICON_FA_WINDOW_MAXIMIZE " Window")){
+				if(ImGui::MenuItem(ICON_FA_CLOUD_SUN " Time & Weather", "T", showTimeWeatherWindow)) { showTimeWeatherWindow ^= 1; }
+				if(ImGui::MenuItem(ICON_FA_EYE " View", "V", showViewWindow)) { showViewWindow ^= 1; }
+				if(ImGui::MenuItem(ICON_FA_PAINTBRUSH " Rendering", "R", showRenderingWindow)) { showRenderingWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_WRENCH " Tools", "X", showToolsWindow)) { showToolsWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_CIRCLE_INFO " Object Info", "I", showInstanceWindow)) { showInstanceWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_PEN " Editor", "E", showEditorWindow)) { showEditorWindow ^= 1; }
 			if(ImGui::MenuItem(ICON_FA_MAGNIFYING_GLASS " Object Browser", "B", showBrowserWindow)) { showBrowserWindow ^= 1; }
-			if(ImGui::MenuItem(ICON_FA_CODE_COMPARE " Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
-			if(ImGui::MenuItem(ICON_FA_LIST " Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
-			if(ImGui::MenuItem("Demo ", nil, showDemoWindow)) { showDemoWindow ^= 1; }
-			if(ImGui::MenuItem(ICON_FA_CIRCLE_QUESTION " Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
-			ImGui::Separator();
+				if(ImGui::MenuItem(ICON_FA_CODE_COMPARE " Changes", "F", showDiffWindow)) { showDiffWindow ^= 1; }
+				if(ImGui::MenuItem(ICON_FA_LIST " Log ", nil, showLogWindow)) { showLogWindow ^= 1; }
+				if(ImGui::MenuItem("Demo ", nil, showDemoWindow)) { showDemoWindow ^= 1; }
+				if(ImGui::MenuItem(ICON_FA_LIST " Keyboard Shortcuts", nil, showShortcutsWindow)) { showShortcutsWindow ^= 1; }
+				if(ImGui::MenuItem(ICON_FA_CIRCLE_QUESTION " Help", nil, showHelpWindow)) { showHelpWindow ^= 1; }
+				ImGui::Separator();
 			if(ImGui::BeginMenu(ICON_FA_BELL " Notifications")){
 				uiNotificationSettings();
 				ImGui::EndMenu();
@@ -3149,6 +3345,7 @@ uiMainmenu(void)
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(pad, ImGui::GetStyle().FramePadding.y));
 		ImGui::InputInt("##interior", &currentArea, 0, 0);
 		if(currentArea < 0) currentArea = 0;
+		if(currentArea > MAX_INTERIOR_AREA_CODE) currentArea = MAX_INTERIOR_AREA_CODE;
 		ImGui::PopStyleVar(2);
 		ImGui::PopItemWidth();
 		ImGui::SameLine(0, 2);
@@ -3202,9 +3399,10 @@ uiExportPrefabPopup(void)
 				return;
 			}
 			int exported = ExportPrefab(path);
-			if(exported > 0)
+			if(exported > 0){
 				Toast(TOAST_SAVE, "Exported %d instance(s) to %s", exported, path);
-			else
+				gBrowserPrefabListDirty = true;
+			}else
 				Toast(TOAST_SAVE, "Failed to export prefab");
 			gShowExportPrefab = false;
 		}
@@ -3783,6 +3981,155 @@ uiCustomImportPopup(void)
 }
 
 static void
+uiKeyboardShortcutsWindow(void)
+{
+	struct ShortcutEntry {
+		const char *section;
+		const char *shortcut;
+		const char *action;
+		const char *context;
+	};
+
+	static const ShortcutEntry shortcuts[] = {
+		{ "File", "Ctrl+S", "Save all modified IPL files", "Global" },
+		{ "File", "Ctrl+G", "Test in game at current camera position", "Global" },
+		{ "File", "Ctrl+R", "Hot reload streaming IPLs in running game", "Global" },
+		{ "File", "Ctrl+Shift+E", "Export selected objects as prefab", "Global" },
+		{ "File", "Ctrl+Shift+I", "Import prefab", "Global" },
+		{ "File", "Alt+F4", "Exit Ariane", "Menu" },
+
+		{ "Windows", "T", "Toggle Time & Weather window", "Global" },
+		{ "Windows", "V", "Toggle View window", "Global" },
+		{ "Windows", "R", "Toggle Rendering window", "Global" },
+		{ "Windows", "X", "Toggle Tools window", "Global" },
+		{ "Windows", "I", "Toggle Object Info window", "Global" },
+		{ "Windows", "E", "Toggle Editor window", "Global" },
+		{ "Windows", "B", "Toggle Object Browser window", "Global" },
+		{ "Windows", "F", "Toggle Changes window", "Global" },
+
+		{ "Camera", "LMB drag", "First-person look around", "Viewport" },
+		{ "Camera", "Ctrl+Alt+LMB drag", "Dolly camera along view direction", "Viewport" },
+		{ "Camera", "MMB drag", "Pan camera", "Viewport" },
+		{ "Camera", "Alt+MMB drag", "Arc rotate around camera target", "Viewport" },
+		{ "Camera", "Ctrl+Alt+MMB drag", "Zoom camera toward target", "Viewport" },
+		{ "Camera", "Mouse wheel", "Adjust FOV zoom", "Viewport" },
+		{ "Camera", "W / S", "Move forward / backward", "Viewport" },
+		{ "Camera", "A / D", "Move left / right", "Viewport" },
+		{ "Camera", "Shift+WASD", "Fast camera movement", "Viewport" },
+		{ "Camera", "Alt+WASD", "Slow camera movement", "Viewport" },
+		{ "Camera", "C", "Toggle viewer camera with longer far clip", "Global" },
+
+		{ "Selection", "Click object", "Select object", "Viewport" },
+		{ "Selection", "Shift+click object", "Add object to selection", "Viewport" },
+		{ "Selection", "Alt+click object", "Remove object from selection", "Viewport" },
+		{ "Selection", "Ctrl+click object", "Toggle object selection", "Viewport" },
+		{ "Selection", "Shift+LMB drag", "Rectangle select", "Viewport" },
+		{ "Selection", "Ctrl+Shift+LMB drag", "Rectangle add to selection", "Viewport" },
+		{ "Selection", "Alt+Shift+LMB drag", "Rectangle remove from selection", "Viewport" },
+		{ "Selection", "RMB on selection", "Deselect selected object", "Editor list" },
+		{ "Selection", "RMB on deleted object", "Undelete object", "Editor list" },
+		{ "Selection", "Delete / Backspace", "Delete selected buildings or water selection", "Global" },
+		{ "Selection", "G", "Snap selected buildings to ground", "Global" },
+		{ "Selection", "Shift+G", "Align selected buildings to ground normal", "Global" },
+
+		{ "Gizmo", "W", "Translate gizmo mode", "Object/path selection" },
+		{ "Gizmo", "Q", "Rotate gizmo mode", "Object selection" },
+		{ "Gizmo", "Shift while dragging", "Use selected snap increment", "Gizmo" },
+
+		{ "Clipboard", "Ctrl+C", "Copy selected buildings", "Global" },
+		{ "Clipboard", "Ctrl+X", "Cut selected buildings", "Global" },
+		{ "Clipboard", "Ctrl+V", "Paste copy at camera target, restore cut at original position", "Global" },
+		{ "Clipboard", "Ctrl+Z", "Undo", "Global" },
+		{ "Clipboard", "Ctrl+Y", "Redo", "Global" },
+
+		{ "Object Browser", "B", "Open or close Object Browser", "Global" },
+		{ "Object Browser", "Up / Down", "Move selected object through current filtered list", "Object Browser list" },
+		{ "Object Browser", "List / Tiles", "Switch between text rows and thumbnail tiles", "Object Browser" },
+		{ "Object Browser", "Right-click object row", "Add or remove favourite", "Object Browser list" },
+		{ "Object Browser", "Prefabs tab", "Browse prefab files and import the selected prefab", "Object Browser" },
+		{ "Object Browser", "Click in 3D view", "Place selected object", "Place mode" },
+		{ "Object Browser", "Shift+click in 3D view", "Place object and stay in place mode", "Place mode" },
+		{ "Object Browser", "RMB / Esc", "Exit place mode", "Place mode" },
+
+		{ "Brush", "LMB", "Paint selected object on surface", "Brush mode" },
+		{ "Brush", "LMB drag", "Paint continuously using spacing/delay settings", "Brush mode" },
+		{ "Brush", "RMB drag", "Look around while brushing", "Brush mode" },
+		{ "Brush", "MMB drag", "Pan or orbit camera while brushing", "Brush mode" },
+		{ "Brush", "MMB click / Esc", "Exit brush mode", "Brush mode" },
+
+		{ "Water", "H", "Enter or exit water edit mode", "SA water" },
+		{ "Water", "Tab", "Switch polygon / vertex water sub-mode", "Water edit mode" },
+		{ "Water", "N", "Start creating a new water polygon", "Water edit mode" },
+		{ "Water", "Click water", "Select polygon or vertex", "Water edit mode" },
+		{ "Water", "Shift+click water", "Add polygon or vertex to selection", "Water edit mode" },
+		{ "Water", "Alt+click water", "Remove polygon or vertex from selection", "Water edit mode" },
+		{ "Water", "Ctrl+click water", "Toggle polygon or vertex selection", "Water edit mode" },
+		{ "Water", "Shift+click while creating", "Keep creating after placing water polygon", "Water create mode" },
+		{ "Water", "Ctrl+D", "Duplicate selected water polygons", "Water edit mode" },
+		{ "Water", "RMB / Esc", "Cancel water creation or exit water edit mode", "Water edit mode" },
+	};
+
+	ImGui::SetNextWindowSize(ImVec2(780, 620), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(420, 260), ImVec2(10000, 10000));
+	ImGui::Begin(ICON_FA_LIST " Keyboard Shortcuts", &showShortcutsWindow);
+
+	static ImGuiTextFilter filter;
+	filter.Draw("Filter", 280.0f);
+	ImGui::SameLine();
+	if(ImGui::Button("Clear"))
+		filter.Clear();
+	ImGui::Separator();
+
+	int shown = 0;
+	const char *lastSection = nil;
+	ImVec2 scrollSize = ImGui::GetContentRegionAvail();
+	if(scrollSize.y < 140.0f)
+		scrollSize.y = 140.0f;
+	ImGui::BeginChild("##ShortcutsScroll", scrollSize, false, ImGuiWindowFlags_HorizontalScrollbar);
+	ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+		ImGuiTableFlags_Resizable;
+	if(ImGui::BeginTable("##Shortcuts", 4, flags)){
+		ImGui::TableSetupColumn("Section", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+		ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+		ImGui::TableSetupColumn("Action");
+		ImGui::TableSetupColumn("Context", ImGuiTableColumnFlags_WidthFixed, 160.0f);
+		ImGui::TableHeadersRow();
+
+		for(int i = 0; i < (int)(sizeof(shortcuts) / sizeof(shortcuts[0])); i++){
+			const ShortcutEntry &s = shortcuts[i];
+			char searchable[512];
+			snprintf(searchable, sizeof(searchable), "%s %s %s %s",
+				s.section, s.shortcut, s.action, s.context);
+			if(filter.IsActive() && !filter.PassFilter(searchable))
+				continue;
+
+			if(lastSection == nil || strcmp(lastSection, s.section) != 0){
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextColored(ImVec4(0.85f, 0.90f, 1.0f, 1.0f), "%s", s.section);
+				lastSection = s.section;
+			}
+
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted(s.shortcut);
+			ImGui::TableSetColumnIndex(2);
+			ImGui::TextUnformatted(s.action);
+			ImGui::TableSetColumnIndex(3);
+			ImGui::TextDisabled("%s", s.context);
+			shown++;
+		}
+
+		ImGui::EndTable();
+	}
+	if(shown == 0)
+		ImGui::TextDisabled("No shortcuts match the current filter.");
+	ImGui::EndChild();
+
+	ImGui::End();
+}
+
+static void
 uiHelpWindow(void)
 {
 	ImGui::Begin(ICON_FA_CIRCLE_QUESTION " Help", &showHelpWindow);
@@ -3816,19 +4163,17 @@ uiHelpWindow(void)
 	ImGui::BulletText("Delete/Backspace: delete selected building(s)\n"
 		"Deleting also removes linked LOD instances.");
 	ImGui::BulletText("Ctrl+C: Copy selected building(s)\n"
-		"Ctrl+V: Paste (offset +10 on X), with LOD linking");
+		"Ctrl+X: Cut selected building(s)\n"
+		"Ctrl+V: Paste copy at camera target, restore cut at original position");
 	ImGui::BulletText("G: snap selection to ground\n"
 		"Shift+G: align selection to ground normal and preserve facing.");
 	ImGui::BulletText("Ctrl+S: Save all modified IPL files\n"
 		"Deleted instances are commented out with #.");
 	ImGui::BulletText("B: Toggle Object Browser\n"
 		"Click in 3D view to place selected object.\n"
+		"Up/Down in the browser list changes selected object.\n"
 		"RMB or Escape to exit place mode.");
 	ImGui::Separator();
-
-	if(ImGui::CollapsingHeader("Dear ImGUI help")){
-		ImGui::ShowUserGuide();
-	}
 
 	ImGui::End();
 }
@@ -4914,6 +5259,7 @@ uiInstInfo(ObjectInst *inst)
 
 	ImGui::InputInt("Interior", &inst->m_area);
 	if(inst->m_area < 0) inst->m_area = 0;
+	if(inst->m_area > MAX_INTERIOR_AREA_CODE) inst->m_area = MAX_INTERIOR_AREA_CODE;
 
 	if(params.objFlagset == GAME_SA){
 		ImGui::Checkbox("Unimportant", &inst->m_isUnimportant);
@@ -5070,10 +5416,12 @@ loadSaveSettings(void)
 			if(parseBoolSetting(value, &boolValue)) showInstanceWindow = boolValue;
 		}else if(strcmp(key, "show_log_window") == 0){
 			if(parseBoolSetting(value, &boolValue)) showLogWindow = boolValue;
-		}else if(strcmp(key, "show_help_window") == 0){
-			if(parseBoolSetting(value, &boolValue)) showHelpWindow = boolValue;
-		}else if(strcmp(key, "show_time_weather_window") == 0){
-			if(parseBoolSetting(value, &boolValue)) showTimeWeatherWindow = boolValue;
+			}else if(strcmp(key, "show_help_window") == 0){
+				if(parseBoolSetting(value, &boolValue)) showHelpWindow = boolValue;
+			}else if(strcmp(key, "show_shortcuts_window") == 0){
+				if(parseBoolSetting(value, &boolValue)) showShortcutsWindow = boolValue;
+			}else if(strcmp(key, "show_time_weather_window") == 0){
+				if(parseBoolSetting(value, &boolValue)) showTimeWeatherWindow = boolValue;
 		}else if(strcmp(key, "show_view_window") == 0){
 			if(parseBoolSetting(value, &boolValue)) showViewWindow = boolValue;
 		}else if(strcmp(key, "show_rendering_window") == 0){
@@ -5274,6 +5622,8 @@ loadSaveSettings(void)
 			parseIntSetting(value, &gBrowserSelectedCategory);
 		}else if(strcmp(key, "browser_selected_ide") == 0){
 			parseQuotedStringValue(value, gBrowserSelectedIde, sizeof(gBrowserSelectedIde));
+		}else if(strcmp(key, "browser_thumbnail_view") == 0){
+			if(parseBoolSetting(value, &boolValue)) gBrowserThumbnailView = boolValue;
 		}else if(strcmp(key, "browser_active_tab") == 0){
 			parseIntSetting(value, &gBrowserActiveTab);
 		}else if(strcmp(key, "browser_category_filter") == 0){
@@ -5292,6 +5642,12 @@ loadSaveSettings(void)
 			char buf[256];
 			if(parseQuotedStringValue(value, buf, sizeof(buf)))
 				setTextFilterValue(gBrowserFavFilter, buf);
+		}else if(strcmp(key, "browser_prefab_filter") == 0){
+			char buf[256];
+			if(parseQuotedStringValue(value, buf, sizeof(buf)))
+				setTextFilterValue(gBrowserPrefabFilter, buf);
+		}else if(strcmp(key, "browser_selected_prefab") == 0){
+			parseIntSetting(value, &gBrowserSelectedPrefab);
 		}else if(strcmp(key, "browser_selected_object") == 0){
 			parseIntSetting(value, &savedSpawnObjectId);
 		}else if(strcmp(key, "diff_filter") == 0){
@@ -5382,6 +5738,7 @@ saveSaveSettings(void)
 	fprintf(f, "show_instance_window %d\n", showInstanceWindow ? 1 : 0);
 	fprintf(f, "show_log_window %d\n", showLogWindow ? 1 : 0);
 	fprintf(f, "show_help_window %d\n", showHelpWindow ? 1 : 0);
+	fprintf(f, "show_shortcuts_window %d\n", showShortcutsWindow ? 1 : 0);
 	fprintf(f, "show_time_weather_window %d\n", showTimeWeatherWindow ? 1 : 0);
 	fprintf(f, "show_view_window %d\n", showViewWindow ? 1 : 0);
 	fprintf(f, "show_rendering_window %d\n", showRenderingWindow ? 1 : 0);
@@ -5478,11 +5835,14 @@ saveSaveSettings(void)
 	fprintf(f, "editor_highlight_matches %d\n", gEditorHighlightMatches ? 1 : 0);
 	fprintf(f, "browser_selected_category %d\n", gBrowserSelectedCategory);
 	writeQuotedSetting(f, "browser_selected_ide", gBrowserSelectedIde);
+	fprintf(f, "browser_thumbnail_view %d\n", gBrowserThumbnailView ? 1 : 0);
 	fprintf(f, "browser_active_tab %d\n", gBrowserActiveTab);
 	writeQuotedSetting(f, "browser_category_filter", gBrowserCategoryFilter.InputBuf);
 	writeQuotedSetting(f, "browser_ide_filter", gBrowserIdeFilter.InputBuf);
 	writeQuotedSetting(f, "browser_search_filter", gBrowserSearchFilter.InputBuf);
 	writeQuotedSetting(f, "browser_favourites_filter", gBrowserFavFilter.InputBuf);
+	writeQuotedSetting(f, "browser_prefab_filter", gBrowserPrefabFilter.InputBuf);
+	fprintf(f, "browser_selected_prefab %d\n", gBrowserSelectedPrefab);
 	fprintf(f, "browser_selected_object %d\n", GetSpawnObjectId());
 	fprintf(f, "diff_filter %d\n", gDiffFilter);
 	fprintf(f, "water_snap_enabled %d\n", WaterLevel::gWaterSnapEnabled ? 1 : 0);
@@ -6362,11 +6722,66 @@ selectBrowserObject(int i)
 	if(lodId >= 0) RequestObject(lodId);
 }
 
+static int
+findObjectInFilteredList(int *filtered, int numFiltered, int objectId)
+{
+	for(int row = 0; row < numFiltered; row++)
+		if(filtered[row] == objectId)
+			return row;
+	return -1;
+}
+
+static void
+uiObjectFavouritePopup(int objectId)
+{
+	if(ImGui::BeginPopupContextItem()){
+		if(IsFavourite(objectId)){
+			if(ImGui::MenuItem("Remove from Favourites"))
+				ToggleFavourite(objectId);
+		}else{
+			if(ImGui::MenuItem("Add to Favourites"))
+				ToggleFavourite(objectId);
+		}
+		ImGui::EndPopup();
+	}
+}
+
 // Shared object list renderer with clipper
 static void
 uiObjectList(int *filtered, int numFiltered, int selId)
 {
 	ImGui::BeginChild("##ObjList", ImVec2(0, 0), true);
+
+	int scrollToRow = -1;
+	bool listFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+	bool textInputActive = ImGui::GetIO().WantTextInput;
+	if(listFocused && !textInputActive && numFiltered > 0){
+		int selectedRow = findObjectInFilteredList(filtered, numFiltered, selId);
+		if(ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)){
+			int nextRow = selectedRow < 0 ? 0 : min(selectedRow + 1, numFiltered - 1);
+			selectBrowserObject(filtered[nextRow]);
+			selId = filtered[nextRow];
+			scrollToRow = nextRow;
+		}else if(ImGui::IsKeyPressed(ImGuiKey_UpArrow, true)){
+			int nextRow = selectedRow < 0 ? numFiltered - 1 : max(selectedRow - 1, 0);
+			selectBrowserObject(filtered[nextRow]);
+			selId = filtered[nextRow];
+			scrollToRow = nextRow;
+		}
+	}
+
+	if(scrollToRow >= 0){
+		float itemHeight = ImGui::GetTextLineHeightWithSpacing();
+		float targetMin = scrollToRow * itemHeight;
+		float targetMax = targetMin + itemHeight;
+		float scrollY = ImGui::GetScrollY();
+		float visibleMax = scrollY + ImGui::GetWindowHeight();
+		if(targetMin < scrollY)
+			ImGui::SetScrollY(targetMin);
+		else if(targetMax > visibleMax)
+			ImGui::SetScrollY(targetMax - ImGui::GetWindowHeight());
+	}
+
 	ImGuiListClipper clipper;
 	clipper.Begin(numFiltered);
 	static char buf[256];
@@ -6380,17 +6795,7 @@ uiObjectList(int *filtered, int numFiltered, int selId)
 			ImGui::PushID(i);
 			if(ImGui::Selectable(buf, isSelected))
 				selectBrowserObject(i);
-			// Right-click for favourites
-			if(ImGui::BeginPopupContextItem()){
-				if(IsFavourite(i)){
-					if(ImGui::MenuItem("Remove from Favourites"))
-						ToggleFavourite(i);
-				}else{
-					if(ImGui::MenuItem("Add to Favourites"))
-						ToggleFavourite(i);
-				}
-				ImGui::EndPopup();
-			}
+			uiObjectFavouritePopup(i);
 			ImGui::PopID();
 		}
 	}
@@ -6398,9 +6803,237 @@ uiObjectList(int *filtered, int numFiltered, int selId)
 }
 
 static void
+drawClippedText(ImDrawList *drawList, ImVec2 min, ImVec2 max, ImU32 color, const char *text)
+{
+	ImVec4 clipRect(min.x, min.y, max.x, max.y);
+	drawList->AddText(nil, 0.0f, min, color, text, nil, 0.0f, &clipRect);
+}
+
+static void
+drawWrappedClippedText(ImDrawList *drawList, ImVec2 min, ImVec2 max, ImU32 color, const char *text)
+{
+	ImVec4 clipRect(min.x, min.y, max.x, max.y);
+	drawList->AddText(nil, 0.0f, min, color, text, nil, max.x - min.x, &clipRect);
+}
+
+static void
+uiObjectGrid(int *filtered, int numFiltered, int selId)
+{
+	ImGui::BeginChild("##ObjGrid", ImVec2(0, 0), true);
+
+	float availW = ImGui::GetContentRegionAvail().x;
+	float tileW = 116.0f;
+	float tileH = 164.0f;
+	float spacing = ImGui::GetStyle().ItemSpacing.x;
+	int columns = max(1, (int)((availW + spacing) / (tileW + spacing)));
+	float rowH = tileH + ImGui::GetStyle().ItemSpacing.y;
+	int rows = (numFiltered + columns - 1) / columns;
+
+	ImGuiListClipper clipper;
+	clipper.Begin(rows, rowH);
+	while(clipper.Step()){
+		for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++){
+			for(int col = 0; col < columns; col++){
+				int filteredRow = row * columns + col;
+				if(filteredRow >= numFiltered)
+					break;
+				int i = filtered[filteredRow];
+				ObjectDef *obj = GetObjectDef(i);
+				if(obj == nil)
+					continue;
+
+				if(col > 0)
+					ImGui::SameLine();
+				ImGui::PushID(i);
+				bool selected = i == selId;
+				if(ImGui::InvisibleButton("##tile", ImVec2(tileW, tileH)))
+					selectBrowserObject(i);
+				uiObjectFavouritePopup(i);
+
+				ImDrawList *drawList = ImGui::GetWindowDrawList();
+				ImVec2 min = ImGui::GetItemRectMin();
+				ImVec2 max = ImGui::GetItemRectMax();
+				ImU32 bg = ImGui::GetColorU32(selected ? ImGuiCol_Header : ImGuiCol_FrameBg);
+				ImU32 border = ImGui::GetColorU32(selected ? ImGuiCol_HeaderActive : ImGuiCol_Border);
+				drawList->AddRectFilled(min, max, bg, 4.0f);
+				drawList->AddRect(min, max, border, 4.0f, 0, selected ? 2.0f : 1.0f);
+
+				ImVec2 imageMin = ImVec2(min.x + 10.0f, min.y + 8.0f);
+				ImVec2 imageMax = ImVec2(min.x + tileW - 10.0f, min.y + 104.0f);
+				rw::Texture *thumb = GetObjectThumbnailTexture(i);
+				if(thumb && thumb->raster){
+					drawList->AddImage((void*)(intptr_t)thumb, imageMin, imageMax, ImVec2(0, 1), ImVec2(1, 0));
+				}else{
+					ImU32 placeholder = ImGui::GetColorU32(ImGuiCol_WindowBg);
+					drawList->AddRectFilled(imageMin, imageMax, placeholder, 3.0f);
+					drawList->AddText(ImVec2(imageMin.x + 8.0f, imageMin.y + 36.0f),
+						ImGui::GetColorU32(ImGuiCol_TextDisabled), "Loading");
+				}
+				drawList->AddRect(imageMin, imageMax, ImGui::GetColorU32(ImGuiCol_Border), 3.0f);
+
+				char idBuf[32];
+				snprintf(idBuf, sizeof(idBuf), "%d", obj->m_id);
+				drawClippedText(drawList, ImVec2(min.x + 8.0f, min.y + 110.0f),
+					ImVec2(max.x - 8.0f, min.y + 126.0f), ImGui::GetColorU32(ImGuiCol_Text), idBuf);
+				drawWrappedClippedText(drawList, ImVec2(min.x + 8.0f, min.y + 128.0f),
+					ImVec2(max.x - 8.0f, max.y - 8.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled), obj->m_name);
+
+				if(ImGui::IsItemHovered())
+					ImGui::SetTooltip("%d  %s", obj->m_id, obj->m_name);
+				ImGui::PopID();
+			}
+		}
+	}
+	ImGui::EndChild();
+}
+
+static void
+uiObjectResults(int *filtered, int numFiltered, int selId)
+{
+	if(gBrowserThumbnailView)
+		uiObjectGrid(filtered, numFiltered, selId);
+	else
+		uiObjectList(filtered, numFiltered, selId);
+}
+
+static void
+refreshBrowserPrefabList(void)
+{
+	char prefabDir[512];
+
+	gBrowserNumPrefabs = 0;
+	if(GetArianeDataPath(prefabDir, sizeof(prefabDir), "prefabs"))
+		scanPrefabDir(prefabDir, gBrowserPrefabFiles, gBrowserPrefabPaths, &gBrowserNumPrefabs, MAX_BROWSER_PREFABS);
+	scanPrefabDir("prefabs", gBrowserPrefabFiles, gBrowserPrefabPaths, &gBrowserNumPrefabs, MAX_BROWSER_PREFABS);
+	if(gBrowserSelectedPrefab >= gBrowserNumPrefabs)
+		gBrowserSelectedPrefab = -1;
+	gBrowserPrefabListDirty = false;
+}
+
+static void
+getPrefabDisplayName(const char *file, char *buf, size_t bufSize)
+{
+	snprintf(buf, bufSize, "%s", file ? file : "");
+	size_t len = strlen(buf);
+	if(len > 7 && strcmp(buf + len - 7, ".ariane") == 0)
+		buf[len - 7] = '\0';
+}
+
+static void
+importBrowserPrefab(int prefabIndex)
+{
+	if(prefabIndex < 0 || prefabIndex >= gBrowserNumPrefabs)
+		return;
+	if(gPlaceMode) SpawnExitPlaceMode();
+	if(gBrushMode) ExitBrushMode();
+	EnterPrefabPlaceMode(gBrowserPrefabPaths[prefabIndex]);
+	Toast(TOAST_SPAWN, "Prefab placement mode");
+}
+
+static void
+uiPrefabList(int *filtered, int numFiltered)
+{
+	ImGui::BeginChild("##PrefabList", ImVec2(0, 0), true);
+
+	ImGuiListClipper clipper;
+	clipper.Begin(numFiltered);
+	char label[256];
+	while(clipper.Step()){
+		for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++){
+			int i = filtered[row];
+			getPrefabDisplayName(gBrowserPrefabFiles[i], label, sizeof(label));
+			ImGui::PushID(i);
+			if(ImGui::Selectable(label, gBrowserSelectedPrefab == i))
+				gBrowserSelectedPrefab = i;
+			if(ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+				importBrowserPrefab(i);
+			ImGui::SetItemTooltip("%s", gBrowserPrefabPaths[i]);
+			ImGui::PopID();
+		}
+	}
+	ImGui::EndChild();
+}
+
+static void
+uiPrefabGrid(int *filtered, int numFiltered)
+{
+	ImGui::BeginChild("##PrefabGrid", ImVec2(0, 0), true);
+
+	float availW = ImGui::GetContentRegionAvail().x;
+	float tileW = 150.0f;
+	float tileH = 184.0f;
+	float spacing = ImGui::GetStyle().ItemSpacing.x;
+	int columns = max(1, (int)((availW + spacing) / (tileW + spacing)));
+	float rowH = tileH + ImGui::GetStyle().ItemSpacing.y;
+	int rows = (numFiltered + columns - 1) / columns;
+
+	ImGuiListClipper clipper;
+	clipper.Begin(rows, rowH);
+	while(clipper.Step()){
+		for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++){
+			for(int col = 0; col < columns; col++){
+				int filteredRow = row * columns + col;
+				if(filteredRow >= numFiltered)
+					break;
+				int i = filtered[filteredRow];
+				if(col > 0)
+					ImGui::SameLine();
+
+				ImGui::PushID(i);
+				bool selected = i == gBrowserSelectedPrefab;
+				if(ImGui::InvisibleButton("##prefabtile", ImVec2(tileW, tileH)))
+					gBrowserSelectedPrefab = i;
+				if(ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+					importBrowserPrefab(i);
+
+				ImDrawList *drawList = ImGui::GetWindowDrawList();
+				ImVec2 min = ImGui::GetItemRectMin();
+				ImVec2 max = ImGui::GetItemRectMax();
+				ImU32 bg = ImGui::GetColorU32(selected ? ImGuiCol_Header : ImGuiCol_FrameBg);
+				ImU32 border = ImGui::GetColorU32(selected ? ImGuiCol_HeaderActive : ImGuiCol_Border);
+				drawList->AddRectFilled(min, max, bg, 4.0f);
+				drawList->AddRect(min, max, border, 4.0f, 0, selected ? 2.0f : 1.0f);
+
+				ImVec2 imageMin = ImVec2(min.x + 10.0f, min.y + 8.0f);
+				ImVec2 imageMax = ImVec2(max.x - 10.0f, min.y + 136.0f);
+				rw::Texture *thumb = GetPrefabThumbnailTexture(gBrowserPrefabPaths[i]);
+				if(thumb && thumb->raster)
+					drawList->AddImage((void*)(intptr_t)thumb, imageMin, imageMax, ImVec2(0, 1), ImVec2(1, 0));
+				else{
+					drawList->AddRectFilled(imageMin, imageMax, ImGui::GetColorU32(ImGuiCol_WindowBg), 3.0f);
+					drawList->AddText(ImVec2(imageMin.x + 10.0f, imageMin.y + 54.0f),
+						ImGui::GetColorU32(ImGuiCol_TextDisabled), "Loading");
+				}
+				drawList->AddRect(imageMin, imageMax, ImGui::GetColorU32(ImGuiCol_Border), 3.0f);
+
+				char name[256];
+				getPrefabDisplayName(gBrowserPrefabFiles[i], name, sizeof(name));
+				drawWrappedClippedText(drawList, ImVec2(min.x + 8.0f, min.y + 142.0f),
+					ImVec2(max.x - 8.0f, max.y - 8.0f), ImGui::GetColorU32(ImGuiCol_Text), name);
+
+				if(ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s\nDouble-click to import", gBrowserPrefabPaths[i]);
+				ImGui::PopID();
+			}
+		}
+	}
+	ImGui::EndChild();
+}
+
+static void
+uiPrefabResults(int *filtered, int numFiltered)
+{
+	if(gBrowserThumbnailView)
+		uiPrefabGrid(filtered, numFiltered);
+	else
+		uiPrefabList(filtered, numFiltered);
+}
+
+static void
 uiBrowserWindow(void)
 {
-	ImGui::SetNextWindowSize(ImVec2(420, 700), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(560, 700), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(360, 360), ImVec2(10000, 10000));
 	ImGui::Begin(ICON_FA_MAGNIFYING_GLASS " Object Browser", &showBrowserWindow);
 
 	int selId = GetSpawnObjectId();
@@ -6408,7 +7041,7 @@ uiBrowserWindow(void)
 	int numFiltered = 0;
 
 	// 3D Preview + selected info panel
-	if(selId >= 0){
+	if(selId >= 0 && gBrowserActiveTab != BROWSER_TAB_PREFABS){
 		ObjectDef *sel = GetObjectDef(selId);
 		if(sel){
 			// Preview (rendered in Draw() before main camera)
@@ -6443,6 +7076,7 @@ uiBrowserWindow(void)
 			}else{
 				if(ImGui::Button("Place")){
 					if(gBrushMode) ExitBrushMode();
+					if(gPrefabPlaceMode) ExitPrefabPlaceMode();
 					gPlaceMode = true;
 				}
 			}
@@ -6468,6 +7102,13 @@ uiBrowserWindow(void)
 			ImGui::Separator();
 		}
 	}
+
+	if(ImGui::RadioButton("List", !gBrowserThumbnailView))
+		gBrowserThumbnailView = false;
+	ImGui::SameLine();
+	if(ImGui::RadioButton("Tiles", gBrowserThumbnailView))
+		gBrowserThumbnailView = true;
+	ImGui::Separator();
 
 	// Tab bar
 	if(ImGui::BeginTabBar("##BrowserTabs")){
@@ -6514,7 +7155,7 @@ uiBrowserWindow(void)
 				filtered[numFiltered++] = i;
 			}
 			ImGui::Text("%d objects", numFiltered);
-			uiObjectList(filtered, numFiltered, selId);
+			uiObjectResults(filtered, numFiltered, selId);
 
 			ImGui::EndTabItem();
 		}
@@ -6569,7 +7210,7 @@ uiBrowserWindow(void)
 				filtered[numFiltered++] = i;
 			}
 			ImGui::Text("%d objects", numFiltered);
-			uiObjectList(filtered, numFiltered, selId);
+			uiObjectResults(filtered, numFiltered, selId);
 
 			ImGui::EndTabItem();
 		}
@@ -6594,7 +7235,7 @@ uiBrowserWindow(void)
 				}
 			}
 			ImGui::Text("%d results", numFiltered);
-			uiObjectList(filtered, numFiltered, selId);
+			uiObjectResults(filtered, numFiltered, selId);
 
 			ImGui::EndTabItem();
 		}
@@ -6615,7 +7256,62 @@ uiBrowserWindow(void)
 				filtered[numFiltered++] = i;
 			}
 			ImGui::Text("%d favourites", numFiltered);
-			uiObjectList(filtered, numFiltered, selId);
+			uiObjectResults(filtered, numFiltered, selId);
+
+			ImGui::EndTabItem();
+		}
+
+		// === Prefabs tab ===
+		if(ImGui::BeginTabItem("Prefabs", nil,
+		   gBrowserTabRestorePending && gBrowserActiveTab == BROWSER_TAB_PREFABS ?
+		   ImGuiTabItemFlags_SetSelected : 0)){
+			gBrowserActiveTab = BROWSER_TAB_PREFABS;
+			if(gBrowserPrefabListDirty)
+				refreshBrowserPrefabList();
+
+			gBrowserPrefabFilter.Draw("Filter##Prefabs");
+			ImGui::SameLine();
+			if(ImGui::Button("Refresh##Prefabs")){
+				gBrowserPrefabListDirty = true;
+				refreshBrowserPrefabList();
+			}
+
+			if(gBrowserSelectedPrefab >= 0 && gBrowserSelectedPrefab < gBrowserNumPrefabs){
+				rw::Texture *thumb = GetPrefabThumbnailTexture(gBrowserPrefabPaths[gBrowserSelectedPrefab]);
+				if(thumb && thumb->raster){
+					float previewW = ImGui::GetContentRegionAvail().x;
+					float previewH = previewW * 0.45f;
+					if(previewH > 180.0f) previewH = 180.0f;
+					ImGui::Image((void*)(intptr_t)thumb, ImVec2(previewW, previewH),
+						ImVec2(0, 1), ImVec2(1, 0));
+				}
+				char name[256];
+				getPrefabDisplayName(gBrowserPrefabFiles[gBrowserSelectedPrefab], name, sizeof(name));
+				ImGui::Text("%s", name);
+				ImGui::SameLine();
+				if(ImGui::Button(gPrefabPlaceMode ? "Exit Placement" : "Place Selected")){
+					if(gPrefabPlaceMode)
+						ExitPrefabPlaceMode();
+					else
+						importBrowserPrefab(gBrowserSelectedPrefab);
+				}
+				ImGui::Separator();
+			}
+
+			numFiltered = 0;
+			for(int i = 0; i < gBrowserNumPrefabs; i++){
+				char name[256];
+				getPrefabDisplayName(gBrowserPrefabFiles[i], name, sizeof(name));
+				if(!gBrowserPrefabFilter.PassFilter(name) &&
+				   !gBrowserPrefabFilter.PassFilter(gBrowserPrefabFiles[i]))
+					continue;
+				filtered[numFiltered++] = i;
+			}
+			ImGui::Text("%d prefabs", numFiltered);
+			if(gBrowserNumPrefabs == 0)
+				ImGui::TextDisabled("No .ariane files found in ariane/prefabs/ or prefabs/");
+			else
+				uiPrefabResults(filtered, numFiltered);
 
 			ImGui::EndTabItem();
 		}
@@ -6826,15 +7522,17 @@ gui(void)
 			for(CPtrNode *p = selection.first; p; p = p->next) before++;
 			CopySelected();
 			if(before > 0)
-				Toast(TOAST_COPY_PASTE, "Copied %d instance(s)", before);
+				Toast(TOAST_COPY_PASTE, "Copied %d instance(s)", min(before, MAX_BATCH_OBJECTS));
+		}
+		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('X')){
+			int before = 0;
+			for(CPtrNode *p = selection.first; p; p = p->next) before++;
+			CutSelected();
+			if(before > 0)
+				Toast(TOAST_COPY_PASTE, "Cut %d instance(s)", min(before, MAX_BATCH_OBJECTS));
 		}
 		if(CPad::IsCtrlDown() && CPad::IsKeyJustDown('V')){
-			int before = 0;
-			for(CPtrNode *p = instances.first; p; p = p->next) before++;
-			PasteClipboard();
-			int after = 0;
-			for(CPtrNode *p = instances.first; p; p = p->next) after++;
-			int pasted = after - before;
+			int pasted = PasteClipboard();
 			if(pasted > 0)
 				Toast(TOAST_COPY_PASTE, "Pasted %d instance(s)", pasted);
 		}
@@ -6870,7 +7568,7 @@ gui(void)
 			for(CPtrNode *p = selection.first; p; p = p->next) count++;
 			if(count > 0){
 				DeleteSelected();
-				Toast(TOAST_DELETE, "Deleted %d instance(s)", count);
+				Toast(TOAST_DELETE, "Deleted %d instance(s)", min(count, MAX_BATCH_OBJECTS));
 			}
 		}
 	}
@@ -6947,7 +7645,7 @@ gui(void)
 		ImGui::End();
 	}
 
-	if(CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
+	if(!CPad::IsCtrlDown() && CPad::IsKeyJustDown('X')) showToolsWindow ^= 1;
 	if(showToolsWindow) uiToolsWindow();
 
 	{
@@ -6970,6 +7668,7 @@ gui(void)
 		showBrowserWindow ^= 1;
 		if(!showBrowserWindow){
 			if(gPlaceMode) SpawnExitPlaceMode();
+			if(gPrefabPlaceMode) ExitPrefabPlaceMode();
 			if(gBrushMode) ExitBrushMode();
 		}
 	}
@@ -6978,6 +7677,7 @@ gui(void)
 		// ImGui X button can set showBrowserWindow to false
 		if(!showBrowserWindow){
 			if(gPlaceMode) SpawnExitPlaceMode();
+			if(gPrefabPlaceMode) ExitPrefabPlaceMode();
 			if(gBrushMode) ExitBrushMode();
 		}
 	}
@@ -6992,6 +7692,8 @@ gui(void)
 			WaterLevel::gWaterSubMode = 0;
 		}else if(gBrushMode){
 			ExitBrushMode();
+		}else if(gPrefabPlaceMode){
+			ExitPrefabPlaceMode();
 		}else if(gPlaceMode)
 			SpawnExitPlaceMode();
 	}
@@ -7002,6 +7704,7 @@ gui(void)
 		if(WaterLevel::gWaterEditMode){
 			ClearSelection();
 			if(gPlaceMode) SpawnExitPlaceMode();
+			if(gPrefabPlaceMode) ExitPrefabPlaceMode();
 			if(gBrushMode) ExitBrushMode();
 		}else{
 			WaterLevel::CancelCreateMode();
@@ -7031,8 +7734,9 @@ gui(void)
 	if(WaterLevel::gWaterEditMode)
 		uiWaterWindow();
 
-	if(showHelpWindow) uiHelpWindow();
-	if(showDemoWindow){
+		if(showHelpWindow) uiHelpWindow();
+		if(showShortcutsWindow) uiKeyboardShortcutsWindow();
+		if(showDemoWindow){
 		ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiCond_FirstUseEver);
 		ImGui::ShowDemoWindow(&showDemoWindow);
 	}
@@ -7052,6 +7756,74 @@ gui(void)
 			ImGui::TextColored(ImVec4(1,1,0,1),
 				"PLACE: %s  [Click=Place | Shift+Click=Multi | RMB/Esc=Cancel]", obj->m_name);
 			ImGui::End();
+
+			ImGuiIO &placeIO = ImGui::GetIO();
+			if(!placeIO.WantCaptureMouse){
+				rw::V3d hitPos, hitNormal;
+				if(GetPlacementSurfaceHit(&hitPos, &hitNormal)){
+					rw::V3d centerPos = hitPos;
+					centerPos.z += GetPlacementBaseOffset(GetSpawnObjectId());
+
+					rw::V3d centerScreen;
+					float csw, csh;
+					if(Sprite::CalcScreenCoors(centerPos, &centerScreen, &csw, &csh, false)){
+						ImDrawList *dl = ImGui::GetForegroundDrawList();
+						ImU32 outer = IM_COL32(80, 230, 130, 240);
+						ImU32 inner = IM_COL32(80, 230, 130, 70);
+						float r = 14.0f * csw;
+						if(r < 7.0f) r = 7.0f;
+						if(r > 52.0f) r = 52.0f;
+						ImVec2 c(centerScreen.x, centerScreen.y);
+						dl->AddCircleFilled(c, r, inner, 32);
+						dl->AddCircle(c, r, outer, 32, 1.6f);
+						dl->AddCircleFilled(c, 4.0f, outer, 12);
+
+						rw::V3d normalEnd = add(hitPos, scale(hitNormal, 2.0f));
+						normalEnd.z += GetPlacementBaseOffset(GetSpawnObjectId());
+						rw::V3d normalScreen;
+						float nsw, nsh;
+						if(Sprite::CalcScreenCoors(normalEnd, &normalScreen, &nsw, &nsh, false))
+							dl->AddLine(c, ImVec2(normalScreen.x, normalScreen.y), outer, 2.0f);
+					}
+				}
+			}
+		}
+	}
+
+	// Prefab placement overlay
+	if(gPrefabPlaceMode){
+		const char *path = GetPrefabPlacePath();
+		const char *name = strrchr(path, '/');
+		name = name ? name + 1 : path;
+		ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 40));
+		ImGui::SetNextWindowBgAlpha(0.6f);
+		ImGui::Begin("##PrefabPlaceMode", nil,
+			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoFocusOnAppearing);
+		ImGui::TextColored(ImVec4(0.45f,0.80f,1.0f,1),
+			"PREFAB: %s  [Click=Place | Shift+Click=Multi | RMB/Esc=Cancel]", name);
+		ImGui::End();
+
+		ImGuiIO &prefabIO = ImGui::GetIO();
+		if(!prefabIO.WantCaptureMouse){
+			rw::V3d hitPos, hitNormal;
+			if(GetPlacementSurfaceHit(&hitPos, &hitNormal)){
+				rw::V3d centerScreen;
+				float csw, csh;
+				if(Sprite::CalcScreenCoors(hitPos, &centerScreen, &csw, &csh, false)){
+					ImDrawList *dl = ImGui::GetForegroundDrawList();
+					ImU32 outer = IM_COL32(80, 180, 255, 240);
+					ImU32 inner = IM_COL32(80, 180, 255, 60);
+					float r = 18.0f * csw;
+					if(r < 8.0f) r = 8.0f;
+					if(r > 64.0f) r = 64.0f;
+					ImVec2 c(centerScreen.x, centerScreen.y);
+					dl->AddCircleFilled(c, r, inner, 32);
+					dl->AddCircle(c, r, outer, 32, 1.8f);
+					dl->AddCircleFilled(c, 4.0f, outer, 12);
+				}
+			}
 		}
 	}
 
@@ -7141,7 +7913,7 @@ gui(void)
 	}
 
 	// Water hover hint (when not in water edit mode, mouse over water)
-	if(!WaterLevel::gWaterEditMode && !gPlaceMode && params.water == GAME_SA){
+	if(!WaterLevel::gWaterEditMode && !gPlaceMode && !gPrefabPlaceMode && params.water == GAME_SA){
 		ImGuiIO &hintIO = ImGui::GetIO();
 		if(!hintIO.WantCaptureMouse){
 			Ray ray;
