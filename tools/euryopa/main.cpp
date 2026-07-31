@@ -56,10 +56,14 @@ EnsureDirectoryTree(const char *path)
 	}
 #ifdef _WIN32
 	_mkdir(dirpath);
+	DWORD attributes = GetFileAttributesA(dirpath);
+	return attributes != INVALID_FILE_ATTRIBUTES &&
+	       (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 #else
 	mkdir(dirpath, 0777);
+	struct stat info;
+	return stat(dirpath, &info) == 0 && S_ISDIR(info.st_mode);
 #endif
-	return true;
 }
 
 // TODO: print to log as well
@@ -211,10 +215,16 @@ bool
 GetArianeDataDirectory(char *dir, size_t size)
 {
 	char rootDir[1024];
-	if(!GetEditorRootDirectory(rootDir, sizeof(rootDir)) ||
-	   !BuildPath(dir, size, rootDir, "ariane"))
+	if(!GetEditorRootDirectory(rootDir, sizeof(rootDir)))
 		return false;
-	return EnsureDirectoryTree(dir);
+
+	if(BuildPath(dir, size, rootDir, "ariane") && EnsureDirectoryTree(dir))
+		return true;
+
+	// The macOS executable is named `ariane`. It can also sit beside the
+	// Windows build in a Parallels shared game folder, so select the fallback
+	// based on the filesystem entry rather than the editor's platform.
+	return BuildPath(dir, size, rootDir, "ariane_data") && EnsureDirectoryTree(dir);
 }
 
 bool
@@ -576,7 +586,7 @@ CreateFallbackRaster(void)
 }
 
 static rw::Raster*
-ConvertTexRaster(rw::Raster *ras)
+ConvertTexRaster(rw::Raster *ras, const char *textureName)
 {
 	using namespace rw;
 
@@ -608,8 +618,9 @@ ConvertTexRaster(rw::Raster *ras)
 #else
 	Raster *converted = Raster::convertTexToCurrentPlatform(ras);
 	if(converted == nil){
-		log("warning: failed to create converted raster for platform %d, using fallback texture\n",
-			rw::platform);
+		log("warning: failed to convert texture %s from platform %d to %d, using fallback texture\n",
+			textureName && textureName[0] ? textureName : "(unnamed)", ras->platform, rw::platform);
+		ras->destroy();
 		return CreateFallbackRaster();
 	}
 	return converted;
@@ -626,7 +637,7 @@ ConvertTxd(rw::TexDictionary *txd)
 		tex = rw::Texture::fromDict(lnk);
 		rw::Raster *ras = tex->raster;
 		if(ras)
-			tex->raster = ConvertTexRaster(ras);
+			tex->raster = ConvertTexRaster(ras, tex->name);
 		tex->setFilter(rw::Texture::LINEAR);
 	}
 }

@@ -48,13 +48,35 @@ namespace FileLoader {
 
 GameFile *currentFile;
 void LoadObjectInstance(char *line);
+static std::vector<std::string> loadedScenePaths;
+
+static bool
+SceneWasAlreadyLoaded(const char *filename)
+{
+	for(size_t i = 0; i < loadedScenePaths.size(); i++)
+		if(LogicalPathEquals(loadedScenePaths[i].c_str(), filename))
+			return true;
+	loadedScenePaths.push_back(filename ? filename : "");
+	return false;
+}
 
 void*
 DatDesc::get(DatDesc *desc, const char *name)
 {
-	for(; desc->name[0] != '\0'; desc++)
-		if(strcmp(desc->name, name) == 0)
+	for(; desc->name[0] != '\0'; desc++){
+		size_t len = strlen(desc->name);
+		if(strncmp(desc->name, name, len) != 0)
+			continue;
+
+		// Mod Loader text files can annotate section markers, for example
+		// "inst // Proper Fixes ...". GTA accepts these comments, so match a
+		// section when the remaining text is empty or contains only a comment.
+		const char *rest = name + len;
+		while(isspace((unsigned char)*rest))
+			rest++;
+		if(*rest == '\0' || *rest == '#' || (rest[0] == '/' && rest[1] == '/'))
 			return (void*)desc->handler;
+	}
 	return (void*)desc->handler;
 }
 
@@ -77,9 +99,8 @@ again:
 	char *s = skipWhite(linebuf);
 	// remove trailing whitespace
 	int end = strlen(s);
-	char c;
-	while(c = s[--end], isspace(c))
-		s[end] = '\0';
+	while(end > 0 && isspace((unsigned char)s[end-1]))
+		s[--end] = '\0';
 	// convert ',' -> ' '
 	for(char *t = s; *t; t++)
 		if(*t == ',') *t = ' ';
@@ -101,13 +122,10 @@ LoadDataFile(const char *filename, DatDesc *desc)
 		return;
 log("Loading data file %s\n", filename);
 	while(line = LoadLine(file)){
-		if(line[0] == '#'){
-			// Only inst sections need commented lines so deleted
-			// placeholders keep their original indices.
-			if(handler == LoadObjectInstance)
-				handler(line);
+		// Match GTA's text IPL parser: comments never reach a section handler
+		// and therefore never consume an instance/LOD ordinal.
+		if(line[0] == '#')
 			continue;
-		}
 		void *tmp = DatDesc::get(desc, line);
 		if(tmp){
 			handler = (void(*)(char*))tmp;
@@ -413,55 +431,15 @@ LoadTXDParent(char *line)
 static std::vector<ObjectInst*> tmpInsts;
 static int iplInstCounter;  // tracks instance index within current IPL file
 
-static char*
-SkipCommentPrefix(char *line)
-{
-	while(*line == '#')
-		line++;
-	return skipWhite(line);
-}
-
-static bool
-LooksLikeObjectInstanceLine(char *line)
-{
-	using namespace rw;
-
-	FileObjectInstance fi;
-	char model[MODELNAMELEN];
-	float area, sx, sy, sz;
-	if(isSA()){
-		return sscanf(line, "%d %s %d  %f %f %f  %f %f %f %f  %d",
-		              &fi.objectId, model, &fi.area,
-		              &fi.position.x, &fi.position.y, &fi.position.z,
-		              &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w,
-		              &fi.lod) == 11;
-	}
-	if(sscanf(line, "%d %s %f  %f %f %f  %f %f %f  %f %f %f %f",
-	          &fi.objectId, model, &area,
-	          &fi.position.x, &fi.position.y, &fi.position.z,
-	          &sx, &sy, &sz,
-	          &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w) == 13)
-		return true;
-	return sscanf(line, "%d %s  %f %f %f  %f %f %f  %f %f %f %f",
-	              &fi.objectId, model,
-	              &fi.position.x, &fi.position.y, &fi.position.z,
-	              &sx, &sy, &sz,
-	              &fi.rotation.x, &fi.rotation.y, &fi.rotation.z, &fi.rotation.w) == 12;
-}
-
 void
 LoadObjectInstance(char *line)
 {
 	using namespace rw;
 
-	// Deleted instance (commented out) - keep index slot for streaming IPL compatibility
-	if(line[0] == '#'){
-		if(LooksLikeObjectInstanceLine(SkipCommentPrefix(line))){
-			tmpInsts.push_back(nil);
-			iplInstCounter++;
-		}
+	// GTA skips commented placement lines entirely. They must not consume an
+	// IPL ordinal: every text LOD reference indexes only active inst entries.
+	if(line[0] == '#')
 		return;
-	}
 
 	FileObjectInstance fi = {};
 	fi.lod = -1;
@@ -779,6 +757,14 @@ SetupBigBuildings(void)
 void
 LoadScene(const char *filename)
 {
+	// A mod can expose the same IPL through gta.dat and a readme-style
+	// Mod Loader addition. Loading it twice duplicates both its text instances
+	// and all related streaming IPL instances, including LOD/collision state.
+	if(SceneWasAlreadyLoaded(filename)){
+		log("LoadScene: skipping duplicate IPL %s\n", filename ? filename : "(null)");
+		return;
+	}
+
 	tmpInsts.clear();
 	iplInstCounter = 0;
 	LoadDataFile(filename, iplDesc);
@@ -1249,6 +1235,107 @@ LineExistsTrimmed(const std::string &text, const char *line)
 	return false;
 }
 
+static const char*
+GetMainDatLogicalPath(void)
+{
+	switch(gameversion){
+	case GAME_III: return "data/gta3.dat";
+	case GAME_VC:  return "data/gta_vc.dat";
+	case GAME_SA:  return "data/gta.dat";
+	case GAME_LCS: return "data/gta_lcs.dat";
+	case GAME_VCS: return "data/gta_vcs.dat";
+	default:       return nil;
+	}
+}
+
+static bool
+DatContainsIplEntry(const std::string &text, const char *iplPath)
+{
+	const char *line = text.c_str();
+	const char *textEnd = line + text.size();
+	while(line < textEnd){
+		const char *lineEnd = line;
+		while(lineEnd < textEnd && *lineEnd != '\n' && *lineEnd != '\r')
+			lineEnd++;
+		const char *nextLine = lineEnd;
+
+		const char *entry = line;
+		while(entry < lineEnd && isspace((unsigned char)*entry))
+			entry++;
+		if(lineEnd - entry >= 4 &&
+		   rw::strncmp_ci(entry, "IPL", 3) == 0 &&
+		   isspace((unsigned char)entry[3])){
+			entry += 3;
+			while(entry < lineEnd && isspace((unsigned char)*entry))
+				entry++;
+			while(lineEnd > entry && isspace((unsigned char)*(lineEnd-1)))
+				lineEnd--;
+
+			std::string existingPath(entry, lineEnd);
+			if(LogicalPathEquals(existingPath.c_str(), iplPath))
+				return true;
+		}
+
+		while(nextLine < textEnd && (*nextLine == '\n' || *nextLine == '\r'))
+			nextLine++;
+		line = nextLine;
+	}
+	return false;
+}
+
+static bool
+QueueOriginalCustomIplDatSave(std::vector<PendingSaveFile> &pendingFiles)
+{
+	const char *datLogicalPath = GetMainDatLogicalPath();
+	if(datLogicalPath == nil)
+		return false;
+
+	char datPath[1024];
+	const char *sourcePath = ModloaderGetSourcePath(datLogicalPath);
+	if(sourcePath){
+		strncpy(datPath, sourcePath, sizeof(datPath)-1);
+		datPath[sizeof(datPath)-1] = '\0';
+	}else{
+		strncpy(datPath, datLogicalPath, sizeof(datPath)-1);
+		datPath[sizeof(datPath)-1] = '\0';
+		rw::makePath(datPath);
+	}
+
+	FILE *f = fopen(datPath, "rb");
+	if(f == nil){
+		log("SaveScene: can't read %s before registering custom IPL\n", datPath);
+		return false;
+	}
+	std::string out;
+	char buf[1024];
+	size_t n;
+	while((n = fread(buf, 1, sizeof(buf), f)) > 0)
+		out.append(buf, n);
+	bool readOk = ferror(f) == 0;
+	fclose(f);
+	if(!readOk){
+		log("SaveScene: failed reading %s before registering custom IPL\n", datPath);
+		return false;
+	}
+
+	// Keep the native DAT spelling used by the games; comparisons accept
+	// either slash style so an existing equivalent entry is not duplicated.
+	const char *iplPath = "data\\maps\\custom.ipl";
+	if(DatContainsIplEntry(out, iplPath))
+		return true;
+	if(!out.empty() && out[out.size()-1] != '\n' && out[out.size()-1] != '\r')
+		out += "\n";
+	out += "IPL ";
+	out += iplPath;
+	out += "\n";
+
+	PendingSaveFile pending;
+	pending.finalPath = datPath;
+	pending.data.assign(out.begin(), out.end());
+	pendingFiles.push_back(pending);
+	return true;
+}
+
 static bool
 QueueModloaderCustomIplManifestSave(std::vector<PendingSaveFile> &pendingFiles)
 {
@@ -1459,8 +1546,7 @@ FindAssociatedTextLodOutputIndex(ObjectInst *inst, const TextLodIndexState &stat
 }
 
 static void
-BuildTextLodIndexState(ObjectInst **insts, int numInsts, bool compactDeletes,
-                       TextLodIndexState &state)
+BuildTextLodIndexState(ObjectInst **insts, int numInsts, TextLodIndexState &state)
 {
 	int maxOldIndex = -1;
 	int outputIndex = 0;
@@ -1478,10 +1564,11 @@ BuildTextLodIndexState(ObjectInst **insts, int numInsts, bool compactDeletes,
 		ObjectInst *inst = insts[i];
 		if(inst == nil)
 			continue;
-		if(compactDeletes && inst->m_isDeleted)
+		if(inst->m_isDeleted){
+			// Text saves retain this line as a comment for undo/history, but
+			// GTA ignores comments when assigning text IPL instance ordinals.
 			continue;
-		if(inst->m_isDeleted)
-			continue;
+		}
 
 		state.instOutputIndices.push_back(std::make_pair(inst, outputIndex));
 		if(inst->m_iplIndex >= 0 && inst->m_iplIndex < (int)state.oldOutputIndices.size())
@@ -1529,7 +1616,7 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 	TextLodIndexState lodIndexState;
 
 	out.clear();
-	BuildTextLodIndexState(insts, numInsts, compactDeletes, lodIndexState);
+	BuildTextLodIndexState(insts, numInsts, lodIndexState);
 	ResolveSceneReadPath(filename, realpath, sizeof(realpath));
 	fin = fopen(realpath, "rb");
 	if(fin){
@@ -1537,12 +1624,24 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 		bool inInstSection = false;
 		bool instWritten = false;
 
+		auto isSectionLine = [](const char *line, const char *section) {
+			while(*line && isspace((unsigned char)*line))
+				line++;
+			size_t sectionLen = strlen(section);
+			if(strncmp(line, section, sectionLen) != 0)
+				return false;
+			line += sectionLen;
+			while(*line && isspace((unsigned char)*line))
+				line++;
+			return *line == '\0';
+		};
+
 		while(fgets(linebuf, sizeof(linebuf), fin)){
 			char *s = linebuf;
 			while(*s && isspace((unsigned char)*s)) s++;
 
 			if(!inInstSection){
-				if(strncmp(s, "inst", 4) == 0 && (s[4] == '\0' || s[4] == '\n' || s[4] == '\r')){
+				if(isSectionLine(s, "inst")){
 					inInstSection = true;
 					out += "inst\n";
 					for(int i = 0; i < numInsts; i++){
@@ -1556,7 +1655,7 @@ BuildSceneFileContents(const char *filename, ObjectInst **insts, int numInsts, b
 				}else
 					out += linebuf;
 			}else{
-				if(strncmp(s, "end", 3) == 0 && (s[3] == '\0' || s[3] == '\n' || s[3] == '\r')){
+				if(isSectionLine(s, "end")){
 					out += "end\n";
 					inInstSection = false;
 				}
@@ -1600,9 +1699,14 @@ WriteSceneFileInternal(const char *filename, ObjectInst **insts, int numInsts, b
 	if(!EnsureParentDirectories(realpath))
 		return false;
 
-	std::vector<PendingSaveFile> files(1);
-	files[0].finalPath = realpath;
-	files[0].data.assign(out.begin(), out.end());
+	std::vector<PendingSaveFile> files;
+	PendingSaveFile sceneFile;
+	sceneFile.finalPath = realpath;
+	sceneFile.data.assign(out.begin(), out.end());
+	files.push_back(sceneFile);
+	if(IsDefaultCustomIplLogicalPath(filename) &&
+	   !QueueOriginalCustomIplDatSave(files))
+		return false;
 	return CommitPendingSaveFiles(files);
 }
 
@@ -1638,6 +1742,116 @@ QueueSceneFileSave(const char *filename, ObjectInst **insts, int numInsts, bool 
 		return false;
 	return true;
 }
+
+static std::vector<ObjectInst*>
+CollectProjectedOrphanLods(const char *filename,
+                          const std::vector<ObjectInst*> &oldTextInsts,
+                          int32 *relatedImages, int numRelatedImages)
+{
+	const int numTextInsts = (int)oldTextInsts.size();
+	std::vector<int> liveChildren(numTextInsts, 0);
+	std::vector<int> deletedChildren(numTextInsts, 0);
+	std::vector<int> textIndexCounts(numTextInsts, 0);
+	std::vector<bool> projected(numTextInsts, false);
+	std::vector<ObjectInst*> projectedLods;
+
+	// The IPL lod index is authoritative. Keep this pass pure: save and backup
+	// both use its result, and neither may leave pointer repairs behind on error.
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *textInst = (ObjectInst*)p->item;
+		if(textInst && textInst->m_imageIndex < 0 && textInst->m_file &&
+		   LogicalPathEquals(textInst->m_file->name, filename) &&
+		   textInst->m_iplIndex >= 0 && textInst->m_iplIndex < numTextInsts)
+			textIndexCounts[textInst->m_iplIndex]++;
+	}
+
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *child = (ObjectInst*)p->item;
+		if(child == nil || child->m_lodId < 0 || child->m_lodId >= numTextInsts)
+			continue;
+		if(textIndexCounts[child->m_lodId] != 1)
+			continue;
+
+		bool belongsToFamily =
+			(child->m_imageIndex < 0 && child->m_file &&
+			 LogicalPathEquals(child->m_file->name, filename)) ||
+			(child->m_imageIndex >= 0 &&
+			 IsImageInList(child->m_imageIndex, relatedImages, numRelatedImages));
+		if(!belongsToFamily)
+			continue;
+
+		ObjectInst *lod = oldTextInsts[child->m_lodId];
+		if(lod == nil || lod == child)
+			continue;
+		if(child->m_isDeleted)
+			deletedChildren[child->m_lodId]++;
+		else
+			liveChildren[child->m_lodId]++;
+	}
+
+	// Closing transitively matters for HD -> LOD -> super-LOD chains. Projecting
+	// one LOD changes it from a live child into a deleted child of its own LOD.
+	bool changed;
+	do{
+		changed = false;
+		for(int i = 0; i < numTextInsts; i++){
+			ObjectInst *lod = oldTextInsts[i];
+			if(projected[i] || textIndexCounts[i] != 1 ||
+			   lod == nil || lod->m_isDeleted ||
+			   liveChildren[i] != 0 || deletedChildren[i] == 0)
+				continue;
+
+			projected[i] = true;
+			projectedLods.push_back(lod);
+			changed = true;
+
+			int parentIndex = lod->m_lodId;
+			if(parentIndex >= 0 && parentIndex < numTextInsts &&
+			   textIndexCounts[parentIndex] == 1 &&
+			   oldTextInsts[parentIndex] && oldTextInsts[parentIndex] != lod){
+				if(liveChildren[parentIndex] > 0)
+					liveChildren[parentIndex]--;
+				deletedChildren[parentIndex]++;
+			}
+		}
+	}while(changed);
+
+	return projectedLods;
+}
+
+class ScopedLodDeletionProjection
+{
+public:
+	explicit ScopedLodDeletionProjection(const std::vector<ObjectInst*> &projected)
+	: m_projected(projected), m_restore(true)
+	{
+		for(size_t i = 0; i < m_projected.size(); i++)
+			m_projected[i]->m_isDeleted = true;
+	}
+
+	~ScopedLodDeletionProjection()
+	{
+		if(m_restore)
+			for(size_t i = 0; i < m_projected.size(); i++)
+				m_projected[i]->m_isDeleted = false;
+	}
+
+	void Commit()
+	{
+		for(size_t i = 0; i < m_projected.size(); i++){
+			StampChangeSeq(m_projected[i]);
+			m_projected[i]->Deselect();
+		}
+		m_restore = false;
+	}
+
+private:
+	std::vector<ObjectInst*> m_projected;
+	bool m_restore;
+
+	ScopedLodDeletionProjection(const ScopedLodDeletionProjection&);
+	ScopedLodDeletionProjection &operator=(const ScopedLodDeletionProjection&);
+};
 
 // Save all instances that belong to a given IPL file
 // Text-only IPLs keep the historical "commented delete" behaviour.
@@ -1712,8 +1926,24 @@ SaveScene(const char *filename)
 
 		for(int i = 0; i < numInsts; i++){
 			inst = fileInsts[i];
+			textStates.push_back({ inst, inst->m_iplIndex, inst->m_lodId, inst->m_lod });
 			if(inst->m_iplIndex >= 0 && inst->m_iplIndex <= maxOldIndex)
 				oldTextInsts[inst->m_iplIndex] = inst;
+		}
+
+		std::vector<ObjectInst*> projectedOrphanLods =
+			CollectProjectedOrphanLods(filename, oldTextInsts, relatedImages, numRelatedImages);
+		ScopedLodDeletionProjection orphanProjection(projectedOrphanLods);
+		for(size_t i = 0; i < projectedOrphanLods.size(); i++){
+			ObjectInst *lod = projectedOrphanLods[i];
+			log("SaveScene: projecting orphaned LOD %d (model %d) after child deletion\n",
+			    lod->m_iplIndex, lod->m_objectId);
+			hotReloadTrace("SaveScene: projecting orphaned LOD %d (model %d) after child deletion\n",
+			               lod->m_iplIndex, lod->m_objectId);
+		}
+
+		for(int i = 0; i < numInsts; i++){
+			inst = fileInsts[i];
 			if(inst->m_isDeleted)
 				continue;
 			oldToNew[inst->m_iplIndex] = numActiveTextInsts;
@@ -1722,7 +1952,6 @@ SaveScene(const char *filename)
 
 		for(int i = 0; i < numActiveTextInsts; i++){
 			inst = activeTextInsts[i];
-			textStates.push_back({ inst, inst->m_iplIndex, inst->m_lodId, inst->m_lod });
 
 			int oldLodId = inst->m_lodId;
 			if(oldLodId >= 0 &&
@@ -1758,7 +1987,10 @@ SaveScene(const char *filename)
 				inst->m_lodId = -1;
 			}
 
-			if(inst->m_lodId != oldLodId)
+			// Deleted instances are not present in the compacted file. Their logical
+			// LOD is restored after the save, but the temporary on-disk remap must
+			// not turn them into in-place patch candidates.
+			if(!inst->m_isDeleted && inst->m_lodId != oldLodId)
 				inst->m_isDirty = true;
 		}
 
@@ -1855,12 +2087,51 @@ SaveScene(const char *filename)
 			result.numSavedImages = 0;
 			return result;
 		}
+		orphanProjection.Commit();
+		if(!projectedOrphanLods.empty())
+			log("SaveScene: repaired %d orphaned LOD(s) in %s\n",
+			    (int)projectedOrphanLods.size(), filename);
 
 		log("SaveScene: family save completed for %s\n", filename);
 		hotReloadTrace("SaveScene: family save completed for %s\n", filename);
 
+		// The compacted file contains only live text instances. Keep deleted
+		// instances after that range with unique indices so Save -> Undo -> Save
+		// cannot make restored entries collide with the compacted live indices.
+		int nextTextIndex = 0;
 		for(int i = 0; i < numActiveTextInsts; i++)
-			activeTextInsts[i]->m_iplIndex = i;
+			activeTextInsts[i]->m_iplIndex = nextTextIndex++;
+		for(int i = 0; i < numInsts; i++)
+			if(fileInsts[i]->m_isDeleted)
+				fileInsts[i]->m_iplIndex = nextTextIndex++;
+
+		// Saving needs temporary on-disk LOD indices, but the logical pointer
+		// must survive even when both sides of a deleted HD/LOD pair are omitted
+		// from the compacted files. Undo relies on that pointer to restore the
+		// pair. Rebuild every runtime LOD id from the preserved pointer and the
+		// normalized post-save text indices.
+		for(size_t i = 0; i < textStates.size(); i++){
+			ObjectInst *savedInst = textStates[i].inst;
+			ObjectInst *savedLod = textStates[i].oldLod;
+			if(savedLod == nil && textStates[i].oldLodId >= 0 &&
+			   textStates[i].oldLodId <= maxOldIndex)
+				savedLod = oldTextInsts[textStates[i].oldLodId];
+			if(savedLod == savedInst)
+				savedLod = nil;
+			savedInst->m_lod = savedLod;
+			savedInst->m_lodId = savedLod ? savedLod->m_iplIndex : -1;
+		}
+		for(size_t i = 0; i < binaryStates.size(); i++){
+			ObjectInst *savedInst = binaryStates[i].inst;
+			ObjectInst *savedLod = binaryStates[i].oldLod;
+			if(savedLod == nil && binaryStates[i].oldLodId >= 0 &&
+			   binaryStates[i].oldLodId <= maxOldIndex)
+				savedLod = oldTextInsts[binaryStates[i].oldLodId];
+			if(savedLod == savedInst)
+				savedLod = nil;
+			savedInst->m_lod = savedLod;
+			savedInst->m_lodId = savedLod ? savedLod->m_iplIndex : -1;
+		}
 	}else{
 		if(gSaveDestination == SAVE_DESTINATION_MODLOADER){
 			std::vector<PendingSaveFile> pendingFiles;
@@ -1892,7 +2163,8 @@ static bool
 binaryInstNeedsSave(ObjectInst *inst)
 {
 	return inst->m_imageIndex >= 0 &&
-		(inst->m_isDirty || inst->m_isDeleted != inst->m_wasSavedDeleted);
+		(inst->m_isDeleted != inst->m_wasSavedDeleted ||
+		 (!inst->m_isDeleted && inst->m_isDirty));
 }
 
 static int
@@ -2056,12 +2328,21 @@ BuildBinaryImageByIndexInternal(int32 imgIdx, BinaryIplSaveResult *result, int *
 			fillBinaryInstData(&instData[nextIdx], inst);
 			rebuiltIndices[i] = nextIdx++;
 		}
+		// Deleted entries are absent on disk, but keeping unique runtime indices
+		// after the live range makes a later Undo deterministic: restored entries
+		// are appended instead of colliding with compacted survivors.
+		for(size_t i = 0; i < imageInsts.size(); i++)
+			if(imageInsts[i]->m_isDeleted)
+				rebuiltIndices[i] = nextIdx++;
 		hdr->numInst = numAlive;
 		modified = true;
 	}else{
 		for(size_t i = 0; i < imageInsts.size(); i++){
 			ObjectInst *inst = imageInsts[i];
-			if(!inst->m_isDirty)
+			// An already-saved deletion has no slot in the compacted binary IPL.
+			// Ignore stale dirty state defensively instead of treating its runtime
+			// index (which starts at hdr->numInst) as an in-file index.
+			if(inst->m_isDeleted || !inst->m_isDirty)
 				continue;
 			int idx = inst->m_binInstIndex;
 			if(idx < 0 || (uint32)idx >= hdr->numInst){
@@ -2761,6 +3042,14 @@ QueueSceneBackupSnapshot(const char *filename, const char *snapshotDir,
 		inst = fileInsts[i];
 		if(inst->m_iplIndex >= 0 && inst->m_iplIndex <= maxOldIndex)
 			oldTextInsts[inst->m_iplIndex] = inst;
+	}
+
+	std::vector<ObjectInst*> projectedOrphanLods =
+		CollectProjectedOrphanLods(filename, oldTextInsts, relatedImages, numRelatedImages);
+	ScopedLodDeletionProjection orphanProjection(projectedOrphanLods);
+
+	for(int i = 0; i < numInsts; i++){
+		inst = fileInsts[i];
 		if(inst->m_isDeleted)
 			continue;
 		oldToNew[inst->m_iplIndex] = numActiveTextInsts;
@@ -2802,7 +3091,7 @@ QueueSceneBackupSnapshot(const char *filename, const char *snapshotDir,
 			inst->m_lod = nil;
 			inst->m_lodId = -1;
 		}
-		if(inst->m_lodId != oldLodId)
+		if(!inst->m_isDeleted && inst->m_lodId != oldLodId)
 			inst->m_isDirty = true;
 	}
 

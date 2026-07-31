@@ -126,9 +126,12 @@ extern bool gOverrideBlurAmb;
 extern bool gNoTimeCull;
 extern bool gNoAreaCull;
 extern bool gDoBackfaceCulling;
+extern int gSelectionHighlightOpacity;
 extern bool gPlayAnimations;
 extern bool gUseViewerCam;
 extern bool gDrawTarget;
+extern bool gFlyAcceleration;
+extern float gFlySpeed;
 extern float gFlyFastMul;
 extern float gFlySlowMul;
 extern float gFovWheelStep;
@@ -141,6 +144,7 @@ bool GetIplVisibilityEntryVisible(int i);
 void SetIplVisibilityEntryVisible(int i, bool visible);
 void SetAllIplVisibilityEntries(bool visible);
 void ShowOnlyIplVisibilityEntry(int i);
+int SelectIplVisibilityEntryInstances(int i);
 
 // non-rendering things
 extern bool gRenderCollision;
@@ -401,7 +405,12 @@ enum GizmoMode {
 	GIZMO_TRANSLATE,
 	GIZMO_ROTATE
 };
+enum GizmoSpace {
+	GIZMO_LOCAL,
+	GIZMO_WORLD
+};
 extern int gGizmoMode;
+extern int gGizmoSpace;
 extern bool gGizmoEnabled;
 extern bool gGizmoHovered;
 extern bool gGizmoUsing;
@@ -451,6 +460,7 @@ enum UndoTransformFlags {
 
 struct UndoTransform {
 	ObjectInst *inst;
+	bool oldDirty;
 	rw::V3d oldPos;
 	rw::V3d newPos;
 	rw::Quat oldRot;
@@ -489,10 +499,22 @@ void UndoRecordTransformBatch(UndoTransform *transforms, int num);
 void Undo(void);
 void Redo(void);
 
+rw::V3d GetObjectRotationDegrees(const rw::Quat &rotation);
+rw::Quat MakeObjectRotationDegrees(const rw::V3d &degrees);
+rw::Quat ApplyObjectRotationDelta(const rw::Quat &startRotation,
+	const rw::V3d &degrees, bool worldSpace);
+bool CaptureObjectTransformTargets(ObjectInst *leader, bool includeSelection,
+	std::vector<UndoTransform> &transforms, bool *capped = nil);
+void PreviewObjectTransformTargets(ObjectInst *leader,
+	std::vector<UndoTransform> &transforms, const rw::V3d &leaderPos,
+	const rw::Quat &leaderRot, uint8 requestedFlags);
+int CommitObjectTransformTargets(std::vector<UndoTransform> &transforms);
+
 // Copy/Paste
 void CopySelected(void);
 void CutSelected(void);
 int PasteClipboard(void);
+int PasteClipboardInPlace(void);
 
 // Prefabs
 int ExportPrefab(const char *path);
@@ -517,6 +539,7 @@ enum ToastCategory {
 	TOAST_NUM_CATEGORIES
 };
 void Toast(ToastCategory cat, const char *fmt, ...);
+void ToastFor(ToastCategory cat, float duration, const char *fmt, ...);
 
 // Diff viewer flags (bitmask — an instance can be both moved and rotated)
 enum DiffFlags {
@@ -527,6 +550,7 @@ enum DiffFlags {
 	DIFF_RESTORED = 16,
 };
 int GetInstanceDiffFlags(ObjectInst *inst);
+float GetQuaternionSimilarity(const rw::Quat &a, const rw::Quat &b);
 void StampChangeSeq(ObjectInst *inst);
 uint32 BumpChangeSeq(void);
 uint32 GetLatestChangeSeq(void);
@@ -714,6 +738,7 @@ ObjectDef *AddObjectDef(int id);
 void RemoveObjectDef(int id);
 ObjectDef *GetObjectDef(int id);
 ObjectDef *GetObjectDef(const char *name, int *id);
+bool CreateObjectPreviewRwObject(int id, rw::Atomic **atomicOut, rw::Clump **clumpOut);
 
 
 struct FileObjectInstance

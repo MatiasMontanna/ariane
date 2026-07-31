@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <stdlib.h>
 #include <string.h>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 int gameversion;
@@ -14,6 +16,7 @@ Params params;
 SaveDestination gSaveDestination = SAVE_DESTINATION_ORIGINAL_FILES;
 
 int gGizmoMode = GIZMO_TRANSLATE;
+int gGizmoSpace = GIZMO_WORLD;
 bool gGizmoEnabled = true;
 bool gGizmoHovered = false;
 bool gGizmoUsing = false;
@@ -66,7 +69,10 @@ bool gNoAreaCull;
 bool gDoBackfaceCulling;	// init from params
 bool gPlayAnimations = true;
 bool gUseViewerCam;
-bool gDrawTarget = true;
+bool gDrawTarget = false;
+int gSelectionHighlightOpacity = 25;
+bool gFlyAcceleration = true;
+float gFlySpeed = 2.0f;
 float gFlyFastMul = 2.0f;
 float gFlySlowMul = 0.5f;
 float gFovWheelStep = 2.0f;
@@ -296,6 +302,32 @@ ShowOnlyIplVisibilityEntry(int i)
 
 	for(size_t j = 0; j < gIplVisibilityEntries.size(); j++)
 		gIplVisibilityEntries[j].visible = (int)j == i;
+}
+
+int
+SelectIplVisibilityEntryInstances(int i)
+{
+	RefreshIplVisibilityEntries();
+	if(i < 0 || i >= (int)gIplVisibilityEntries.size())
+		return 0;
+
+	const char *key = gIplVisibilityEntries[i].key;
+	int selected = 0;
+	ClearSelection();
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		char instKey[256];
+		if(inst == nil || inst->m_isDeleted)
+			continue;
+		if(!buildInstIplVisibilityKey(inst, instKey, sizeof(instKey)))
+			continue;
+		if(rw::strcmp_ci(instKey, key) != 0)
+			continue;
+		inst->Select();
+		selected++;
+	}
+	gIplVisibilityEntries[i].visible = true;
+	return selected;
 }
 
 bool
@@ -648,9 +680,12 @@ int32
 pick(void)
 {
 	static rw::RGBA black = { 0, 0, 0, 0xFF };
-	TheCamera.m_rwcam->clear(&black, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
+	if(!gta::BeginColourCodePass(TheCamera.m_rwcam, &black))
+		return -1;
 	RenderEverythingColourCoded();
-	return gta::GetColourCode(CPad::newMouseState.x, CPad::newMouseState.y);
+	int32 code = gta::GetColourCode(CPad::newMouseState.x, CPad::newMouseState.y);
+	gta::EndColourCodePass();
+	return code;
 }
 
 static rw::V3d
@@ -1128,6 +1163,7 @@ FindOrAddTransform(std::vector<UndoTransform> &transforms, ObjectInst *inst)
 		return -1;
 	UndoTransform t = {};
 	t.inst = inst;
+	t.oldDirty = inst->m_isDirty;
 	t.oldPos = inst->m_translation;
 	t.newPos = inst->m_translation;
 	t.oldRot = inst->m_rotation;
@@ -1183,14 +1219,16 @@ ApplyTransform(UndoTransform &t)
 }
 
 static bool
-FindOrAddLinkedTransformGroup(std::vector<UndoTransform> &transforms, ObjectInst *inst)
+FindOrAddLinkedTransformGroup(std::vector<UndoTransform> &transforms, ObjectInst *inst,
+	const std::unordered_set<ObjectInst*> &eligibleLods)
 {
 	size_t before = transforms.size();
 	if(FindOrAddTransform(transforms, inst) < 0)
 		return false;
 
 	if(inst->m_lod && !inst->m_lod->m_isDeleted){
-		if(FindOrAddTransform(transforms, inst->m_lod) < 0){
+		if(eligibleLods.find(inst->m_lod) != eligibleLods.end() &&
+		   FindOrAddTransform(transforms, inst->m_lod) < 0){
 			transforms.resize(before);
 			return false;
 		}
@@ -1206,6 +1244,208 @@ FindOrAddLinkedTransformGroup(std::vector<UndoTransform> &transforms, ObjectInst
 		}
 	}
 	return true;
+}
+
+rw::V3d
+GetObjectRotationDegrees(const rw::Quat &rotation)
+{
+	rw::Matrix matrix;
+	matrix.rotate(conj(NormalizeQuatOrIdentity(rotation)), rw::COMBINEREPLACE);
+	rw::RawMatrix raw;
+	rw::convMatrix(&raw, &matrix);
+	float translation[3], degrees[3], scaleValues[3];
+	ImGuizmo::DecomposeMatrixToComponents((float*)&raw, translation, degrees, scaleValues);
+	return { degrees[0], degrees[1], degrees[2] };
+}
+
+rw::Quat
+MakeObjectRotationDegrees(const rw::V3d &degrees)
+{
+	float translation[3] = { 0.0f, 0.0f, 0.0f };
+	float rotation[3] = { degrees.x, degrees.y, degrees.z };
+	float scaleValues[3] = { 1.0f, 1.0f, 1.0f };
+	rw::RawMatrix raw;
+	ImGuizmo::RecomposeMatrixFromComponents(translation, rotation, scaleValues, (float*)&raw);
+	rw::Matrix matrix;
+	rw::convMatrix(&matrix, &raw);
+	return QuatFromMatrix(matrix);
+}
+
+rw::Quat
+ApplyObjectRotationDelta(const rw::Quat &startRotation, const rw::V3d &degrees,
+	bool worldSpace)
+{
+	rw::Quat start = NormalizeQuatOrIdentity(startRotation);
+	rw::Quat delta = MakeObjectRotationDegrees(degrees);
+	// Object rotations are stored conjugated relative to their rendered
+	// orientation, so world-space and local-space composition are reversed.
+	return NormalizeQuatOrIdentity(worldSpace ? rw::mult(start, delta) : rw::mult(delta, start));
+}
+
+static bool
+TransformRotationsDiffer(const rw::Quat &a, const rw::Quat &b)
+{
+	rw::Quat na = NormalizeQuatOrIdentity(a);
+	rw::Quat nb = NormalizeQuatOrIdentity(b);
+	float dot = na.x*nb.x + na.y*nb.y + na.z*nb.z + na.w*nb.w;
+	if(dot < 0.0f){
+		nb.x = -nb.x;
+		nb.y = -nb.y;
+		nb.z = -nb.z;
+		nb.w = -nb.w;
+	}
+	const float epsilon = 0.0000001f;
+	return fabsf(na.x - nb.x) > epsilon || fabsf(na.y - nb.y) > epsilon ||
+	       fabsf(na.z - nb.z) > epsilon || fabsf(na.w - nb.w) > epsilon;
+}
+
+bool
+CaptureObjectTransformTargets(ObjectInst *leader, bool includeSelection,
+	std::vector<UndoTransform> &transforms, bool *capped)
+{
+	transforms.clear();
+	if(capped)
+		*capped = false;
+	if(leader == nil || leader->m_isDeleted)
+		return false;
+
+	std::vector<ObjectInst*> directTargets;
+	std::unordered_set<ObjectInst*> directTargetSet;
+	directTargets.push_back(leader);
+	directTargetSet.insert(leader);
+	if(includeSelection){
+		for(CPtrNode *p = selection.first; p; p = p->next){
+			ObjectInst *inst = (ObjectInst*)p->item;
+			if(inst->m_isDeleted || directTargetSet.find(inst) != directTargetSet.end())
+				continue;
+			directTargets.push_back(inst);
+			directTargetSet.insert(inst);
+		}
+	}
+
+	// A shared LOD follows its HD children only if every live child is a direct
+	// target. Moving just one child must not displace the LOD for its siblings.
+	std::unordered_map<ObjectInst*, std::pair<int, int> > lodChildCounts;
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *child = (ObjectInst*)p->item;
+		if(child->m_isDeleted || child->m_lod == nil || child->m_lod->m_isDeleted)
+			continue;
+		std::pair<int, int> &counts = lodChildCounts[child->m_lod];
+		counts.first++;
+		if(directTargetSet.find(child) != directTargetSet.end())
+			counts.second++;
+	}
+	std::unordered_set<ObjectInst*> eligibleLods;
+	for(std::unordered_map<ObjectInst*, std::pair<int, int> >::const_iterator it = lodChildCounts.begin();
+	    it != lodChildCounts.end(); ++it)
+		if(it->second.first > 0 && it->second.first == it->second.second)
+			eligibleLods.insert(it->first);
+
+	bool overflow = false;
+	for(int i = 0; i < (int)directTargets.size(); i++){
+		if(!FindOrAddLinkedTransformGroup(transforms, directTargets[i], eligibleLods)){
+			overflow = true;
+			if((int)transforms.size() >= MAX_BATCH_OBJECTS)
+				break;
+		}
+	}
+
+	// The cap can stop capture after an indirectly linked shared LOD was added.
+	// Keep that LOD only when every live child made it into the final snapshot.
+	std::unordered_set<ObjectInst*> capturedSet;
+	for(int i = 0; i < (int)transforms.size(); i++)
+		capturedSet.insert(transforms[i].inst);
+	std::unordered_map<ObjectInst*, int> capturedChildCounts;
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *child = (ObjectInst*)p->item;
+		if(!child->m_isDeleted && child->m_lod &&
+		   capturedSet.find(child) != capturedSet.end())
+			capturedChildCounts[child->m_lod]++;
+	}
+	for(int i = (int)transforms.size() - 1; i >= 0; i--){
+		ObjectInst *possibleLod = transforms[i].inst;
+		if(directTargetSet.find(possibleLod) != directTargetSet.end())
+			continue;
+		std::unordered_map<ObjectInst*, std::pair<int, int> >::const_iterator live =
+			lodChildCounts.find(possibleLod);
+		if(live != lodChildCounts.end() &&
+		   capturedChildCounts[possibleLod] != live->second.first){
+			capturedSet.erase(possibleLod);
+			transforms.erase(transforms.begin() + i);
+		}
+	}
+	if(capped)
+		*capped = overflow;
+	return !transforms.empty();
+}
+
+void
+PreviewObjectTransformTargets(ObjectInst *leader,
+	std::vector<UndoTransform> &transforms, const rw::V3d &leaderPos,
+	const rw::Quat &leaderRot, uint8 requestedFlags)
+{
+	UndoTransform *leaderStart = nil;
+	for(int i = 0; i < (int)transforms.size(); i++)
+		if(transforms[i].inst == leader){
+			leaderStart = &transforms[i];
+			break;
+		}
+	if(leaderStart == nil)
+		return;
+
+	rw::V3d moveDelta = sub(leaderPos, leaderStart->oldPos);
+	rw::Quat normalizedLeaderRot = NormalizeQuatOrIdentity(leaderRot);
+	rw::Quat deltaQ = NormalizeQuatOrIdentity(
+		rw::mult(rw::conj(NormalizeQuatOrIdentity(leaderStart->oldRot)), normalizedLeaderRot));
+	rw::Quat worldQ = rw::conj(deltaQ);
+
+	for(int i = 0; i < (int)transforms.size(); i++){
+		UndoTransform &t = transforms[i];
+		rw::V3d newPos = t.oldPos;
+		rw::Quat newRot = t.oldRot;
+		if(requestedFlags & UNDO_TRANSFORM_ROT){
+			rw::V3d offset = sub(t.oldPos, leaderStart->oldPos);
+			newPos = add(leaderStart->oldPos, rw::rotate(offset, worldQ));
+			newRot = NormalizeQuatOrIdentity(rw::mult(t.oldRot, deltaQ));
+		}
+		if(requestedFlags & UNDO_TRANSFORM_POS)
+			newPos = add(newPos, moveDelta);
+
+		t.inst->m_translation = newPos;
+		t.inst->m_rotation = newRot;
+		t.inst->m_isDirty = true;
+		t.inst->UpdateMatrix();
+		updateRwFrame(t.inst);
+
+		t.newPos = newPos;
+		t.newRot = newRot;
+		t.flags = 0;
+		if(length(sub(newPos, t.oldPos)) > 0.0000001f)
+			t.flags |= UNDO_TRANSFORM_POS;
+		if(TransformRotationsDiffer(newRot, t.oldRot))
+			t.flags |= UNDO_TRANSFORM_ROT;
+	}
+}
+
+int
+CommitObjectTransformTargets(std::vector<UndoTransform> &transforms)
+{
+	std::vector<UndoTransform> changed;
+	changed.reserve(transforms.size());
+	for(int i = 0; i < (int)transforms.size(); i++){
+		if(transforms[i].flags == 0){
+			transforms[i].inst->m_isDirty = transforms[i].oldDirty;
+			continue;
+		}
+		RemoveInstFromSectors(transforms[i].inst);
+		StampChangeSeq(transforms[i].inst);
+		InsertInstIntoSectors(transforms[i].inst);
+		changed.push_back(transforms[i]);
+	}
+	if(!changed.empty())
+		UndoRecordTransformBatch(changed.data(), (int)changed.size());
+	transforms.clear();
+	return (int)changed.size();
 }
 
 int
@@ -1759,12 +1999,15 @@ handleRectSelect(void)
 	}else{
 		// LMB released — commit selection via colour-coded picking pass
 		bool addMode = CPad::IsCtrlDown();
-		if(!addMode && !ctx.removeMode)
-			ClearSelection();
 
 		// Render scene with colour codes and read the selection rectangle
 		static rw::RGBA black = { 0, 0, 0, 0xFF };
-		TheCamera.m_rwcam->clear(&black, rw::Camera::CLEARIMAGE|rw::Camera::CLEARZ);
+		if(!gta::BeginColourCodePass(TheCamera.m_rwcam, &black)){
+			sRectSelectDragging = false;
+			gRectSelectActive = false;
+			Toast(TOAST_SELECTION, "Rectangle select failed to create the picking buffer");
+			return;
+		}
 		RenderEverythingColourCoded();
 
 		int rx = (int)ctx.x1;
@@ -1773,6 +2016,15 @@ handleRectSelect(void)
 		int rh = (int)(ctx.y2 - ctx.y1 + 0.5f);
 		int32 codes[MAX_BATCH_OBJECTS];
 		int numCodes = gta::GetColourCodesInRect(rx, ry, rw, rh, codes, MAX_BATCH_OBJECTS);
+		gta::EndColourCodePass();
+		if(numCodes < 0){
+			sRectSelectDragging = false;
+			gRectSelectActive = false;
+			Toast(TOAST_SELECTION, "Rectangle select failed to read the picking buffer");
+			return;
+		}
+		if(!addMode && !ctx.removeMode)
+			ClearSelection();
 		if(numCodes >= MAX_BATCH_OBJECTS)
 			Toast(TOAST_SELECTION, "Rectangle select limited to %d object(s)", MAX_BATCH_OBJECTS);
 
@@ -1862,6 +2114,25 @@ handleTool(void)
 			int carSpawnIdx = Cars::PickCarSpawn();
 			if(carSpawnIdx >= 0){
 				Cars::SelectCarSpawn(carSpawnIdx);
+			int32 code = pick();
+			if(code < 0){
+				Toast(TOAST_SELECTION, "Selection failed to create or read the picking buffer");
+				return;
+			}
+			ObjectInst *inst = GetInstanceByID(code);
+			if(inst && !inst->m_isDeleted){
+				if(CPad::IsShiftDown())
+					inst->Select();
+				else if(CPad::IsAltDown())
+					inst->Deselect();
+				else if(CPad::IsCtrlDown()){
+					if(inst->m_selected) inst->Deselect();
+					else inst->Select();
+				}else{
+					ClearSelection();
+					inst->Select();
+				}
+			}else
 				ClearSelection();
 			}else if(ScriptEntities::gRenderScriptEntities && ScriptEntities::gSelectScriptEntities){
 				int entityIdx = ScriptEntities::PickScriptEntity((float)CPad::newMouseState.x, (float)CPad::newMouseState.y);
@@ -1905,8 +2176,13 @@ handleTool(void)
 				SAPaths::selectedNode = SAPaths::hoveredNode;
 				Effects::selectedEffect = Effects::hoveredEffect;
 			}else{
+				int32 code = pick();
+				if(code < 0){
+					Toast(TOAST_SELECTION, "Selection failed to create or read the picking buffer");
+					return;
+				}
 				ClearSelection();
-				ObjectInst *inst = GetInstanceByID(pick());
+				ObjectInst *inst = GetInstanceByID(code);
 				if(inst && !inst->m_isDeleted)
 					inst->Select();
 			}
@@ -2298,7 +2574,8 @@ dogizmo(void)
 		}
 		snapPtr = snapValues;
 	}
-	ImGuizmo::Manipulate(fview, fproj, op, ImGuizmo::LOCAL, fobj, nil, snapPtr);
+	ImGuizmo::MODE space = gGizmoSpace == GIZMO_WORLD ? ImGuizmo::WORLD : ImGuizmo::LOCAL;
+	ImGuizmo::Manipulate(fview, fproj, op, space, fobj, nil, snapPtr);
 
 	gGizmoHovered = ImGuizmo::IsOver();
 	bool isUsing = ImGuizmo::IsUsing();
@@ -2318,24 +2595,9 @@ dogizmo(void)
 				dragGroundOffset = inst->m_translation.z - (hitPos.z - GetMinZOffsetForRotation(inst, inst->m_rotation));
 		}
 
-		// Build deduplicated snapshot of all affected objects
-		dragTransforms.clear();
-		dragTransforms.reserve(1024);
+		// Build deduplicated snapshot of all affected objects.
 		bool dragOverflow = false;
-		if(!FindOrAddLinkedTransformGroup(dragTransforms, inst))
-			dragOverflow = true;
-		for(CPtrNode *p = selection.first; p; p = p->next){
-			ObjectInst *sel = (ObjectInst*)p->item;
-			if(sel->m_isDeleted)
-				continue;
-			if(sel == inst)
-				continue;
-			if(!FindOrAddLinkedTransformGroup(dragTransforms, sel)){
-				dragOverflow = true;
-				if((int)dragTransforms.size() >= MAX_BATCH_OBJECTS)
-					break;
-			}
-		}
+		CaptureObjectTransformTargets(inst, true, dragTransforms, &dragOverflow);
 		if(dragOverflow)
 			Toast(TOAST_SELECTION, "Selection too large: some objects won't move (max %d)", MAX_BATCH_OBJECTS);
 	}
@@ -2346,15 +2608,13 @@ dogizmo(void)
 		for(int i = 0; i < (int)dragTransforms.size(); i++){
 			ObjectInst *obj = dragTransforms[i].inst;
 			uint8 flags = 0;
-			if(length(sub(obj->m_translation, dragTransforms[i].oldPos)) >= 0.0001f)
+			if(length(sub(obj->m_translation, dragTransforms[i].oldPos)) > 0.0000001f)
 				flags |= UNDO_TRANSFORM_POS;
-			if(memcmp(&obj->m_rotation, &dragTransforms[i].oldRot, sizeof(rw::Quat)) != 0)
+			if(TransformRotationsDiffer(obj->m_rotation, dragTransforms[i].oldRot))
 				flags |= UNDO_TRANSFORM_ROT;
 			if(flags != 0){
-				if(flags & UNDO_TRANSFORM_POS){
-					RemoveInstFromSectors(obj);
-					InsertInstIntoSectors(obj);
-				}
+				RemoveInstFromSectors(obj);
+				InsertInstIntoSectors(obj);
 				StampChangeSeq(obj);
 				UndoTransform t = {};
 				t.inst = obj;
@@ -2364,7 +2624,8 @@ dogizmo(void)
 				t.newRot = obj->m_rotation;
 				t.flags = flags;
 				finalTransforms.push_back(t);
-			}
+			}else
+				obj->m_isDirty = dragTransforms[i].oldDirty;
 		}
 		if(!finalTransforms.empty())
 			UndoRecordTransformBatch(finalTransforms.data(), (int)finalTransforms.size());
@@ -2523,11 +2784,16 @@ Draw(void)
 		Scene.camera = TheCamera.m_rwcam_viewer;
 	else
 		Scene.camera = TheCamera.m_rwcam;
-	// Render 3D preview to texture (before main camera update)
+	// Keep PS2's framebuffer-only alpha emulation out of the offscreen browser
+	// passes. It performs an extra depth-mask pass for blended materials and is
+	// intended for the visible world, not thumbnails or the selected preview.
+	int previewGsAlphaTest = rw::GetRenderState(rw::GSALPHATEST);
+	rw::SetRenderState(rw::GSALPHATEST, 0);
 	if(GetSpawnObjectId() >= 0)
 		RenderPreviewObject(GetSpawnObjectId());
 	RenderRequestedObjectThumbnails();
 	RenderRequestedPrefabThumbnails();
+	rw::SetRenderState(rw::GSALPHATEST, previewGsAlphaTest);
 
 	Scene.camera->beginUpdate();
 

@@ -724,6 +724,64 @@ HasEarlierSelectedTxd(CPtrNode *upto, const char *name)
 	return false;
 }
 
+static bool
+sameIplFamily(ObjectInst *a, ObjectInst *b)
+{
+	if(a == nil || b == nil)
+		return false;
+	if(a->m_iplFilterKey[0] != '\0' && b->m_iplFilterKey[0] != '\0' &&
+	   rw::strcmp_ci(a->m_iplFilterKey, b->m_iplFilterKey) == 0)
+		return true;
+	if(a->m_file && b->m_file && LogicalPathEquals(a->m_file->name, b->m_file->name))
+		return true;
+	return false;
+}
+
+static ObjectInst*
+resolveInstanceLod(ObjectInst *inst)
+{
+	if(inst == nil)
+		return nil;
+	if(inst->m_lodId < 0){
+		inst->m_lod = nil;
+		return nil;
+	}
+	if(inst->m_lod && inst->m_lod != inst &&
+	   inst->m_lod->m_iplIndex == inst->m_lodId &&
+	   sameIplFamily(inst, inst->m_lod))
+		return inst->m_lod;
+
+	// A family save temporarily rewrites LOD pointers. If a previous operation
+	// left only the local IPL index behind, recover the pointer before Delete or
+	// Undelete decides whether the paired LOD must follow the HD instance.
+	ObjectInst *resolved = nil;
+	for(CPtrNode *p = instances.first; p; p = p->next){
+		ObjectInst *candidate = (ObjectInst*)p->item;
+		if(candidate == nil || candidate == inst || candidate->m_imageIndex >= 0)
+			continue;
+		if(candidate->m_iplIndex != inst->m_lodId || !sameIplFamily(inst, candidate))
+			continue;
+		if(resolved != nil && resolved != candidate){
+			log("Ambiguous LOD index %d in IPL family; refusing delete cascade\n", inst->m_lodId);
+			inst->m_lod = nil;
+			return nil;
+		}
+		resolved = candidate;
+	}
+	inst->m_lod = resolved;
+	return resolved;
+}
+
+static bool
+instanceReferencesLod(ObjectInst *inst, ObjectInst *lodInst)
+{
+	if(inst == nil || lodInst == nil || inst == lodInst)
+		return false;
+	return inst->m_lodId >= 0 &&
+	       inst->m_lodId == lodInst->m_iplIndex &&
+	       sameIplFamily(inst, lodInst);
+}
+
 static int
 countLiveLodChildren(ObjectInst *lodInst, ObjectInst *ignoreInst)
 {
@@ -737,7 +795,7 @@ countLiveLodChildren(ObjectInst *lodInst, ObjectInst *ignoreInst)
 		ObjectInst *other = (ObjectInst*)p->item;
 		if(other == ignoreInst || other->m_isDeleted)
 			continue;
-		if(other->m_lod == lodInst)
+		if(instanceReferencesLod(other, lodInst))
 			count++;
 	}
 	return count;
@@ -950,15 +1008,16 @@ ObjectInst::Delete(void)
 	Deselect();
 
 	// If this HD building was the last live child of its LOD, delete the LOD too.
-	if(m_lod && !m_lod->m_isDeleted &&
-	   countLiveLodChildren(m_lod, this) == 0)
-		m_lod->Delete();
+	ObjectInst *lodInst = resolveInstanceLod(this);
+	if(lodInst && !lodInst->m_isDeleted &&
+	   countLiveLodChildren(lodInst, this) == 0)
+		lodInst->Delete();
 
 	// If this IS a LOD, delete all HD buildings that reference it
 	CPtrNode *p;
 	for(p = instances.first; p; p = p->next){
 		ObjectInst *other = (ObjectInst*)p->item;
-		if(other->m_lod == this && !other->m_isDeleted)
+		if(instanceReferencesLod(other, this) && !other->m_isDeleted)
 			other->Delete();
 	}
 }
@@ -973,16 +1032,30 @@ ObjectInst::Undelete(void)
 		m_isDirty = true;
 
 	// Also undelete the LOD pair
-	if(m_lod && m_lod->m_isDeleted)
-		m_lod->Undelete();
+	ObjectInst *lodInst = resolveInstanceLod(this);
+	if(lodInst && lodInst->m_isDeleted)
+		lodInst->Undelete();
 
 	// If this IS a LOD, undelete HD children
 	CPtrNode *p;
 	for(p = instances.first; p; p = p->next){
 		ObjectInst *other = (ObjectInst*)p->item;
-		if(other->m_lod == this && other->m_isDeleted)
+		if(instanceReferencesLod(other, this) && other->m_isDeleted)
 			other->Undelete();
 	}
+}
+
+static void
+setDeletedWithoutCascade(ObjectInst *inst, bool deleted)
+{
+	if(inst == nil || inst->m_isDeleted == deleted)
+		return;
+	inst->m_isDeleted = deleted;
+	StampChangeSeq(inst);
+	if(deleted)
+		inst->Deselect();
+	else if(inst->m_imageIndex >= 0 && inst->m_wasSavedDeleted)
+		inst->m_isDirty = true;
 }
 
 void
@@ -1008,27 +1081,23 @@ DeleteSelected(void)
 	if(capped)
 		Toast(TOAST_DELETE, "Delete limited to first %d selected instance(s)", MAX_BATCH_OBJECTS);
 
-	// Now delete them and collect ALL that got deleted (including LOD cascade)
-	int numAllDeleted = 0;
+	// Record the exact transition set. Undo must not recursively undelete an HD
+	// child that was already deleted before this action and shares the same LOD.
+	std::vector<ObjectInst*> previouslyLive;
+	for(p = instances.first; p; p = p->next){
+		ObjectInst *inst = (ObjectInst*)p->item;
+		if(inst && !inst->m_isDeleted)
+			previouslyLive.push_back(inst);
+	}
 
-	// Snapshot which are already deleted
-	// Then delete, and find newly deleted ones
 	for(int i = 0; i < (int)toDelete.size(); i++)
 		toDelete[i]->Delete();
 
-	// Scan for all instances that are now deleted to record in undo
-	for(p = instances.first; p; p = p->next){
-		ObjectInst *inst = (ObjectInst*)p->item;
-		if(inst->m_isDeleted && numAllDeleted < MAX_BATCH_OBJECTS){
-			// Check if this was freshly deleted (it's in our set or cascaded)
-			// Simple approach: just record all deleted. On undo we undelete them.
-			// This is slightly broad but safe.
-		}
-	}
-
-	// Simpler: just record what we explicitly asked to delete,
-	// the cascade is handled by Undelete() automatically
-	UndoRecordDelete(toDelete.data(), (int)toDelete.size());
+	std::vector<ObjectInst*> newlyDeleted;
+	for(size_t i = 0; i < previouslyLive.size(); i++)
+		if(previouslyLive[i]->m_isDeleted)
+			newlyDeleted.push_back(previouslyLive[i]);
+	UndoRecordDelete(newlyDeleted.data(), (int)newlyDeleted.size());
 }
 
 int
@@ -1166,61 +1235,6 @@ GetLodForObject(int id)
 	}
 }
 
-static const char*
-GetDatFilename(void)
-{
-	switch(gameversion){
-	case GAME_III: return "data/gta3.dat";
-	case GAME_VC:  return "data/gta_vc.dat";
-	case GAME_SA:  return "data/gta.dat";
-	case GAME_LCS: return "data/gta_lcs.dat";
-	case GAME_VCS: return "data/gta_vcs.dat";
-	default:       return nil;
-	}
-}
-
-static bool
-IplEntryExistsInDat(const char *datfile, const char *iplpath)
-{
-	FILE *f = fopen_ci(datfile, "r");
-	if(f == nil) return false;
-	char line[512];
-	while(fgets(line, sizeof(line), f)){
-		// strip newline
-		char *p = line;
-		while(*p && *p != '\r' && *p != '\n') p++;
-		*p = '\0';
-		if(strncmp(line, "IPL ", 4) == 0){
-			if(strcmp(line+4, iplpath) == 0){
-				fclose(f);
-				return true;
-			}
-		}
-	}
-	fclose(f);
-	return false;
-}
-
-static void
-AppendIplToDat(const char *iplpath)
-{
-	const char *datfile = GetDatFilename();
-	if(datfile == nil) return;
-	if(IplEntryExistsInDat(datfile, iplpath)) return;
-
-	const char *targetPath = ModloaderGetSourcePath(datfile);
-	if(targetPath == nil)
-		targetPath = getPath(datfile);
-	FILE *f = fopen(targetPath, "a");
-	if(f == nil){
-		log("WARNING: could not append to %s\n", datfile);
-		return;
-	}
-	fprintf(f, "\nIPL %s\n", iplpath);
-	fclose(f);
-	log("Added IPL %s to %s\n", iplpath, datfile);
-}
-
 static GameFile*
 GetOrCreateCustomIplFile(void)
 {
@@ -1234,8 +1248,6 @@ GetOrCreateCustomIplFile(void)
 		free(customIplFile->sourcePath);
 		customIplFile->sourcePath = strdup(currentCustomIplSourcePath);
 	}
-	if(currentCustomIplAppendToDat && gSaveDestination != SAVE_DESTINATION_MODLOADER)
-		AppendIplToDat(currentCustomIplPath);
 	return customIplFile;
 }
 
@@ -1512,6 +1524,23 @@ GetLatestChangeSeq(void)
 	return gChangeSeqCounter;
 }
 
+float
+GetQuaternionSimilarity(const rw::Quat &a, const rw::Quat &b)
+{
+	float dot = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+	float lenSqA = a.x*a.x + a.y*a.y + a.z*a.z + a.w*a.w;
+	float lenSqB = b.x*b.x + b.y*b.y + b.z*b.z + b.w*b.w;
+	if(lenSqA <= 1.0e-12f || lenSqB <= 1.0e-12f){
+		float direct = (a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y) +
+		               (a.z-b.z)*(a.z-b.z) + (a.w-b.w)*(a.w-b.w);
+		float negated = (a.x+b.x)*(a.x+b.x) + (a.y+b.y)*(a.y+b.y) +
+		                (a.z+b.z)*(a.z+b.z) + (a.w+b.w)*(a.w+b.w);
+		return direct <= 1.0e-12f || negated <= 1.0e-12f ? 1.0f : 0.0f;
+	}
+	float similarity = fabsf(dot) / sqrtf(lenSqA*lenSqB);
+	return similarity < 1.0f ? similarity : 1.0f;
+}
+
 // Diff viewer — compute bitmask of changes since last save
 int
 GetInstanceDiffFlags(ObjectInst *inst)
@@ -1533,12 +1562,7 @@ GetInstanceDiffFlags(ObjectInst *inst)
 	float dist = length(sub(inst->m_translation, inst->m_savedTranslation));
 	if(dist >= 0.001f)
 		flags |= DIFF_MOVED;
-	// quaternion distance: if |dot| < 0.9999 the rotation changed
-	float dot = fabsf(inst->m_rotation.x * inst->m_savedRotation.x +
-	                   inst->m_rotation.y * inst->m_savedRotation.y +
-	                   inst->m_rotation.z * inst->m_savedRotation.z +
-	                   inst->m_rotation.w * inst->m_savedRotation.w);
-	if(dot < 0.9999f)
+	if(GetQuaternionSimilarity(inst->m_rotation, inst->m_savedRotation) < 0.9999f)
 		flags |= DIFF_ROTATED;
 	return flags;
 }
@@ -1618,10 +1642,12 @@ ReadPrefabEntries(const char *path, PrefabEntry *entries, int maxEntries, int *n
 	return true;
 }
 
-// 3D Preview — uses Scene camera with swapped framebuffers (librw pattern)
+// Keep preview passes isolated from the main scene camera. On GL3, endUpdate()
+// does not restore the framebuffer, viewport, matrices, or other device state.
 rw::Texture *gPreviewTexture;
 static rw::Raster *previewColorRaster;
 static rw::Raster *previewDepthRaster;
+static rw::Camera *previewCamera;
 static bool previewInited;
 static bool previewInitFailed;
 
@@ -1637,6 +1663,7 @@ struct ObjectThumbnailSlot
 {
 	int objectId;
 	bool ready;
+	bool failed;
 	uint32 lastUsed;
 	int lastRequestedFrame;
 	rw::Raster *colorRaster;
@@ -1653,6 +1680,7 @@ struct PrefabThumbnailSlot
 {
 	char path[512];
 	bool ready;
+	bool failed;
 	uint32 lastUsed;
 	int lastRequestedFrame;
 	rw::Raster *colorRaster;
@@ -1663,6 +1691,27 @@ struct PrefabThumbnailSlot
 static PrefabThumbnailSlot prefabThumbnailSlots[PREFAB_THUMBNAIL_SLOTS];
 static uint32 prefabThumbnailUseSeq;
 static bool prefabThumbnailInitFailed;
+
+static rw::Camera*
+getPreviewCamera(void)
+{
+	if(previewCamera)
+		return previewCamera;
+
+	previewCamera = rw::Camera::create();
+	if(previewCamera == nil)
+		return nil;
+	rw::Frame *frame = rw::Frame::create();
+	if(frame == nil){
+		previewCamera->destroy();
+		previewCamera = nil;
+		return nil;
+	}
+	previewCamera->setFrame(frame);
+	if(Scene.world)
+		Scene.world->addCamera(previewCamera);
+	return previewCamera;
+}
 
 static void
 initObjectThumbnailSlots(void)
@@ -1686,6 +1735,7 @@ destroyObjectThumbnailSlot(ObjectThumbnailSlot *slot)
 	if(slot->depthRaster){ slot->depthRaster->destroy(); slot->depthRaster = nil; }
 	slot->objectId = -1;
 	slot->ready = false;
+	slot->failed = false;
 	slot->lastUsed = 0;
 	slot->lastRequestedFrame = 0;
 }
@@ -1702,6 +1752,7 @@ destroyPrefabThumbnailSlot(PrefabThumbnailSlot *slot)
 	if(slot->depthRaster){ slot->depthRaster->destroy(); slot->depthRaster = nil; }
 	slot->path[0] = '\0';
 	slot->ready = false;
+	slot->failed = false;
 	slot->lastUsed = 0;
 	slot->lastRequestedFrame = 0;
 }
@@ -1733,6 +1784,7 @@ initObjectThumbnailSlot(ObjectThumbnailSlot *slot)
 	slot->texture->setFilter(rw::Texture::LINEAR);
 	slot->objectId = -1;
 	slot->ready = false;
+	slot->failed = false;
 	slot->lastUsed = 0;
 	slot->lastRequestedFrame = 0;
 	return true;
@@ -1770,6 +1822,7 @@ initPrefabThumbnailSlot(PrefabThumbnailSlot *slot)
 	}
 	slot->texture->setFilter(rw::Texture::LINEAR);
 	slot->ready = false;
+	slot->failed = false;
 	slot->lastUsed = 0;
 	slot->lastRequestedFrame = 0;
 	return true;
@@ -1802,25 +1855,10 @@ renderObjectToRaster(int objectId, rw::Raster *colorRaster, rw::Raster *depthRas
 	ObjectDef *obj = GetObjectDef(objectId);
 	if(obj == nil)
 		return false;
-	if(!obj->IsLoaded()){
-		RequestObject(objectId);
-		return false;
-	}
 
 	rw::Atomic *atm = nil;
 	rw::Clump *clump = nil;
-	if(obj->m_type == ObjectDef::ATOMIC && obj->m_atomics[0]){
-		atm = obj->m_atomics[0]->clone();
-		rw::Frame *f = rw::Frame::create();
-		if(f)
-			atm->setFrame(f);
-		else{
-			atm->destroy();
-			atm = nil;
-		}
-	}else if(obj->m_type == ObjectDef::CLUMP && obj->m_clump)
-		clump = obj->m_clump->clone();
-	if(atm == nil && clump == nil)
+	if(!CreateObjectPreviewRwObject(objectId, &atm, &clump))
 		return false;
 
 	float radius = 5.0f;
@@ -1836,14 +1874,13 @@ renderObjectToRaster(int objectId, rw::Raster *colorRaster, rw::Raster *depthRas
 	rw::V3d up = { 0.0f, 0.0f, -1.0f };
 	rw::V3d dir = normalize(sub(target, eye));
 
-	rw::Camera *cam = Scene.camera;
-	rw::Raster *savedFB = cam->frameBuffer;
-	rw::Raster *savedZB = cam->zBuffer;
-	float savedNear = cam->nearPlane;
-	float savedFar = cam->farPlane;
-	float savedFog = cam->fogPlane;
+	rw::Camera *cam = getPreviewCamera();
+	if(cam == nil){
+		if(atm){ atm->getFrame()->destroy(); atm->destroy(); }
+		if(clump){ clump->destroy(); }
+		return false;
+	}
 	rw::Frame *camFrame = cam->getFrame();
-	rw::Matrix savedMatrix = camFrame->matrix;
 
 	cam->frameBuffer = colorRaster;
 	cam->zBuffer = depthRaster;
@@ -1877,15 +1914,6 @@ renderObjectToRaster(int objectId, rw::Raster *colorRaster, rw::Raster *depthRas
 
 	cam->endUpdate();
 
-	cam->frameBuffer = savedFB;
-	cam->zBuffer = savedZB;
-	cam->setNearPlane(savedNear);
-	cam->setFarPlane(savedFar);
-	cam->fogPlane = savedFog;
-	cam->setFOV(TheCamera.m_fov, TheCamera.m_aspectRatio);
-	camFrame->matrix = savedMatrix;
-	camFrame->updateObjects();
-
 	if(atm){ atm->getFrame()->destroy(); atm->destroy(); }
 	if(clump){ clump->destroy(); }
 	Timecycle::SetLights();
@@ -1898,19 +1926,6 @@ renderPrefabToRaster(const char *path, rw::Raster *colorRaster, rw::Raster *dept
 	PrefabEntry entries[256];
 	int numEntries = 0;
 	if(!ReadPrefabEntries(path, entries, 256, &numEntries, false))
-		return false;
-
-	bool anyMissing = false;
-	for(int i = 0; i < numEntries; i++){
-		ObjectDef *obj = GetObjectDef(entries[i].objectId);
-		if(obj == nil)
-			continue;
-		if(!obj->IsLoaded()){
-			RequestObject(entries[i].objectId);
-			anyMissing = true;
-		}
-	}
-	if(anyMissing)
 		return false;
 
 	rw::V3d minPt = { 1.0e30f, 1.0e30f, 1.0e30f };
@@ -1952,6 +1967,36 @@ renderPrefabToRaster(const char *path, rw::Raster *colorRaster, rw::Raster *dept
 	}
 	if(radius < 2.0f) radius = 2.0f;
 
+	struct PrefabPreviewModel
+	{
+		int objectId;
+		rw::Atomic *atomic;
+		rw::Clump *clump;
+	};
+	PrefabPreviewModel models[256];
+	int numModels = 0;
+	for(int i = 0; i < numEntries; i++){
+		int modelIndex = -1;
+		for(int j = 0; j < numModels; j++)
+			if(models[j].objectId == entries[i].objectId){
+				modelIndex = j;
+				break;
+			}
+		if(modelIndex >= 0)
+			continue;
+
+		rw::Atomic *atomic = nil;
+		rw::Clump *clump = nil;
+		if(!CreateObjectPreviewRwObject(entries[i].objectId, &atomic, &clump))
+			continue;
+		models[numModels].objectId = entries[i].objectId;
+		models[numModels].atomic = atomic;
+		models[numModels].clump = clump;
+		numModels++;
+	}
+	if(numModels == 0)
+		return false;
+
 	uint32 hash = 2166136261u;
 	for(const char *s = path; *s; s++)
 		hash = (hash ^ (uint8)*s) * 16777619u;
@@ -1961,14 +2006,15 @@ renderPrefabToRaster(const char *path, rw::Raster *colorRaster, rw::Raster *dept
 	rw::V3d up = { 0.0f, 0.0f, -1.0f };
 	rw::V3d dir = normalize(sub(target, eye));
 
-	rw::Camera *cam = Scene.camera;
-	rw::Raster *savedFB = cam->frameBuffer;
-	rw::Raster *savedZB = cam->zBuffer;
-	float savedNear = cam->nearPlane;
-	float savedFar = cam->farPlane;
-	float savedFog = cam->fogPlane;
+	rw::Camera *cam = getPreviewCamera();
+	if(cam == nil){
+		for(int i = 0; i < numModels; i++){
+			if(models[i].atomic){ models[i].atomic->getFrame()->destroy(); models[i].atomic->destroy(); }
+			if(models[i].clump){ models[i].clump->destroy(); }
+		}
+		return false;
+	}
 	rw::Frame *camFrame = cam->getFrame();
-	rw::Matrix savedMatrix = camFrame->matrix;
 
 	cam->frameBuffer = colorRaster;
 	cam->zBuffer = depthRaster;
@@ -1991,52 +2037,34 @@ renderPrefabToRaster(const char *path, rw::Raster *colorRaster, rw::Raster *dept
 	pDirect->setColor(0.52f, 0.52f, 0.52f);
 
 	for(int i = 0; i < numEntries; i++){
-		ObjectDef *obj = GetObjectDef(entries[i].objectId);
-		if(obj == nil)
-			continue;
-
-		rw::Atomic *atm = nil;
-		rw::Clump *clump = nil;
-		if(obj->m_type == ObjectDef::ATOMIC && obj->m_atomics[0]){
-			atm = obj->m_atomics[0]->clone();
-			rw::Frame *f = rw::Frame::create();
-			if(f)
-				atm->setFrame(f);
-			else{
-				atm->destroy();
-				atm = nil;
+		PrefabPreviewModel *model = nil;
+		for(int j = 0; j < numModels; j++)
+			if(models[j].objectId == entries[i].objectId){
+				model = &models[j];
+				break;
 			}
-		}else if(obj->m_type == ObjectDef::CLUMP && obj->m_clump)
-			clump = obj->m_clump->clone();
-		if(atm == nil && clump == nil)
+		if(model == nil)
 			continue;
 
 		rw::Quat rotation = { entries[i].rotX, entries[i].rotY, entries[i].rotZ, entries[i].rotW };
 		rw::V3d translation = { entries[i].relX, entries[i].relY, entries[i].relZ };
 		rw::Matrix matrix;
 		BuildPreviewMatrix(&matrix, rotation, translation);
-		if(atm){
-			atm->getFrame()->transform(&matrix, rw::COMBINEREPLACE);
-			atm->render();
+		if(model->atomic){
+			model->atomic->getFrame()->transform(&matrix, rw::COMBINEREPLACE);
+			model->atomic->render();
 		}else{
-			clump->getFrame()->transform(&matrix, rw::COMBINEREPLACE);
-			clump->render();
+			model->clump->getFrame()->transform(&matrix, rw::COMBINEREPLACE);
+			model->clump->render();
 		}
-
-		if(atm){ atm->getFrame()->destroy(); atm->destroy(); }
-		if(clump){ clump->destroy(); }
 	}
 
 	cam->endUpdate();
 
-	cam->frameBuffer = savedFB;
-	cam->zBuffer = savedZB;
-	cam->setNearPlane(savedNear);
-	cam->setFarPlane(savedFar);
-	cam->fogPlane = savedFog;
-	cam->setFOV(TheCamera.m_fov, TheCamera.m_aspectRatio);
-	camFrame->matrix = savedMatrix;
-	camFrame->updateObjects();
+	for(int i = 0; i < numModels; i++){
+		if(models[i].atomic){ models[i].atomic->getFrame()->destroy(); models[i].atomic->destroy(); }
+		if(models[i].clump){ models[i].clump->destroy(); }
+	}
 
 	Timecycle::SetLights();
 	return true;
@@ -2046,6 +2074,7 @@ void
 InitPreviewRenderer(void)
 {
 	if(previewInited || previewInitFailed) return;
+	if(getPreviewCamera() == nil){ previewInitFailed = true; return; }
 
 	previewColorRaster = rw::Raster::create(PREVIEW_SIZE, PREVIEW_SIZE, 0, rw::Raster::CAMERATEXTURE);
 	if(previewColorRaster == nil){ previewInitFailed = true; return; }
@@ -2076,6 +2105,14 @@ ShutdownPreviewRenderer(void)
 	}
 	if(previewColorRaster){ previewColorRaster->destroy(); previewColorRaster = nil; }
 	if(previewDepthRaster){ previewDepthRaster->destroy(); previewDepthRaster = nil; }
+	if(previewCamera){
+		rw::Frame *frame = previewCamera->getFrame();
+		if(previewCamera->world)
+			previewCamera->world->removeCamera(previewCamera);
+		previewCamera->destroy();
+		previewCamera = nil;
+		if(frame) frame->destroy();
+	}
 	previewInited = false;
 }
 
@@ -2115,6 +2152,7 @@ GetObjectThumbnailTexture(int objectId)
 
 	slot->objectId = objectId;
 	slot->ready = false;
+	slot->failed = false;
 	slot->lastUsed = ++objectThumbnailUseSeq;
 	slot->lastRequestedFrame = requestFrame;
 	return nil;
@@ -2130,7 +2168,7 @@ RenderRequestedObjectThumbnails(void)
 	int attempted = 0;
 	for(int i = 0; i < OBJECT_THUMBNAIL_SLOTS && attempted < OBJECT_THUMBNAILS_PER_FRAME; i++){
 		ObjectThumbnailSlot *slot = &objectThumbnailSlots[i];
-		if(slot->objectId < 0 || slot->ready)
+		if(slot->objectId < 0 || slot->ready || slot->failed)
 			continue;
 		attempted++;
 		int objectId = slot->objectId;
@@ -2144,6 +2182,8 @@ RenderRequestedObjectThumbnails(void)
 			ObjectDef *obj = GetObjectDef(objectId);
 			if(obj == nil)
 				slot->objectId = -1;
+			else
+				slot->failed = true;
 		}
 	}
 }
@@ -2184,6 +2224,7 @@ GetPrefabThumbnailTexture(const char *path)
 	strncpy(slot->path, path, sizeof(slot->path));
 	slot->path[sizeof(slot->path)-1] = '\0';
 	slot->ready = false;
+	slot->failed = false;
 	slot->lastUsed = ++prefabThumbnailUseSeq;
 	slot->lastRequestedFrame = requestFrame;
 	return nil;
@@ -2198,7 +2239,7 @@ RenderRequestedPrefabThumbnails(void)
 	int attempted = 0;
 	for(int i = 0; i < PREFAB_THUMBNAIL_SLOTS && attempted < PREFAB_THUMBNAILS_PER_FRAME; i++){
 		PrefabThumbnailSlot *slot = &prefabThumbnailSlots[i];
-		if(slot->path[0] == '\0' || slot->ready)
+		if(slot->path[0] == '\0' || slot->ready || slot->failed)
 			continue;
 		attempted++;
 		char path[512];
@@ -2212,6 +2253,8 @@ RenderRequestedPrefabThumbnails(void)
 			slot->ready = true;
 		else if(!doesFileExist(path))
 			slot->path[0] = '\0';
+		else
+			slot->failed = true;
 	}
 }
 
@@ -2268,17 +2311,10 @@ RenderPreviewObject(int objectId)
 	rw::V3d up = { 0.0f, 0.0f, -1.0f };  // negative Z because FBO is Y-flipped
 	rw::V3d dir = normalize(sub(target, eye));
 
-	// Use scene camera with swapped framebuffers (librw pattern)
-	rw::Camera *cam = Scene.camera;
-
-	// Save ALL camera state
-	rw::Raster *savedFB = cam->frameBuffer;
-	rw::Raster *savedZB = cam->zBuffer;
-	float savedNear = cam->nearPlane;
-	float savedFar = cam->farPlane;
-	float savedFog = cam->fogPlane;
+	rw::Camera *cam = getPreviewCamera();
+	if(cam == nil)
+		return;
 	rw::Frame *camFrame = cam->getFrame();
-	rw::Matrix savedMatrix = camFrame->matrix;
 
 	// Set preview camera state
 	cam->frameBuffer = previewColorRaster;
@@ -2312,16 +2348,6 @@ RenderPreviewObject(int objectId)
 	}
 
 	cam->endUpdate();
-
-	// Restore ALL camera state
-	cam->frameBuffer = savedFB;
-	cam->zBuffer = savedZB;
-	cam->setNearPlane(savedNear);
-	cam->setFarPlane(savedFar);
-	cam->fogPlane = savedFog;
-	cam->setFOV(TheCamera.m_fov, TheCamera.m_aspectRatio);
-	camFrame->matrix = savedMatrix;
-	camFrame->updateObjects();
 
 	Timecycle::SetLights();
 }
@@ -2478,7 +2504,7 @@ Undo(void)
 		break;
 	case UNDO_DELETE:
 		for(int i = 0; i < a->numDeleted; i++)
-			a->deletedInsts[i]->Undelete();
+			setDeletedWithoutCascade(a->deletedInsts[i], false);
 		break;
 	case UNDO_PASTE:
 		for(int i = 0; i < a->numPasted; i++){
@@ -2518,7 +2544,7 @@ Redo(void)
 		break;
 	case UNDO_DELETE:
 		for(int i = 0; i < a->numDeleted; i++)
-			a->deletedInsts[i]->Delete();
+			setDeletedWithoutCascade(a->deletedInsts[i], true);
 		break;
 	case UNDO_PASTE:
 		for(int i = 0; i < a->numPasted; i++){
@@ -2668,19 +2694,6 @@ findPasteDestinationFile(ObjectInst *src)
 	return GetOrCreateCustomIplFile();
 }
 
-static bool
-sameIplFamily(ObjectInst *a, ObjectInst *b)
-{
-	if(a == nil || b == nil)
-		return false;
-	if(a->m_iplFilterKey[0] != '\0' && b->m_iplFilterKey[0] != '\0' &&
-	   strcmp(a->m_iplFilterKey, b->m_iplFilterKey) == 0)
-		return true;
-	if(a->m_file && b->m_file && LogicalPathEquals(a->m_file->name, b->m_file->name))
-		return true;
-	return false;
-}
-
 static float
 instanceDistanceSq(ObjectInst *a, ObjectInst *b)
 {
@@ -2762,8 +2775,11 @@ findPasteSourceLod(ObjectInst *src, int *lodObjIdOut, bool *usedAssociationOut)
 }
 
 static rw::V3d
-getClipboardPasteOffset(ObjectInst **toPaste, int numToPaste)
+getClipboardPasteOffset(ObjectInst **toPaste, int numToPaste, bool pasteInPlace)
 {
+	if(pasteInPlace)
+		return { 0.0f, 0.0f, 0.0f };
+
 	rw::V3d anchor = { 0.0f, 0.0f, 0.0f };
 	int numAnchors = 0;
 
@@ -2817,8 +2833,8 @@ PasteCutClipboard(void)
 	return (int)restored.size();
 }
 
-int
-PasteClipboard(void)
+static int
+pasteClipboard(bool pasteInPlace)
 {
 	if(clipboard.empty()) return 0;
 	if(clipboardIsCut)
@@ -2841,7 +2857,7 @@ PasteClipboard(void)
 		if(lodsCopiedWithParent.find(clipboard[i]) == lodsCopiedWithParent.end())
 			toPaste.push_back(clipboard[i]);
 
-	rw::V3d offset = getClipboardPasteOffset(toPaste.data(), (int)toPaste.size());
+	rw::V3d offset = getClipboardPasteOffset(toPaste.data(), (int)toPaste.size(), pasteInPlace);
 
 	ClearSelection();
 
@@ -2905,6 +2921,18 @@ PasteClipboard(void)
 				log("Generated %d associated LOD instance(s) during paste\n", generatedLods);
 	}
 	return (int)pasted.size();
+}
+
+int
+PasteClipboard(void)
+{
+	return pasteClipboard(false);
+}
+
+int
+PasteClipboardInPlace(void)
+{
+	return pasteClipboard(true);
 }
 
 int
