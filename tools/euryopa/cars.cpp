@@ -26,21 +26,19 @@ Init(void)
 {
 	carSpawns.clear();
 
-	char path[256];
-	snprintf(path, sizeof(path), "data/binary/ipl/*");
+	log("Cars: searching for .ipl files in data/binary/ipl\n");
 
-	log("Cars: searching for .ipl files in %s\n", path);
-
-	WIN32_FIND_DATAA findData;
-	HANDLE hFind = FindFirstFileA(path, &findData);
-	if(hFind == INVALID_HANDLE_VALUE){
+	if(!IsDirectoryPath("data/binary/ipl")){
 		log("Cars: data/binary/ipl folder not found\n");
 		return;
 	}
 
-	do{
-		const char *filename = findData.cFileName;
-		size_t namelen = strlen(filename);
+	std::vector<std::string> filenames;
+	ListDirectoryFiles("data/binary/ipl", filenames);
+
+	for(size_t i = 0; i < filenames.size(); i++){
+		const char *filename = filenames[i].c_str();
+		size_t namelen = filenames[i].size();
 		if(namelen < 4 || strcmp(filename + namelen - 4, ".ipl") != 0)
 			continue;
 
@@ -108,9 +106,7 @@ Init(void)
 		}
 
 		free(buf);
-	}while(FindNextFileA(hFind, &findData));
-
-	FindClose(hFind);
+	}
 
 	log("Cars: loaded %d spawns\n", (int)carSpawns.size());
 }

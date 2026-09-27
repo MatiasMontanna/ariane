@@ -2576,7 +2576,7 @@ PathExists(const char *path)
 	return path && stat(path, &st) == 0;
 }
 
-static bool
+bool
 IsDirectoryPath(const char *path)
 {
 	struct stat st;
@@ -2586,6 +2586,39 @@ IsDirectoryPath(const char *path)
 	return (st.st_mode & _S_IFDIR) != 0;
 #else
 	return S_ISDIR(st.st_mode);
+#endif
+}
+
+void
+ListDirectoryFiles(const char *path, std::vector<std::string> &files)
+{
+	files.clear();
+	if(path == nil || path[0] == '\0' || !IsDirectoryPath(path))
+		return;
+
+#ifdef _WIN32
+	std::string pattern = JoinPathStrings(path, "*");
+	WIN32_FIND_DATAA entry;
+	HANDLE handle = FindFirstFileA(pattern.c_str(), &entry);
+	if(handle == INVALID_HANDLE_VALUE)
+		return;
+	do{
+		if(strcmp(entry.cFileName, ".") == 0 || strcmp(entry.cFileName, "..") == 0)
+			continue;
+		files.push_back(entry.cFileName);
+	}while(FindNextFileA(handle, &entry));
+	FindClose(handle);
+#else
+	DIR *d = opendir(path);
+	if(!d)
+		return;
+	dirent *ent;
+	while((ent = readdir(d)) != nil){
+		if(strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+			continue;
+		files.push_back(ent->d_name);
+	}
+	closedir(d);
 #endif
 }
 
@@ -2645,36 +2678,14 @@ static void
 ListSubdirectories(const char *path, std::vector<std::string> &dirs)
 {
 	dirs.clear();
-	if(path == nil || !IsDirectoryPath(path))
-		return;
 
-#ifdef _WIN32
-	std::string pattern = JoinPathStrings(path, "*");
-	WIN32_FIND_DATAA entry;
-	HANDLE handle = FindFirstFileA(pattern.c_str(), &entry);
-	if(handle == INVALID_HANDLE_VALUE)
-		return;
-	do{
-		if(strcmp(entry.cFileName, ".") == 0 || strcmp(entry.cFileName, "..") == 0)
-			continue;
-		if(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-			dirs.push_back(entry.cFileName);
-	}while(FindNextFileA(handle, &entry));
-	FindClose(handle);
-#else
-	DIR *d = opendir(path);
-	if(d == nil)
-		return;
-	dirent *ent;
-	while((ent = readdir(d)) != nil){
-		if(strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
-			continue;
-		std::string childPath = JoinPathStrings(path, ent->d_name);
+	std::vector<std::string> names;
+	ListDirectoryFiles(path, names);
+	for(size_t i = 0; i < names.size(); i++){
+		std::string childPath = JoinPathStrings(path, names[i]);
 		if(IsDirectoryPath(childPath.c_str()))
-			dirs.push_back(ent->d_name);
+			dirs.push_back(names[i]);
 	}
-	closedir(d);
-#endif
 }
 
 static void

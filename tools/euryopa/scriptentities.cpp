@@ -183,10 +183,6 @@ ScriptEntities::Init(void)
 	char scriptsDir[512];
 	snprintf(scriptsDir, sizeof(scriptsDir), "%s/scripts", exeDir);
 
-	WIN32_FIND_DATAA findData;
-	HANDLE hFind;
-
-	char searchPath[512];
 	char baseDir[512];
 	strncpy(baseDir, scriptsDir, sizeof(baseDir) - 1);
 	baseDir[sizeof(baseDir) - 1] = '\0';
@@ -198,30 +194,23 @@ ScriptEntities::Init(void)
 
 	int processed = 0;
 	while (processed < numDirs && numDirs < 64) {
-		snprintf(searchPath, sizeof(searchPath), "%s/*", dirsToSearch[processed]);
+		std::vector<std::string> entries;
+		ListDirectoryFiles(dirsToSearch[processed], entries);
 
-		hFind = FindFirstFileA(searchPath, &findData);
-		if (hFind == INVALID_HANDLE_VALUE) {
-			processed++;
-			continue;
-		}
-
-		do {
-			const char* name = findData.cFileName;
-			if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-				continue;
+		for (size_t e = 0; e < entries.size(); e++) {
+			const char* name = entries[e].c_str();
 
 			char fullPath[512];
 			snprintf(fullPath, sizeof(fullPath), "%s/%s", dirsToSearch[processed], name);
 
-			if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (IsDirectoryPath(fullPath)) {
 				if (numDirs < 64) {
 					strncpy(dirsToSearch[numDirs], fullPath, 511);
 					dirsToSearch[numDirs][511] = '\0';
 					numDirs++;
 				}
 			} else {
-				size_t namelen = strlen(name);
+				size_t namelen = entries[e].size();
 				if (namelen >= 3 && strcmp(name + namelen - 3, ".sc") == 0) {
 					ScriptFile sf;
 					strncpy(sf.fullPath, fullPath, sizeof(sf.fullPath) - 1);
@@ -234,9 +223,7 @@ ScriptEntities::Init(void)
 					gScriptFiles.push_back(sf);
 				}
 			}
-		} while (FindNextFileA(hFind, &findData));
-
-		FindClose(hFind);
+		}
 		processed++;
 	}
 
@@ -1477,10 +1464,7 @@ Reload(void)
 {
 	gHoles.clear();
 
-	WIN32_FIND_DATA fd;
-	HANDLE h = FindFirstFile("HOLES.DAT", &fd);
-	if (h != INVALID_HANDLE_VALUE) {
-		FindClose(h);
+	if (doesFileExist("HOLES.DAT")) {
 		FILE *f = fopen("HOLES.DAT", "r");
 		if (f) {
 			char line[256];

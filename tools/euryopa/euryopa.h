@@ -70,6 +70,8 @@ void SaveEditorSettingsNow(void);
 char *getPath(const char *path);
 FILE *fopen_ci(const char *path, const char *mode);
 bool doesFileExist(const char *path);
+bool IsDirectoryPath(const char *path);
+void ListDirectoryFiles(const char *path, std::vector<std::string> &files);
 #ifdef min
 #undef min
 #endif
