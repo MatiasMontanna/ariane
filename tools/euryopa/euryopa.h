@@ -1,11 +1,18 @@
 #ifdef _WIN32
 #include <Windows.h>	// necessary for the moment
+#include <direct.h>
+#include <sys/stat.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #include <rw.h>
 #include <skeleton.h>
 #include "imgui/ImGuizmo.h"
 #include <vector>
+#include <string>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -70,8 +77,54 @@ void SaveEditorSettingsNow(void);
 char *getPath(const char *path);
 FILE *fopen_ci(const char *path, const char *mode);
 bool doesFileExist(const char *path);
-bool IsDirectoryPath(const char *path);
-void ListDirectoryFiles(const char *path, std::vector<std::string> &files);
+
+inline bool IsDirectoryPath(const char *path)
+{
+	struct stat st;
+	if(path == nil || stat(path, &st) != 0)
+		return false;
+#ifdef _WIN32
+	return (st.st_mode & _S_IFDIR) != 0;
+#else
+	return S_ISDIR(st.st_mode);
+#endif
+}
+
+inline void ListDirectoryFiles(const char *path, std::vector<std::string> &files)
+{
+	files.clear();
+	if(path == nil || path[0] == '\0' || !IsDirectoryPath(path))
+		return;
+
+#ifdef _WIN32
+	std::string pattern(path);
+	char last = pattern[pattern.size() - 1];
+	if(last != '/' && last != '\\')
+		pattern += '/';
+	pattern += '*';
+	WIN32_FIND_DATAA entry;
+	HANDLE handle = FindFirstFileA(pattern.c_str(), &entry);
+	if(handle == INVALID_HANDLE_VALUE)
+		return;
+	do{
+		if(strcmp(entry.cFileName, ".") == 0 || strcmp(entry.cFileName, "..") == 0)
+			continue;
+		files.push_back(entry.cFileName);
+	}while(FindNextFileA(handle, &entry));
+	FindClose(handle);
+#else
+	DIR *d = opendir(path);
+	if(!d)
+		return;
+	dirent *ent;
+	while((ent = readdir(d)) != nil){
+		if(strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+			continue;
+		files.push_back(ent->d_name);
+	}
+	closedir(d);
+#endif
+}
 #ifdef min
 #undef min
 #endif
