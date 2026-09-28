@@ -17,7 +17,14 @@ bool Carrec::gRenderLabels = false;
 static void
 CarrecLog(const char *msg)
 {
-	FILE *f = fopen("carrec_debug.txt", "a");
+	FILE *f;
+
+	// Opt-in only; see gWriteLogFiles. Carrec logging runs during carrec.img
+	// parsing, so with it on by default this file was written on every launch.
+	if(!gWriteLogFiles)
+		return;
+
+	f = fopen("carrec_debug.txt", "a");
 	if(f){
 		fprintf(f, "%s\n", msg);
 		fclose(f);

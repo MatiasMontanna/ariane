@@ -76,6 +76,12 @@ char *getPath(const char *path);
 FILE *fopen_ci(const char *path, const char *mode);
 bool doesFileExist(const char *path);
 
+// Creating log files on disk is opt-in, and off until the user asks for it.
+// Diagnostic output still reaches the on-screen log; this only suppresses the
+// files it would otherwise write next to the data directory. See the Logging
+// submenu in the Window menu.
+extern bool gWriteLogFiles;
+
 inline bool IsDirectoryPath(const char *path)
 {
 	struct stat st;
@@ -85,6 +91,106 @@ inline bool IsDirectoryPath(const char *path)
 	return (st.st_mode & _S_IFDIR) != 0;
 #else
 	return S_ISDIR(st.st_mode);
+#endif
+}
+
+// True when `path` resolves to a directory, following symbolic links.
+//
+// stat() already follows links on both platforms, so this only adds something
+// for callers that hold nothing but the FindFirstFile attribute bits. Those lie
+// about symlinked directories: a link to a directory reports
+// FILE_ATTRIBUTE_REPARSE_POINT and *not* FILE_ATTRIBUTE_DIRECTORY, so code that
+// tests the bits alone files such entries as regular files.
+inline bool IsDirectoryPathFollowingLinks(const char *path)
+{
+	if(path == nil)
+		return false;
+	if(IsDirectoryPath(path))
+		return true;
+#ifdef _WIN32
+	// stat() has already spoken. Fall through and try harder, since a reparse
+	// point may be one stat() declines to describe.
+	HANDLE h = CreateFileA(path, 0,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nil, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nil);
+	if(h == INVALID_HANDLE_VALUE)
+		return false;
+	// CreateFileA follows the link unless FILE_FLAG_OPEN_REPARSE_POINT is given,
+	// and BACKUP_SEMANTICS is what makes a directory handle openable at all.
+	// Both succeed for a plain file too, so the handle's own attributes are what
+	// decide it -- and those describe the link target, which is the point.
+	BY_HANDLE_FILE_INFORMATION info;
+	bool isDir = GetFileInformationByHandle(h, &info) != 0 &&
+		(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+	CloseHandle(h);
+	return isDir;
+#else
+	return false;
+#endif
+}
+
+// Stable identity for the directory `path` resolves to, with symbolic links
+// followed. Traversal uses this to avoid walking into a directory it has already
+// visited: a link pointing back at an ancestor is a perfectly legal thing for a
+// user to create, and without this check the recursion never terminates.
+//
+// Returns false only when the directory cannot be identified at all, in which
+// case the caller should treat it as unvisited rather than skipping it.
+inline bool GetDirectoryIdentity(const char *path, std::string &out)
+{
+	if(path == nil)
+		return false;
+#ifdef _WIN32
+	HANDLE h = CreateFileA(path, 0,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nil, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nil);
+	if(h == INVALID_HANDLE_VALUE)
+		return false;
+	BY_HANDLE_FILE_INFORMATION info;
+	// BACKUP_SEMANTICS opens plain files as well as directories, so confirm what
+	// we actually got before minting an identity for it.
+	bool ok = GetFileInformationByHandle(h, &info) != 0 &&
+		(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+	if(ok){
+		char buf[64];
+		snprintf(buf, sizeof(buf), "%08lx:%08lx%08lx",
+			(unsigned long)info.dwVolumeSerialNumber,
+			(unsigned long)info.nFileIndexHigh, (unsigned long)info.nFileIndexLow);
+		out = buf;
+	}
+	CloseHandle(h);
+	return ok;
+#else
+	struct stat st;
+	if(stat(path, &st) != 0 || !S_ISDIR(st.st_mode))
+		return false;
+	// Device plus inode: unique per directory even when several links resolve to
+	// the same target, and unlike a resolved path it needs no path buffer and
+	// cannot be defeated by differing mount points.
+	char buf[64];
+	snprintf(buf, sizeof(buf), "%llu:%llu",
+		(unsigned long long)st.st_dev, (unsigned long long)st.st_ino);
+	out = buf;
+	return true;
+#endif
+}
+
+// True when the path itself is a symbolic link, regardless of what it points at.
+// Deletion needs this distinction: a link must be unlinked, never descended
+// into, or removing a directory would wipe out the contents of its target.
+inline bool IsSymbolicLinkPath(const char *path)
+{
+	if(path == nil)
+		return false;
+#ifdef _WIN32
+	DWORD attr = GetFileAttributesA(path);
+	// A reparse point covers symlinks, junctions and mount points alike, and all
+	// of them must be unlinked rather than walked.
+	return attr != INVALID_FILE_ATTRIBUTES &&
+		(attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+	struct stat st;
+	return lstat(path, &st) == 0 && S_ISLNK(st.st_mode);
 #endif
 }
 

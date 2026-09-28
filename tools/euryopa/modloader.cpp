@@ -2,6 +2,7 @@
 #include "modloader.h"
 #include <vector>
 #include <string>
+#include <set>
 #include <algorithm>
 
 #ifdef _WIN32
@@ -535,30 +536,43 @@ PreScanDatFile(const char *datPath, std::vector<std::string> &basePaths)
 	fclose(f);
 }
 
-// Recursive directory scan
-#ifdef _WIN32
+// Recursive directory scan.
+//
+// Symbolic links are followed, so a mod folder that links back to one of its own
+// ancestors -- or to the modloader directory itself -- is a cycle the plain
+// recursion below would never escape. `visited` holds the identity of every
+// directory already walked, so each target is expanded at most once.
 static void
-ScanDirectory(const char *dir, const char *relBase, std::vector<ModFile> &files, int priority, const char *modName)
+ScanDirectoryRecursive(const char *dir, const char *relBase, std::vector<ModFile> &files,
+                       int priority, const char *modName, std::set<std::string> &visited)
 {
-	char pattern[512];
-	snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+	std::string identity;
+	if(GetDirectoryIdentity(dir, identity)){
+		if(!visited.insert(identity).second)
+			return;	// already walked this target via another path
+	}
 
-	WIN32_FIND_DATAA fd;
-	HANDLE hFind = FindFirstFileA(pattern, &fd);
-	if(hFind == INVALID_HANDLE_VALUE) return;
+	std::vector<std::string> entries;
+	ListDirectoryFiles(dir, entries);
 
-	do {
-		if(fd.cFileName[0] == '.') continue;
+	for(size_t i = 0; i < entries.size(); i++){
+		const char *name = entries[i].c_str();
+		if(name[0] == '.')
+			continue;
+
 		char fullPath[512];
-		snprintf(fullPath, sizeof(fullPath), "%s\\%s", dir, fd.cFileName);
+		snprintf(fullPath, sizeof(fullPath), "%s/%s", dir, name);
 		char relPath[256];
 		if(relBase[0])
-			snprintf(relPath, sizeof(relPath), "%s/%s", relBase, fd.cFileName);
+			snprintf(relPath, sizeof(relPath), "%s/%s", relBase, name);
 		else
-			snprintf(relPath, sizeof(relPath), "%s", fd.cFileName);
+			snprintf(relPath, sizeof(relPath), "%s", name);
 
-		if(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY){
-			ScanDirectory(fullPath, relPath, files, priority, modName);
+		// Follows symlinks, so a link to a directory is descended into and a
+		// link to a file is read. On Windows this is what recovers the
+		// REPARSE_POINT entries whose attribute bits omit FILE_ATTRIBUTE_DIRECTORY.
+		if(IsDirectoryPathFollowingLinks(fullPath)){
+			ScanDirectoryRecursive(fullPath, relPath, files, priority, modName, visited);
 		}else{
 			ModFile mf;
 			NormalizePath(relPath, mf.logicalPath, sizeof(mf.logicalPath));
@@ -571,47 +585,15 @@ ScanDirectory(const char *dir, const char *relBase, std::vector<ModFile> &files,
 			mf.priority = priority;
 			files.push_back(mf);
 		}
-	} while(FindNextFileA(hFind, &fd));
-	FindClose(hFind);
+	}
 }
-#else
+
 static void
 ScanDirectory(const char *dir, const char *relBase, std::vector<ModFile> &files, int priority, const char *modName)
 {
-	DIR *d = opendir(dir);
-	if(!d) return;
-
-	struct dirent *ent;
-	while((ent = readdir(d)) != nil){
-		if(ent->d_name[0] == '.') continue;
-		char fullPath[512];
-		snprintf(fullPath, sizeof(fullPath), "%s/%s", dir, ent->d_name);
-		char relPath[256];
-		if(relBase[0])
-			snprintf(relPath, sizeof(relPath), "%s/%s", relBase, ent->d_name);
-		else
-			snprintf(relPath, sizeof(relPath), "%s", ent->d_name);
-
-		struct stat st;
-			if(stat(fullPath, &st) != 0) continue;
-			if(S_ISDIR(st.st_mode)){
-				ScanDirectory(fullPath, relPath, files, priority, modName);
-			}else{
-				ModFile mf;
-				NormalizePath(relPath, mf.logicalPath, sizeof(mf.logicalPath));
-				strncpy(mf.physicalPath, fullPath, sizeof(mf.physicalPath)-1);
-				mf.physicalPath[sizeof(mf.physicalPath)-1] = '\0';
-				ExtractBasenameExt(mf.logicalPath, mf.basename, sizeof(mf.basename),
-				                   mf.ext, sizeof(mf.ext));
-				strncpy(mf.modName, modName, sizeof(mf.modName)-1);
-				mf.modName[sizeof(mf.modName)-1] = '\0';
-				mf.priority = priority;
-				files.push_back(mf);
-			}
-	}
-	closedir(d);
+	std::set<std::string> visited;
+	ScanDirectoryRecursive(dir, relBase, files, priority, modName, visited);
 }
-#endif
 
 // Parse a .txt file for gta.dat-style addition lines
 static void
@@ -679,45 +661,26 @@ ParseReadmeFile(const char *txtPath, const char *modName,
 	fclose(f);
 }
 
-// Get list of mod subdirectories
-#ifdef _WIN32
+// Get list of mod subdirectories.
+//
+// A symlinked mod folder counts as a mod folder. Testing the FindFirstFile
+// attribute bits alone would miss it, because a link to a directory reports
+// REPARSE_POINT and not DIRECTORY.
 static void
 ListModDirs(const char *modloaderDir, std::vector<std::string> &dirs)
 {
-	char pattern[512];
-	snprintf(pattern, sizeof(pattern), "%s\\*", modloaderDir);
+	std::vector<std::string> entries;
+	ListDirectoryFiles(modloaderDir, entries);
 
-	WIN32_FIND_DATAA fd;
-	HANDLE hFind = FindFirstFileA(pattern, &fd);
-	if(hFind == INVALID_HANDLE_VALUE) return;
-
-	do {
-		if(fd.cFileName[0] == '.') continue;
-		if(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY){
-			dirs.push_back(fd.cFileName);
-		}
-	} while(FindNextFileA(hFind, &fd));
-	FindClose(hFind);
-}
-#else
-static void
-ListModDirs(const char *modloaderDir, std::vector<std::string> &dirs)
-{
-	DIR *d = opendir(modloaderDir);
-	if(!d) return;
-
-	struct dirent *ent;
-	while((ent = readdir(d)) != nil){
-		if(ent->d_name[0] == '.') continue;
+	for(size_t i = 0; i < entries.size(); i++){
+		if(entries[i][0] == '.')
+			continue;
 		char fullPath[512];
-		snprintf(fullPath, sizeof(fullPath), "%s/%s", modloaderDir, ent->d_name);
-		struct stat st;
-		if(stat(fullPath, &st) == 0 && S_ISDIR(st.st_mode))
-			dirs.push_back(ent->d_name);
+		snprintf(fullPath, sizeof(fullPath), "%s/%s", modloaderDir, entries[i].c_str());
+		if(IsDirectoryPathFollowingLinks(fullPath))
+			dirs.push_back(entries[i]);
 	}
-	closedir(d);
 }
-#endif
 
 static bool
 DirExists(const char *path)

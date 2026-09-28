@@ -975,6 +975,19 @@ uiToasts(void)
 }
 
 static void
+uiLoggingSettings(void)
+{
+	ImGui::Checkbox("Write log files", &gWriteLogFiles);
+	ImGui::SetItemTooltip(
+		"Off by default.\n"
+		"When on, Ariane writes carrec_debug.txt and ariane_hot_reload_log.txt\n"
+		"into the data folder.\n\n"
+		"Diagnostic messages are still shown in the Log window either way,\n"
+		"and your settings, camera, favourites and teleport files are\n"
+		"always saved -- those are not logs.");
+}
+
+static void
 uiNotificationSettings(void)
 {
 	ImGui::Checkbox("Enable Notifications", &toastEnabled);
@@ -1977,10 +1990,15 @@ hotReloadIpls(void)
 		return;
 	}
 	setHotReloadTracePath(tracePath);
-	FILE *traceFile = fopen(tracePath, "w");
-	if(traceFile){
-		fprintf(traceFile, "HotReload begin\n");
-		fclose(traceFile);
+	// A second writer for the same file: this one truncates it and stamps the
+	// start of the reload, so gating hotReloadTrace() alone would still leave a
+	// file behind on disk.
+	if(gWriteLogFiles){
+		FILE *traceFile = fopen(tracePath, "w");
+		if(traceFile){
+			fprintf(traceFile, "HotReload begin\n");
+			fclose(traceFile);
+		}
 	}
 
 	CPtrNode *p;
@@ -3477,6 +3495,10 @@ uiMainmenu(void)
 				ImGui::Separator();
 			if(ImGui::BeginMenu(ICON_FA_BELL " Notifications")){
 				uiNotificationSettings();
+				ImGui::EndMenu();
+			}
+			if(ImGui::BeginMenu(ICON_FA_LIST " Logging")){
+				uiLoggingSettings();
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -5914,6 +5936,11 @@ loadSaveSettings(void)
 		}else if(strcmp(key, "automatic_backups") == 0){
 			if(parseBoolSetting(value, &boolValue))
 				gAutomaticBackupsEnabled = boolValue;
+		}else if(strcmp(key, "write_log_files") == 0){
+			// Absent from older settings files, which leaves the default of
+			// logging disabled in place -- the intended behaviour on upgrade.
+			if(parseBoolSetting(value, &boolValue))
+				gWriteLogFiles = boolValue;
 		}else if(strcmp(key, "automatic_backup_interval") == 0){
 			parseIntSetting(value, &gAutomaticBackupIntervalSeconds);
 		}else if(strcmp(key, "automatic_backup_keep") == 0){
@@ -6264,6 +6291,7 @@ saveSaveSettings(void)
 	fprintf(f, "window_maximized %d\n", gSavedWindowMaximized ? 1 : 0);
 	fprintf(f, "save_destination %d\n", (int)gSaveDestination);
 	fprintf(f, "automatic_backups %d\n", gAutomaticBackupsEnabled ? 1 : 0);
+	fprintf(f, "write_log_files %d\n", gWriteLogFiles ? 1 : 0);
 	fprintf(f, "automatic_backup_interval %d\n", gAutomaticBackupIntervalSeconds);
 	fprintf(f, "automatic_backup_keep %d\n", gAutomaticBackupKeepCount);
 	fprintf(f, "custom_import_start_id %d\n", gCustomImportPreferredStartId);

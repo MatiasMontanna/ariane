@@ -30,6 +30,9 @@ rw::Texture *whiteTex;
 static char gHotReloadTracePath[1024];
 static char gImGuiIniPath[1024];
 
+// Log files are opt-in; see the Logging submenu in the Window menu.
+bool gWriteLogFiles = false;
+
 static bool
 EnsureDirectoryTree(const char *path)
 {
@@ -273,14 +276,23 @@ void
 hotReloadTrace(const char *fmt, ...)
 {
 	char defaultPath[1024];
-	const char *path = gHotReloadTracePath;
+	const char *path;
+	FILE *f;
+
+	// Suppressed unless the user enabled log files. This runs on every reload,
+	// so it is also the difference between a file that grows without bound and
+	// no file at all.
+	if(!gWriteLogFiles)
+		return;
+
+	path = gHotReloadTracePath;
 	if(path[0] == '\0'){
 		if(GetArianeDataPath(defaultPath, sizeof(defaultPath), "ariane_hot_reload_log.txt"))
 			path = defaultPath;
 		else
 			path = "ariane_hot_reload_log.txt";
 	}
-	FILE *f = fopen(path, "a");
+	f = fopen(path, "a");
 	if(f == nil)
 		return;
 

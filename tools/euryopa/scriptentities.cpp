@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 
 std::vector<ScriptEntity> gEntities;
@@ -193,6 +194,10 @@ ScriptEntities::Init(void)
 	dirsToSearch[0][511] = '\0';
 
 	int processed = 0;
+	// Queue slots are capped at 64, so a symlink pointing back at a parent would
+	// not loop forever -- but it would spend every remaining slot re-queuing the
+	// same directory, starving the real ones. Track resolved identities instead.
+	std::set<std::string> visitedDirs;
 	while (processed < numDirs && numDirs < 64) {
 		std::vector<std::string> entries;
 		ListDirectoryFiles(dirsToSearch[processed], entries);
@@ -203,7 +208,13 @@ ScriptEntities::Init(void)
 			char fullPath[512];
 			snprintf(fullPath, sizeof(fullPath), "%s/%s", dirsToSearch[processed], name);
 
-			if (IsDirectoryPath(fullPath)) {
+			// Follows symlinks, so a linked directory is searched and a linked
+			// script is loaded.
+			if (IsDirectoryPathFollowingLinks(fullPath)) {
+				std::string identity;
+				if (GetDirectoryIdentity(fullPath, identity) &&
+					!visitedDirs.insert(identity).second)
+					continue;
 				if (numDirs < 64) {
 					strncpy(dirsToSearch[numDirs], fullPath, 511);
 					dirsToSearch[numDirs][511] = '\0';

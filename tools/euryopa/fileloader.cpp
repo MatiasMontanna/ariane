@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <ctime>
 #include <functional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -2576,56 +2577,69 @@ PathExists(const char *path)
 	return path && stat(path, &st) == 0;
 }
 
+// The two delete primitives, named so the traversal below reads the same on
+// both platforms.
+static int
+RemoveSingleEntry(const char *path)
+{
+#ifdef _WIN32
+	return DeleteFileA(path);
+#else
+	return remove(path);
+#endif
+}
+
+static int
+RemoveSingleDirectory(const char *path)
+{
+#ifdef _WIN32
+	return RemoveDirectoryA(path);
+#else
+	return rmdir(path);
+#endif
+}
+
 static bool
-RemoveDirectoryRecursive(const char *path)
+RemoveDirectoryRecursiveTracked(const char *path, std::set<std::string> &visited)
 {
 	if(path == nil || path[0] == '\0' || !IsDirectoryPath(path))
 		return false;
 
-#ifdef _WIN32
-	std::string pattern = JoinPathStrings(path, "*");
-	WIN32_FIND_DATAA entry;
-	HANDLE handle = FindFirstFileA(pattern.c_str(), &entry);
-	if(handle != INVALID_HANDLE_VALUE){
-		do{
-			if(strcmp(entry.cFileName, ".") == 0 || strcmp(entry.cFileName, "..") == 0)
-				continue;
-			std::string childPath = JoinPathStrings(path, entry.cFileName);
-			if(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY){
-				if(!RemoveDirectoryRecursive(childPath.c_str())){
-					FindClose(handle);
-					return false;
-				}
-			}else if(DeleteFileA(childPath.c_str()) == 0){
-				FindClose(handle);
+	// A link is unlinked, never walked into: descending would delete the
+	// contents of whatever it points at, which has nothing to do with this tree.
+	if(IsSymbolicLinkPath(path))
+		return RemoveSingleEntry(path) == 0;
+
+	// Already walked this target, so a symlink has led us back into a directory
+	// we are inside. Stop instead of recursing until the stack dies.
+	std::string identity;
+	if(GetDirectoryIdentity(path, identity) && !visited.insert(identity).second)
+		return true;
+
+	std::vector<std::string> entries;
+	ListDirectoryFiles(path, entries);
+
+	for(size_t i = 0; i < entries.size(); i++){
+		std::string childPath = JoinPathStrings(path, entries[i].c_str());
+		if(IsSymbolicLinkPath(childPath.c_str())){
+			if(RemoveSingleEntry(childPath.c_str()) != 0)
 				return false;
-			}
-		}while(FindNextFileA(handle, &entry));
-		FindClose(handle);
-	}
-	return RemoveDirectoryA(path) != 0;
-#else
-	DIR *d = opendir(path);
-	if(d){
-		dirent *ent;
-		while((ent = readdir(d)) != nil){
-			if(strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
-				continue;
-			std::string childPath = JoinPathStrings(path, ent->d_name);
-			if(IsDirectoryPath(childPath.c_str())){
-				if(!RemoveDirectoryRecursive(childPath.c_str())){
-					closedir(d);
-					return false;
-				}
-			}else if(remove(childPath.c_str()) != 0){
-				closedir(d);
+		}else if(IsDirectoryPathFollowingLinks(childPath.c_str())){
+			if(!RemoveDirectoryRecursiveTracked(childPath.c_str(), visited))
 				return false;
-			}
+		}else if(RemoveSingleEntry(childPath.c_str()) != 0){
+			return false;
 		}
-		closedir(d);
 	}
-	return rmdir(path) == 0;
-#endif
+
+	return RemoveSingleDirectory(path) == 0;
+}
+
+static bool
+RemoveDirectoryRecursive(const char *path)
+{
+	std::set<std::string> visited;
+	return RemoveDirectoryRecursiveTracked(path, visited);
 }
 
 static void
