@@ -85,21 +85,6 @@ jobs:
           name: ariane-windows-d3d9
           path: ariane/bin/win-amd64-d3d9/Release/ariane.exe
 
-      - name: Create GitHub Release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: Ariane ${{ steps.version.outputs.version }} (${{ steps.version.outputs.channel }})
-          body: |
-            Ariane ${{ steps.version.outputs.version }} — channel: **${{ steps.version.outputs.channel }}**
-          files: ariane/bin/win-amd64-d3d9/Release/ariane.exe
-          draft: false
-          prerelease: ${{ steps.version.outputs.channel == 'PE' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-linux:
     name: Build Linux x64 (OpenGL)
     runs-on: ubuntu-22.04
@@ -121,33 +106,6 @@ jobs:
           repository: Southland-FR/librw
           ref: ${{ env.LIBRW_REF }}
           path: librw
-
-      - name: Read version from header
-        id: version
-        working-directory: ariane
-        run: |
-          set -euo pipefail
-          # Must stay byte-identical to the Windows job above: both jobs target
-          # the same tag so the release collects the .exe and the .tar.gz.
-          ver=$(sed -n 's/.*#define[[:space:]]*ARIANE_VERSION[[:space:]]*"\([^"]*\)".*/\1/p' \
-                tools/euryopa/version.h | head -1)
-          if [ -z "$ver" ]; then
-            ver="0.0.0"
-          fi
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            ref="${{ github.base_ref }}"
-          else
-            ref="${{ github.ref_name }}"
-          fi
-          if [ "$ref" = "PE" ]; then
-            branch="PE"
-          else
-            branch="master"
-          fi
-          shortsha=$(printf '%.7s' "$GITHUB_SHA")
-          echo "version=$ver" >> "$GITHUB_OUTPUT"
-          echo "tag=v${ver}-${branch}-${shortsha}" >> "$GITHUB_OUTPUT"
-          echo "channel=$branch" >> "$GITHUB_OUTPUT"
 
       - name: Install system dependencies
         run: |
@@ -384,30 +342,116 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Create GitHub Release
-        # Never publish from a pull request. The Windows release step was
-        # already unguarded; without this a PR build would attach a tarball to
-        # a release tagged after the PR's short sha.
-        if: github.event_name != 'pull_request'
+  # Publishing lives here, not in either build job.
+  #
+  # GitHub only accepts asset uploads while a release is a DRAFT; once published
+  # the release is immutable. Two build jobs each calling
+  # softprops/action-gh-release therefore cannot share one release: whichever
+  # runs first publishes it and the other fails with "Cannot upload asset ...
+  # to an immutable release". Serialising the build jobs does not help, because
+  # the first job still publishes. This job downloads both finished artifacts,
+  # stages every asset onto a draft, and only then publishes.
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux]
+    # Never publish from a pull request.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout ariane
+        uses: actions/checkout@v4
+        with:
+          path: ariane
+
+      - name: Read version from header
+        id: version
+        working-directory: ariane
+        run: |
+          set -euo pipefail
+          ver=$(sed -n 's/.*#define[[:space:]]*ARIANE_VERSION[[:space:]]*"\([^"]*\)".*/\1/p' \
+                tools/euryopa/version.h | head -1)
+          if [ -z "$ver" ]; then
+            ver="0.0.0"
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ref="${{ github.base_ref }}"
+          else
+            ref="${{ github.ref_name }}"
+          fi
+          if [ "$ref" = "PE" ]; then
+            branch="PE"
+          else
+            branch="master"
+          fi
+          shortsha=$(printf '%.7s' "$GITHUB_SHA")
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=v${ver}-${branch}-${shortsha}" >> "$GITHUB_OUTPUT"
+          echo "channel=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ariane-windows-d3d9
+          path: dist-win
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ariane-linux-x64
+          path: dist-linux
+
+      - name: Verify downloaded assets
+        run: |
+          set -euo pipefail
+          test -f dist-win/ariane.exe || { echo "::error::ariane.exe missing from artifact"; exit 1; }
+          test -f dist-linux/ariane-linux-x64.tar.gz || {
+            echo "::error::ariane-linux-x64.tar.gz missing from artifact"; exit 1; }
+          test -f dist-linux/ariane-linux-x64.tar.gz.sha256 || {
+            echo "::error::sha256 file missing from artifact"; exit 1; }
+          # The checksum file is generated beside the tarball during the build,
+          # so re-verify it here rather than trusting the artifact blindly. Its
+          # contents name the tarball by basename, hence the subshell cd.
+          (cd dist-linux && sha256sum --check ariane-linux-x64.tar.gz.sha256)
+          ls -l dist-win/ariane.exe dist-linux/
+
+      - name: Create draft release with all assets
         uses: softprops/action-gh-release@v2
         with:
-          # Same tag as the Windows job. softprops updates the existing release
-          # when the tag is already there, so the two jobs add their assets to
-          # one release rather than racing to create two with the same name.
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: Ariane ${{ steps.version.outputs.version }} (${{ steps.version.outputs.channel }})
           body: |
             Ariane ${{ steps.version.outputs.version }} — channel: **${{ steps.version.outputs.channel }}**
 
-            Portable Linux x64 build. Unpack the tarball and run `./ariane`; the
+            ### Windows
+            `ariane.exe` — D3D9.
+
+            ### Linux
+            `ariane-linux-x64.tar.gz` — OpenGL. Unpack and run `./ariane`; the
             required libraries are bundled in `lib/`. X11 and Wayland are both
             supported — pick one with `XDG_SESSION_TYPE=x11 ./ariane` or
             `XDG_SESSION_TYPE=wayland ./ariane`.
           files: |
-            ariane/ariane-linux-x64.tar.gz
-            ariane/ariane-linux-x64.tar.gz.sha256
+            dist-win/ariane.exe
+            dist-linux/ariane-linux-x64.tar.gz
+            dist-linux/ariane-linux-x64.tar.gz.sha256
           fail_on_unmatched_files: true
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Assets are only mutable while the release is a draft, so this runs after
+      # the uploads above and flips it live.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          # Repeated so the update cannot drop it.
+          name: Ariane ${{ steps.version.outputs.version }} (${{ steps.version.outputs.channel }})
           draft: false
           prerelease: ${{ steps.version.outputs.channel == 'PE' }}
         env:
