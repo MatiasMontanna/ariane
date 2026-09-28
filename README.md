@@ -49,11 +49,11 @@ For development updates, support and community downloads, [join the Ariane Disco
 
 The Linux release ships the windowing library it needs in a `lib/` directory next
 to the `ariane` binary, so extracting the tarball is normally all you need. The
-graphics and X11 stack is expected from your system, so make sure it is present
+graphics stack is expected from your system, so make sure it is present
 and current:
 
 ```bash
-sudo apt-get install libgl1 libglfw3      # Debian / Ubuntu
+sudo apt-get install libgl1      # Debian / Ubuntu
 ```
 
 If you build with `--gfxlib=sdl2`, `libSDL2-2.0` is bundled instead. If you
@@ -66,6 +66,41 @@ To see whether anything else is still unresolved:
 ```bash
 ldd ./ariane | grep 'not found'
 ```
+
+#### Wayland and X11
+
+The bundled GLFW is built with **both** the X11 and Wayland backends, so the same
+binary works under either. It picks one automatically, and you can override the
+choice with `XDG_SESSION_TYPE`:
+
+```bash
+./ariane                        # auto-detect (Wayland preferred when available)
+XDG_SESSION_TYPE=wayland ./ariane   # force native Wayland
+XDG_SESSION_TYPE=x11 ./ariane       # force X11 / XWayland
+```
+
+There is no `GLFW_PLATFORM` environment variable — `GLFW_PLATFORM` is a C init
+hint, and setting it in the environment has no effect.
+
+GLFW `dlopen`s the backend libraries at runtime rather than linking them, which
+means `ldd ./ariane` will **not** list them even when they are missing. If you
+force Wayland, install the libraries it will look for:
+
+```bash
+sudo apt-get install libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+                    libxkbcommon0 libegl1
+```
+
+To confirm which backend actually came up, check for a Wayland protocol trace:
+
+```bash
+WAYLAND_DEBUG=1 ./ariane 2>&1 | head -20   # trace = native Wayland
+```
+
+Note that distribution packages named `libglfw3` and `libglfw3-wayland` are
+separate, single-backend builds that conflict with each other. Prefer the bundled
+library; if you must use a system one, install the build matching your session
+rather than both.
 
 ### Release channels
 

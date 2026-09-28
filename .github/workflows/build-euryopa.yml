@@ -121,7 +121,75 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libgl1-mesa-dev libglfw3-dev xauth xvfb
+          # libglfw3-dev is deliberately NOT installed. The distro packages split
+          # GLFW into mutually exclusive single-backend builds -- on jammy
+          # libglfw3 is X11-only and libglfw3-wayland is Wayland-only, both
+          # claiming SONAME libglfw.so.3 -- so whichever we link against becomes
+          # the only backend the released binary has. We build GLFW ourselves below
+          # to get one library carrying both backends.
+          #
+          # GLFW 3.4 dlopens libX11/libwayland-*/libEGL/libxkbcommon at runtime,
+          # so these -dev packages supply headers for the build only; they are not
+          # link-time NEEDED entries and are not required at run time.
+          sudo apt-get install --yes \
+            libgl1-mesa-dev xauth xvfb \
+            cmake \
+            xorg-dev \
+            libwayland-dev libwayland-bin libxkbcommon-dev
+
+      - name: Build GLFW 3.4 (X11 + Wayland)
+        run: |
+          set -euo pipefail
+          # Pinned to the official release asset, checksum-verified the same way
+          # premake5 is below. The auto-generated source tarball is not a listed
+          # release asset and its bytes are not guaranteed stable, so we use the
+          # .zip the GLFW project actually publishes.
+          curl --fail --location --silent --show-error \
+            https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip \
+            --output glfw-3.4.zip
+          echo "b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9  glfw-3.4.zip" | sha256sum --check
+          unzip -q glfw-3.4.zip
+          # Both backends are the upstream default on Linux, but set them
+          # explicitly so a future default change cannot silently drop one and
+          # leave us shipping a half-working artifact.
+          # BUILD_SHARED_LIBS must be ON: GLFW's CMake defaults it to OFF, which
+          # would build only libglfw.a and leave no libglfw.so.3 to bundle.
+          cmake -S glfw-3.4 -B glfw-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DGLFW_BUILD_X11=ON \
+            -DGLFW_BUILD_WAYLAND=ON \
+            -DGLFW_BUILD_DOCS=OFF \
+            -DGLFW_BUILD_TESTS=OFF \
+            -DGLFW_BUILD_EXAMPLES=OFF
+          cmake --build glfw-build --parallel 2
+          sudo cmake --install glfw-build
+          sudo ldconfig
+          # Installed to /usr/local so the librw/ariane build both compiles and
+          # links against this exact version, instead of a 3.3.6 header paired
+          # with a 3.4 runtime. Use find, not a `lib*` glob: bash does not let a
+          # single `*` cross a `/`, so a glob would miss the multiarch layout that
+          # Debian and Ubuntu's CMake patches produce.
+          glfw_so=$(find /usr/local -name 'libglfw.so.3*' -print -quit 2>/dev/null || true)
+          if [ -z "$glfw_so" ]; then
+            echo "::error::no libglfw.so.3 under /usr/local; a static-only build would leave nothing to bundle"
+            find /usr/local -name 'libglfw*' 2>/dev/null || true
+            exit 1
+          fi
+          echo "glfw: $glfw_so -> $(readlink -f "$glfw_so")"
+          readelf -d "$glfw_so" | grep -E 'SONAME|NEEDED'
+          # Both backends dlopen their libraries at runtime, so the names only
+          # appear as strings. Assert both are present now, rather than
+          # discovering a single-backend artifact from a user report later.
+          for backend in libX11.so.6 libwayland-client.so.0; do
+            if ! strings "$glfw_so" | grep -qF "$backend"; then
+              echo "::error::GLFW was built without $backend; refusing to package a single-backend binary"
+              exit 1
+            fi
+          done
+          echo "GLFW has both X11 and Wayland backends"
 
       - name: Install Premake5
         run: |
@@ -205,6 +273,21 @@ jobs:
             cp -L "$so" lib/
             echo "bundled $(basename "$so")"
           done
+          # Re-check the backend on the copy that actually ships. The build step
+          # already asserted this, but that was on the installed library; this
+          # catches a wrong file being copied into lib/ by the loop above.
+          if [ -e lib/libglfw.so.3 ]; then
+            for backend in libX11.so.6 libwayland-client.so.0; do
+              if ! strings lib/libglfw.so.3 | grep -qF "$backend"; then
+                echo "::error::bundled libglfw.so.3 is missing $backend (single-backend artifact)"
+                exit 1
+              fi
+            done
+            echo "bundled libglfw.so.3 carries both X11 and Wayland backends"
+          else
+            echo "::error::libglfw.so.3 was not bundled; the binary would not start"
+            exit 1
+          fi
 
       - name: Package Linux artifact
         working-directory: ariane
@@ -237,6 +320,20 @@ jobs:
             ldd ./ariane | grep -E 'glfw|SDL2'
             exit 1
           fi
+          # Assert the shipped artifact -- not just the build tree -- offers both
+          # backends, so the release can actually run native Wayland.
+          for backend in libX11.so.6 libwayland-client.so.0; do
+            if ! strings lib/libglfw.so.3 | grep -qF "$backend"; then
+              echo "::error::shipped libglfw.so.3 is missing $backend"
+              exit 1
+            fi
+          done
+          # The X11 smoke test below only proves the X11 backend. GLFW dlopens
+          # the Wayland libraries, so ldd cannot prove they are present -- we can
+          # only confirm the backend is compiled in. Runtime presence of
+          # libwayland-* is the host's responsibility and is documented in the
+          # README.
+          echo "shipped GLFW exposes both backends"
           set +e
           xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
             ./ariane > smoke-test-bundled.log 2>&1
