@@ -154,10 +154,13 @@ end
 
 	function findlibs()
 		filter { "platforms:linux*gl3" }
-			-- resolve libraries shipped in a "lib" directory next to the binary.
+			-- Resolve libraries shipped in a "lib" directory next to the binary.
+			-- This must be linkoptions, not buildoptions: rpath is a link-time
+			-- flag, and buildoptions only reaches ALL_CXXFLAGS in the gmake2
+			-- generator, so the linker would silently drop it.
 			-- NOTE: the '$$' and single quotes are required -- without them the
 			-- shell expands $ORIGIN to nothing and ld records a bogus "/lib".
-			buildoptions { "-Wl,-rpath,'$$ORIGIN/lib'" }
+			linkoptions { "-Wl,-rpath,'$$ORIGIN/lib'" }
 			links { "GL" }
 			if _OPTIONS["gfxlib"] == "glfw" then
 				links { "glfw" }

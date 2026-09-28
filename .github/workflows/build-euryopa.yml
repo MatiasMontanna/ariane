@@ -157,6 +157,24 @@ jobs:
         working-directory: ariane
         run: make --directory build --jobs 2 config=release_linux-amd64-gl3 euryopa
 
+      - name: Check RUNPATH in built binary
+        working-directory: ariane
+        run: |
+          set -uo pipefail
+          # Fail fast, and loudly: an rpath that never reached the linker is
+          # otherwise invisible until the bundled-runtime check much later.
+          echo "--- rpath flag as generated in the makefile ---"
+          grep -o -- "-Wl,-rpath,[^ ]*" build/euryopa.make | sort -u \
+            || echo "  ::error::rpath flag is absent from the generated makefile"
+          echo "--- dynamic section of the built binary ---"
+          readelf -d bin/linux-amd64-gl3/Release/ariane
+          if ! readelf -d bin/linux-amd64-gl3/Release/ariane \
+               | grep -qE 'RUNPATH.*[$]ORIGIN/lib'; then
+            echo "::error::binary has no \$ORIGIN/lib RUNPATH; bundled lib/ will not be found"
+            exit 1
+          fi
+          echo "RUNPATH OK"
+
       - name: Smoke test OpenGL startup
         working-directory: ariane/bin/linux-amd64-gl3/Release
         run: |
@@ -207,10 +225,13 @@ jobs:
           cd ariane-verify
           test -x ariane
           ls lib
-          # $ORIGIN must have survived make -> shell -> ld; a mangled rpath shows
-          # up here as an absolute path or as a missing library.
-          readelf -d ./ariane | grep -E 'RUNPATH|RPATH'
-          readelf -d ./ariane | grep -qE 'RUNPATH.*[$]ORIGIN/lib'
+          # Print the dynamic section unconditionally -- grepping first and dying
+          # under `set -e` hides the reason the check failed.
+          readelf -d ./ariane || true
+          if ! readelf -d ./ariane | grep -qE 'RUNPATH.*[$]ORIGIN/lib'; then
+            echo "::error::\$ORIGIN did not survive make -> shell -> ld"
+            exit 1
+          fi
           if ldd ./ariane | grep -E 'glfw|SDL2' | grep -qv 'lib/'; then
             echo "::error::windowing library is not resolving from the bundled lib/"
             ldd ./ariane | grep -E 'glfw|SDL2'
