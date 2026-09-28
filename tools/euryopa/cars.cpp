@@ -36,11 +36,17 @@ Init(void)
 	std::vector<std::string> filenames;
 	ListDirectoryFiles("data/binary/ipl", filenames);
 
+	int numIplFiles = 0;
 	for(size_t i = 0; i < filenames.size(); i++){
 		const char *filename = filenames[i].c_str();
 		size_t namelen = filenames[i].size();
-		if(namelen < 4 || strcmp(filename + namelen - 4, ".ipl") != 0)
+		// Case-insensitive on purpose. Stock GTA2 IPLs are conventionally
+		// uppercase (.IPL) and Linux filesystems are case-sensitive, so the
+		// previous strcmp() silently skipped every one of them. cdimage.cpp
+		// already matches "ipl" this way.
+		if(namelen < 4 || rw::strncmp_ci(filename + namelen - 4, ".ipl", 4) != 0)
 			continue;
+		numIplFiles++;
 
 		char filepath[256];
 		snprintf(filepath, sizeof(filepath), "data/binary/ipl/%s", filename);
@@ -48,7 +54,10 @@ Init(void)
 		int size;
 		uint8 *buf = ReadLooseFile(filepath, &size);
 		if(buf == nil){
-			log("Cars: failed to read %s\n", filepath);
+			if(IsSymbolicLinkPath(filepath))
+				log("Cars: failed to read %s (broken symlink?)\n", filepath);
+			else
+				log("Cars: failed to read %s\n", filepath);
 			continue;
 		}
 
@@ -106,6 +115,19 @@ Init(void)
 		}
 
 		free(buf);
+	}
+
+	// If the folder has entries but nothing looked like an IPL, say so and list
+	// what was actually there. Without this the only symptom is "no car spawns".
+	if(numIplFiles == 0 && !filenames.empty()){
+		log("Cars: no .ipl files matched in data/binary/ipl; found %d entries:\n",
+		    (int)filenames.size());
+		for(size_t i = 0; i < filenames.size(); i++){
+			char entryPath[256];
+			snprintf(entryPath, sizeof(entryPath), "data/binary/ipl/%s", filenames[i].c_str());
+			log("  %s%s\n", filenames[i].c_str(),
+			    IsSymbolicLinkPath(entryPath) ? " -> (symlink)" : "");
+		}
 	}
 
 	log("Cars: loaded %d spawns\n", (int)carSpawns.size());
