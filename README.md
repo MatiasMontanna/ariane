@@ -1,3 +1,5 @@
+Warning: AI-generated code!
+
 # Ariane
 
 [![Watch the complete Ariane walkthrough](docs/ariane-complete-walkthrough.png)](https://www.youtube.com/watch?v=jJipK1woGAk)
