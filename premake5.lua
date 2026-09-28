@@ -154,6 +154,10 @@ end
 
 	function findlibs()
 		filter { "platforms:linux*gl3" }
+			-- resolve libraries shipped in a "lib" directory next to the binary.
+			-- NOTE: the '$$' and single quotes are required -- without them the
+			-- shell expands $ORIGIN to nothing and ld records a bogus "/lib".
+			buildoptions { "-Wl,-rpath,'$$ORIGIN/lib'" }
 			links { "GL" }
 			if _OPTIONS["gfxlib"] == "glfw" then
 				links { "glfw" }

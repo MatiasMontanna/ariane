@@ -45,6 +45,28 @@ The San Andreas test-in-game and hot-reload workflows require `ariane.asi`. Hot 
 
 For development updates, support and community downloads, [join the Ariane Discord](https://discord.gg/8NS59AbQtN).
 
+### Linux runtime requirements
+
+The Linux release ships the windowing library it needs in a `lib/` directory next
+to the `ariane` binary, so extracting the tarball is normally all you need. The
+graphics and X11 stack is expected from your system, so make sure it is present
+and current:
+
+```bash
+sudo apt-get install libgl1 libglfw3      # Debian / Ubuntu
+```
+
+If you build with `--gfxlib=sdl2`, `libSDL2-2.0` is bundled instead. If you
+rebuild the binary yourself with the system GLFW, install the runtime package
+(`libglfw3`, not `libglfw3-dev`) or the loader will report
+`error while loading shared libraries: libglfw.so.3`.
+
+To see whether anything else is still unresolved:
+
+```bash
+ldd ./ariane | grep 'not found'
+```
+
 ### Release channels
 
 - **master** — the standard and recommended build

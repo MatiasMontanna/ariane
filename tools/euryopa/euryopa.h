@@ -1,11 +1,9 @@
 #ifdef _WIN32
 #include <Windows.h>	// necessary for the moment
-#include <direct.h>
 #include <sys/stat.h>
 #else
 #include <dirent.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #endif
 
 #include <rw.h>
@@ -125,6 +123,7 @@ inline void ListDirectoryFiles(const char *path, std::vector<std::string> &files
 	closedir(d);
 #endif
 }
+
 #ifdef min
 #undef min
 #endif

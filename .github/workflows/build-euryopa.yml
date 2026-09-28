@@ -169,12 +169,61 @@ jobs:
           test "$status" -eq 1
           grep --quiet "error: unknown game" smoke-test.log
 
+      - name: Bundle runtime libraries
+        working-directory: ariane/bin/linux-amd64-gl3/Release
+        run: |
+          set -euo pipefail
+          mkdir -p lib
+          # Bundle only the windowing library. GL/X11/Mesa are deliberately left
+          # to the host: they must match the machine's actual X and GL stack, and
+          # shipping our own copies tends to break rather than help.
+          mapfile -t libs < <(ldd ./ariane \
+            | grep -oE '/[^ ]*lib(glfw|SDL2)[^ ]*\.so[^ ]*' | sort -u)
+          if [ "${#libs[@]}" -eq 0 ]; then
+            echo "::warning::no glfw/SDL2 runtime library found to bundle"
+          fi
+          for so in "${libs[@]}"; do
+            [ -e "$so" ] || continue
+            cp -L "$so" lib/
+            echo "bundled $(basename "$so")"
+          done
+
       - name: Package Linux artifact
         working-directory: ariane
         run: |
           tar --create --gzip --file ariane-linux-x64.tar.gz \
-            --directory bin/linux-amd64-gl3/Release ariane
+            --directory bin/linux-amd64-gl3/Release ariane lib
           sha256sum ariane-linux-x64.tar.gz > ariane-linux-x64.tar.gz.sha256
+
+      - name: Verify bundled runtime resolves
+        run: |
+          set -euo pipefail
+          # Test the extracted tarball, not the build tree: this is what users get,
+          # and it catches packaging mistakes (e.g. forgetting lib/) that a test
+          # in the build directory would miss.
+          rm -rf ariane-verify && mkdir ariane-verify
+          tar --extract --gzip --file ariane/ariane-linux-x64.tar.gz \
+            --directory ariane-verify
+          cd ariane-verify
+          test -x ariane
+          ls lib
+          # $ORIGIN must have survived make -> shell -> ld; a mangled rpath shows
+          # up here as an absolute path or as a missing library.
+          readelf -d ./ariane | grep -E 'RUNPATH|RPATH'
+          readelf -d ./ariane | grep -qE 'RUNPATH.*[$]ORIGIN/lib'
+          if ldd ./ariane | grep -E 'glfw|SDL2' | grep -qv 'lib/'; then
+            echo "::error::windowing library is not resolving from the bundled lib/"
+            ldd ./ariane | grep -E 'glfw|SDL2'
+            exit 1
+          fi
+          set +e
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            ./ariane > smoke-test-bundled.log 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 1
+          grep --quiet "error: unknown game" smoke-test-bundled.log
+          echo "bundled runtime OK"
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
